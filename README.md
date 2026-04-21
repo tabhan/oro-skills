@@ -7,6 +7,7 @@ Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills fo
 | Skill | Description |
 |-------|-------------|
 | [oro-behat-testing](oro-behat-testing/) | Writing, debugging, and optimizing Behat acceptance tests for OroCommerce |
+| [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
 
 ## Installation
 
