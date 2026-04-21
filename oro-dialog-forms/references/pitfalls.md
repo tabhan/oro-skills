@@ -14,11 +14,13 @@ element at the top level. `setContent()` does
 
 **Most common causes, in order:**
 
-1. **Locale 302 redirect swallowed the POST** — `LocalePrefixRedirectListener`
-   redirected an unprefixed POST to the prefixed URL as a GET, losing the
-   body. The subsequent GET returns a fresh form — but may render with a
-   different wrapper or the browser surfaces the redirect as the "response"
-   the widget sees. Fix: localize URL generation. See `locale-prefix.md`.
+1. **Any redirect (30x) happened on the POST** — an event listener
+   (auth, locale prefix, slug redirect, etc.) returned a `RedirectResponse`
+   for the unprefixed POST, and the browser followed it as a GET, dropping
+   the body. The subsequent GET returns a fresh form which the dialog sees
+   as a non-widget response. Fix: ensure the form's `action` URL matches the
+   exact URL pattern your middleware considers "final" — no listener should
+   want to redirect it.
 
 2. **Controller returned a `JsonResponse`** because you built it yourself.
    `DialogWidget` does not consume JSON; it consumes HTML with
@@ -39,8 +41,9 @@ took the non-widget branch and returned `RedirectResponse`. The browser follows.
 
 **Most common causes:**
 
-1. **Locale redirect dropped `_wid` during 302** — same as above. Fix the
-   URL generator.
+1. **Upstream 302 dropped `_wid` during POST → GET redirect** — same as
+   "Invalid server response" above. Fix the URL your form posts to so no
+   listener wants to redirect it.
 
 2. **Submit handler bypass** — your custom `DialogWidget` subclass overrode
    `loadContent` / `_onContentLoad` and lost the `_wid` attachment. Fix:
@@ -82,18 +85,6 @@ is redirected to `/admin/…/view/123` (entity view route) and either sees
 
 **Fix:** Emit an `input_action` hidden field from the form template with
 `{"redirectUrl":"<localized page URL>"}`. See `form-template.md` §3.
-
-## Redirect goes to an unprefixed URL, causing a 302 to the prefixed URL
-
-**Symptom:** Submit works, but the browser does a double redirect: first to
-`/landing-page`, then to `/us-en/landing-page`. Functional but sluggish.
-
-**Root cause:** `input_action`'s `redirectUrl` was built from
-`$mainRequest->getUri()` without re-adding the locale prefix that
-`LocalePrefixRequestListener` stripped.
-
-**Fix:** Wrap the URI with `$this->localePrefixHelper->addPrefixToUrl($uri)`
-when building the `input_action` JSON.
 
 ## `inputAction is UNDEFINED` in Twig
 

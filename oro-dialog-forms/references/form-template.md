@@ -15,11 +15,9 @@ things are load-bearing; getting any of them wrong breaks the flow.
 }}) }}
 ```
 
-- Do **not** set `action` explicitly to `app.request.uri`. Inside the
-  content-widget subrequest, `app.request.uri` returns the stripped
-  (locale-less) URL — `LocalePrefixRequestListener` strips the prefix
-  on the way in. Let the form use the `action` set by the content widget's
-  `getWidgetData()` (which goes through the localized URL generator).
+- Do **not** set `action` explicitly to `app.request.uri`. Let the form use
+  the `action` set by the content widget's `getWidgetData()` (built via
+  `UrlGeneratorInterface::generate`) so the URL is stable and shareable.
 - `form-validate-view` gives you client-side validation. It does NOT do
   anything with the submit; submission is handled by `AbstractWidget`.
 
@@ -77,27 +75,21 @@ AJAX submit path breaks.
 {% endif %}
 ```
 
-`$inputAction` is a JSON string like `{"redirectUrl":"https://host/us-en/landing-page"}`,
+`$inputAction` is a JSON string like `{"redirectUrl":"https://host/landing-page"}`,
 computed in `getWidgetData()`:
 
 ```php
-use Buckman\Bundle\LocaleBundle\Helper\LocalePrefixHelper;  // or project equivalent
-
 public function __construct(
     private readonly FormFactoryInterface $formFactory,
     private readonly UrlGeneratorInterface $urlGenerator,
     private readonly RequestStack $requestStack,
-    private readonly LocalePrefixHelper $localePrefixHelper,
 ) {}
 
 public function getWidgetData(ContentWidget $contentWidget): array
 {
     $mainRequest = $this->requestStack->getMainRequest();
     $inputAction = $mainRequest !== null
-        ? json_encode(
-            ['redirectUrl' => $this->localePrefixHelper->addPrefixToUrl($mainRequest->getUri())],
-            JSON_THROW_ON_ERROR
-        )
+        ? json_encode(['redirectUrl' => $mainRequest->getUri()], JSON_THROW_ON_ERROR)
         : null;
 
     $form = $this->formFactory->create($formTypeClass, null, [
@@ -114,17 +106,10 @@ public function getWidgetData(ContentWidget $contentWidget): array
 }
 ```
 
-Two key points:
-
-- `$this->requestStack->getMainRequest()` — NOT `getCurrentRequest()`.
-  Content widgets render in a subrequest; the main request is the actual
-  page URL (e.g. `/us-en/sustainability/xyz`), which is what we want to
-  redirect back to.
-- `$this->localePrefixHelper->addPrefixToUrl($uri)` — `$mainRequest->getUri()`
-  returns the URL *after* `LocalePrefixRequestListener` stripped the prefix
-  (`/sustainability/xyz`, not `/us-en/sustainability/xyz`). Re-add it so
-  the redirect goes to the localized URL and doesn't trigger a second
-  `LocalePrefixRedirectListener` 302.
+Key point: use `$this->requestStack->getMainRequest()` — NOT
+`getCurrentRequest()`. Content widgets render in a subrequest; the main
+request is the actual page URL (e.g. `/sustainability/xyz`), which is what
+we want to redirect back to.
 
 ## 4. Wire the new variable through `widget.yml`
 

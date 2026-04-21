@@ -15,8 +15,6 @@ description: >
     (widget / `_wid`) and non-dialog (landing page / POST-redirect) contexts
   - Closing the dialog + flashing a success message after save using Oro's
     `orofrontend/js/app/components/widget-form-component`
-  - Generating localized URLs so AJAX POSTs don't hit `LocalePrefixRedirectListener`
-    and get 302'd (which breaks the POST body)
   - Setting `input_action` on a form so non-AJAX submits redirect back to the
     original embed page instead of the entity view route
 
@@ -38,9 +36,9 @@ How to build a form in OroCommerce frontend that works correctly in both of:
    message, and redirect back to the embed page.
 
 The two modes share one controller + one handler + one form template. The
-correctness depends on ~7 small details that interact; getting any one of them
+correctness depends on ~6 small details that interact; getting any one of them
 wrong produces confusing symptoms (page refresh, "Invalid server response",
-302 redirect loops, redirect to an admin-only URL, missing submit button, etc).
+redirect to an admin-only URL, missing submit button, etc).
 
 **Consult documentation first, then write code.**
 
@@ -56,7 +54,6 @@ wrong produces confusing symptoms (page refresh, "Invalid server response",
 | Layout YAML + `_widget_content_widget` block override + `widget-form-component` | [references/layout.md](references/layout.md) |
 | Form template: `form-dialog` class, `.widget-actions`, `input_action` hidden field | [references/form-template.md](references/form-template.md) |
 | JS trigger: `UI.renderWidgetAttributes({type: 'dialog', ...})` | [references/javascript-trigger.md](references/javascript-trigger.md) |
-| Locale prefix: auto-prefixing generated URLs to avoid 302 redirects | [references/locale-prefix.md](references/locale-prefix.md) |
 | Known pitfalls and how to diagnose them | [references/pitfalls.md](references/pitfalls.md) |
 
 ---
@@ -103,7 +100,3 @@ Non-dialog flow (content-widget embed on a landing page):
 3. Copy the structural pieces from [references/form-template.md](references/form-template.md)
    — the `form-dialog` class, `data-collect`, `widget-actions` wrapper, and
    `input_action` hidden field are all load-bearing.
-4. **Before testing**, make sure locale URL generation is in place
-   ([references/locale-prefix.md](references/locale-prefix.md)) — otherwise the
-   AJAX POST will get 302'd by `LocalePrefixRedirectListener` and the user will
-   see "Invalid server response".
