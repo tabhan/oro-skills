@@ -6,8 +6,11 @@ Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills fo
 
 | Skill | Description |
 |-------|-------------|
+| [oro-backend-docs](oro-backend-docs/) | OroCommerce backend API & configuration reference (entities, services, ACL, datagrids, API, MQ, migrations) |
+| [oro-frontend-skills](oro-frontend-skills/) | OroCommerce frontend reference (page components, app modules, Twig, SCSS/CSS architecture, JS patterns) |
 | [oro-behat-testing](oro-behat-testing/) | Writing, debugging, and optimizing Behat acceptance tests for OroCommerce |
 | [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
+| [oro-workflow](oro-workflow/) | Dev-loop conventions: shell aliases, cache invalidation strategy, migration naming, service overrides, PHPUnit stubs, system-config groups |
 
 ## Installation
 
