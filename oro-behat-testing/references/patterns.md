@@ -87,6 +87,28 @@ When I wait for 5 seconds
 When I wait for "Grid" element to appear
 ```
 
+In custom step definitions that navigate to a page with async-loaded content
+(product grids, datagrids, widgets), **use Oro's `waitForAjax()` driver method**
+instead of hand-rolled `$session->wait(...)` polling on CSS selectors or body text.
+
+```php
+// BAD - brittle CSS polling, may return before grid populates
+$this->getSession()->wait(
+    5000,
+    "document.readyState === 'complete'"
+    . " && !document.querySelector('.loading-mask')"
+);
+
+// GOOD - Oro's canonical wait: covers readyState, loader masks,
+// jQuery.active, mediator isInAction, isRequestPending, etc.
+$this->getSession()->getDriver()->waitForAjax();
+```
+
+`waitForAjax()` is defined on `OroSelenium2Driver` (see
+`vendor/oro/platform/src/Oro/Bundle/TestFrameworkBundle/Behat/Driver/OroSelenium2Driver.php`)
+and is the same check Oro's built-in steps use after clicks and navigation.
+Reuse it whenever you write a custom "visit page" step.
+
 ### 3. Duplicate Scenarios Instead of Outlines
 ```gherkin
 # BAD - duplicated scenarios
