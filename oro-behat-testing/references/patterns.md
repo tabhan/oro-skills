@@ -109,6 +109,28 @@ $this->getSession()->getDriver()->waitForAjax();
 and is the same check Oro's built-in steps use after clicks and navigation.
 Reuse it whenever you write a custom "visit page" step.
 
+#### Full page-ready check: `waitPageToLoad()` + `waitForAjax()`
+
+For full-page navigation (not just an in-place XHR), `waitForAjax()` alone can
+return early — the previous page's `readyState` may already be `complete`
+before the new document has started. The robust pattern is to chain **both**:
+
+```php
+$driver = $this->getSession()->getDriver();
+$driver->waitPageToLoad();   // readyState, title, .loading, .loader-mask.shown, .lazy-loading
+$driver->waitForAjax();      // outstanding XHRs / in-flight renders
+```
+
+`waitPageToLoad()` and `waitForAjax()` both live on `OroSelenium2Driver`. Use
+this combined call after `visitPath()` and before asserting on text content
+rendered by PLP/search/widgets. Do **not** substitute `sleep()` or fixed
+`$session->wait(N, ...)` timeouts — those are flaky and wasteful.
+
+For storefront-specific assertions, prefer the shared helpers in
+`Aaxis\Bundle\TestBundle\Tests\Behat\Context\StorefrontPageLoadTrait` and
+`StorefrontAssertTrait` (the trait's `Then the storefront page should [not] contain`
+steps already apply this wait before spinning on the text).
+
 ### 3. Duplicate Scenarios Instead of Outlines
 ```gherkin
 # BAD - duplicated scenarios
