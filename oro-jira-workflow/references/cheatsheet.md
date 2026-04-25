@@ -23,7 +23,13 @@ source:
   query:
     join:
       left:
-        - { join: page.titles, alias: pageTitle }
+        # Default fallback title only - matches what the Title column displays.
+        # Without this WHERE clause, search hits localized titles that the user
+        # never sees in the column (false positives, looks like a bug).
+        - join: page.titles
+          alias: pageTitle
+          conditionType: WITH
+          condition: 'pageTitle.localization IS NULL'
     groupBy: page.id           # prevents row multiplication across locales
 filters:
   columns:
@@ -32,6 +38,14 @@ filters:
       data_name: pageTitle.string
       label: oro.cms.page.titles.singular_label
 ```
+
+## When to denormalize instead
+
+For grids over entities with millions of rows, mirror what `Product` does:
+add a `denormalizedDefaultName` scalar column kept in sync by an entity
+listener, then filter/sort directly on it (no join, no GROUP BY tricks).
+See `vendor/oro/commerce/.../ProductBundle/Resources/config/oro/datagrids.yml`
+for the canonical example.
 
 Behat's `I filter Title as contains "X"` matches the visible label, so the
 internal filter key does not affect the test.
