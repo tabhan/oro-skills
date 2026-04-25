@@ -21,6 +21,32 @@ When I go to Marketing/ Landing Pages
 # Format: "I go to Menu/ Submenu/ Item" (spaces around / are significant)
 ```
 
+**RULE — Never hardcode admin URLs.** The backend prefix is project-configurable
+(`web_backend_prefix`, e.g. `/admin`, `/control-center`) and Oro's auto-routing
+also prepends a per-bundle prefix from `oro/routing.yml`. A literal path like
+`I go to "/admin/integration-record/"` will 404 on any project whose backend
+prefix differs, and will silently break when a route prefix is renamed.
+
+For backend grids/views, register a menu item under `Resources/config/oro/navigation.yml`
+(usually `application_menu` → some `*_tab` → leaf), then drive navigation by
+the menu label exposed to the user:
+
+```gherkin
+When I go to System/ Integration Logs        # leaf under "system_tab"
+When I go to Activities/ CTA Submissions      # leaf under "activities_tab"
+```
+
+For the storefront, prefer the locale-aware helper rather than a raw `/`:
+```gherkin
+Given I visit the storefront page with locale "us-en" and path "/"
+```
+
+When you must hit a URL that has no menu entry (e.g. a deep view route), use
+the route helper rather than the raw path:
+```gherkin
+When I open "aaxis_integration_record_view" page with id 42
+```
+
 ### Buttons and Links
 ```gherkin
 When I click "Create Localization"
