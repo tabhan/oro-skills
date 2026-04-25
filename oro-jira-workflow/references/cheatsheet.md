@@ -12,6 +12,30 @@
 ## Date range filter
 - `When I filter Created At as between "2026-03-01" and "2026-03-31"`.
 
+## CRITICAL: localized_value filters are stripped at runtime
+
+`LocalizedValueExtension` removes any `filters[columns][X]` and
+`sorters[columns][X]` whose key matches a `localized_value` property name
+(e.g. `title` on `cms-page-grid`). Use a different filter key + explicit join:
+
+```yaml
+source:
+  query:
+    join:
+      left:
+        - { join: page.titles, alias: pageTitle }
+    groupBy: page.id           # prevents row multiplication across locales
+filters:
+  columns:
+    titleSearch:               # NOT "title" - that key is stripped
+      type: string
+      data_name: pageTitle.string
+      label: oro.cms.page.titles.singular_label
+```
+
+Behat's `I filter Title as contains "X"` matches the visible label, so the
+internal filter key does not affect the test.
+
 ## Required YAML to make these pass
 ```yaml
 columns:
