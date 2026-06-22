@@ -38,7 +38,7 @@ backend development, **consult documentation first, then write code**.
 | **Create Bundle** | `bundles/create-bundle.md` | 446 | Bundle creation, registration |
 | **Create Entity** | `entities/create-entities.md` | 340 | Entity class creation, Doctrine mapping |
 | **Configure Entity** | `entities/configure-entities.md` | 459 | Entity config, UI display, grid, form |
-| **Extend Entity** | `entities/extend-entities.md` | 570 | Dynamic fields, extended entities |
+| **Extend Entity** | `entities/extend-entities.md` | 570 | Dynamic fields, extended entities, enum/serialized field conventions |
 | **CRUD + Routing** | `entities/crud-and-routing.md` | 753 | CRUD controller, routing configuration |
 | **Datagrids** | `entities/datagrids.md` | 1131 | Backend grid configuration ⚠️ Extra-large |
 | **Migrations** | `entities/migrations.md` | 466 | Database migrations |
@@ -177,6 +177,13 @@ The following scenarios **MUST** consult documentation first:
 
 "Make entity support dynamic extension fields"
 → Read entities/extend-entities.md
+
+"Add enum / select / option-set field, configure enum filter on grid,
+ fix enum-extend-field filter that returns no results, render enum
+ value in Twig, set enum value programmatically"
+→ Read entities/extend-entities.md § Working with Enum Values
+   (storage convention, getEnumChoicesByCode vs InternalChoices,
+    ExtendHelper::buildEnumOptionId, Product inventory_status pattern)
 ```
 
 ### ACL/Permission Related

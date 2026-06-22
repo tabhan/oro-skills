@@ -11,6 +11,7 @@ Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills fo
 | [oro-behat-testing](oro-behat-testing/) | Writing, debugging, and optimizing Behat acceptance tests for OroCommerce |
 | [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
 | [oro-workflow](oro-workflow/) | Dev-loop conventions: shell aliases, cache invalidation strategy, migration naming, service overrides, PHPUnit stubs, system-config groups |
+| [oro-conventions](oro-conventions/) | Opinionated cross-project Oro conventions & gotchas: Doctrine access, solution-approach hierarchy, aspect-interceptor overrides, form types, storefront localization, entity-config seeding, PHPUnit entity stubs, runtime debugging, datagrid pitfalls, jsonb migrations, workflow-data encoding, asset versioning |
 
 ## Installation
 
