@@ -1,55 +1,25 @@
 ---
 name: oro-conventions
 description: >-
-  Practical, opinionated OroCommerce development conventions and hard-won gotchas, reusable
-  across Oro projects. Covers Doctrine/repository access, the solution-approach hierarchy,
-  service-override patterns (aspect interceptor vs Symfony decorator), Symfony form-type
-  registration, storefront localization, entity-config seeding, PHPUnit entity stubs, runtime
-  debugging, custom datagrid/report pitfalls, Postgres jsonb migration coercion, Oro
+  Buckman-specific OroCommerce gotchas and conventions, hard-won from real incidents on this
+  codebase. Covers the solution-approach hierarchy, the aaxis_aspect interceptor pattern for
+  overriding Oro core services, storefront localization traps, this project's entity-config
+  seeding mechanism, PHPUnit entity stubs for entity-extend, runtime debugging via
+  oro:logger:level, custom datagrid/report pitfalls, Postgres jsonb migration coercion, Oro
   workflow-data encoding, and asset-version cache busting. Use this skill WHEN writing or
-  reviewing Oro PHP / YAML / Twig and you want the established pattern instead of guessing —
-  especially before injecting Doctrine, overriding a core service, adding a form type, reading
-  localized values on the storefront, seeding entity config, writing PHPUnit tests for
-  entities, building a custom report grid, creating a jsonb column, or rebuilding assets.
-  Complements oro-workflow (dev-loop commands) and oro-backend-docs (API reference).
+  reviewing Oro PHP / YAML / Twig on this project and you want the established pattern instead of
+  guessing. Complements oro-workflow (dev-loop commands) and oro-backend-docs (API reference).
 ---
 
 # Oro Development Conventions
 
-Distilled, cross-project conventions for OroCommerce work. These are decisions and gotchas that
-cost real debugging time to discover; reach for the documented pattern rather than re-deriving it.
-Examples reference the Aaxis/Buckman bundle family where a project-specific tool is involved —
-substitute your project's equivalent, but the underlying Oro/Symfony behaviour is the same on
-every Oro stack.
+Buckman-specific OroCommerce gotchas that cost real debugging time on this codebase — reach for
+the documented pattern instead of re-deriving it. References the Aaxis/Buckman bundle family
+directly; these are project conventions, not generic Oro/Symfony advice.
 
 ---
 
-## 1. Doctrine access — always via `DoctrineHelper`
-
-Never inject `@doctrine` or its `ManagerRegistry` directly into a service. Inject
-`@oro_entity.doctrine_helper` (`Oro\Bundle\EntityBundle\ORM\DoctrineHelper`) and use its accessors:
-
-- `getEntityManagerForClass(Foo::class)` — replaces `$registry->getManagerForClass(...)`
-- `getEntityRepositoryForClass(Foo::class)` — replaces `$em->getRepository(...)`
-- `getSingleEntityIdentifier($entity)` — single-call id resolution
-
-```php
-use Oro\Bundle\EntityBundle\ORM\DoctrineHelper;
-
-public function __construct(private readonly DoctrineHelper $doctrineHelper) {}
-```
-```yaml
-arguments: ['@oro_entity.doctrine_helper']
-```
-
-`@doctrine` *is* the `ManagerRegistry` service id, so injecting `ManagerRegistry` subverts the
-rule. Prefer ORM/QueryBuilder over raw SQL, and keep DQL/QueryBuilder in repository classes —
-never inline in services, listeners, or commands. Any existing `ManagerRegistry`/`@doctrine`
-usage is a regression; replace it at first touch.
-
----
-
-## 2. Solution-approach hierarchy
+## 1. Solution-approach hierarchy
 
 When solving a form-rendering / option-shaping problem, prefer in this order:
 
@@ -58,16 +28,15 @@ When solving a form-rendering / option-shaping problem, prefer in this order:
 3. **Service decorator** — last resort.
 
 A decorator that strips a form type's `choices`/`configs` options to force a render is a bad
-solution. Example done right: forcing a boolean extend field to render as `CheckboxType` via
-`form.type` in `entity_configs.yml` plus a small type extension calling
-`setDefined(['choices', 'configs'])` — not by decorating the options provider.
+solution — do it instead via `form.type` in `entity_configs.yml` (e.g. forcing a boolean extend
+field to `CheckboxType`) plus a small type extension calling `setDefined(['choices', 'configs'])`.
 
 For overriding an Oro **core service method** (a different domain than form/config), the ranking
-is **aspect interceptor > Symfony decorator** — see §3.
+is **aspect interceptor > Symfony decorator** — see §2.
 
 ---
 
-## 3. Overriding an Oro core service — prefer the aspect interceptor
+## 2. Overriding an Oro core service — prefer the aspect interceptor
 
 When you want to wrap / filter / mutate the behaviour of an Oro core service method, default to
 the project's `aaxis_aspect.interceptor` pattern (Aaxis AspectBundle) before reaching for
@@ -103,29 +72,11 @@ buckman_x.foo_bar_interceptor:
 ```
 
 Test it directly: instantiate the interceptor in PHPUnit, mock `MethodInvocation` to return the
-payload, assert on the output — no container needed. Use a Symfony decorator only for
-interface-only contracts with no concrete-class typehints downstream.
+payload, assert on the output — no container needed.
 
 ---
 
-## 4. Symfony form types — no service entry unless they inject
-
-Do **not** register a `FormType` (or a `Constraint` attribute class) in `services.yml` unless it
-has constructor dependencies. Symfony resolves dependency-less form types by FQCN via
-auto-instantiation; a `form.type`-tagged entry for one is dead weight. Reference it directly by
-FQCN in `form_type:` declarations. Add a service entry only when the type needs `@some_service`
-in its constructor (then tag it `form.type`); only a Validator counterpart of a Constraint needs
-a service when it injects.
-
-**Leaf-type pattern:** when a custom type is just "a base type + a fixed set of constraints",
-make it a leaf — `getParent()` returns the base type (e.g. `TextareaType::class`), no
-`buildForm()`, constraints in `configureOptions()`. The field name belongs to the *outer* form /
-workflow attribute, not inside the custom type. Declaring a same-named sub-field inside the
-custom type creates a redundant compound form.
-
----
-
-## 5. Storefront localization — never `getDefault*()`
+## 3. Storefront localization — never `getDefault*()`
 
 On the storefront (frontend layouts, Twig, JS) never read localized-fallback-value fields via
 `getDefaultName()` / `getDefaultDescription()` / etc. Use the locale-aware accessor:
@@ -147,7 +98,7 @@ may keep `getDefault*()` — admins see the source default row; the rule is stor
 
 ---
 
-## 6. Entity-config seeding — one `entity_configs.yml` per bundle
+## 4. Entity-config seeding — one `entity_configs.yml` per bundle
 
 For seeding entity-config values (form type/options, scopes), use the established
 `AbstractSetEntityConfigs` mechanism (Aaxis EntityExtendBundle) — do not fork a parallel YAML
@@ -160,12 +111,42 @@ with a one-off fixture.
 - For a new entity-config scope schema, declare it in the bundle's
   `Resources/config/oro/entity_config.yml`.
 
-A single global loader fixture walks every bundle for the named file and merges the parsed
-results, so each bundle just contributes its own slice.
+A single global loader fixture merges every bundle's file, so each bundle contributes just its
+own slice.
+
+**Changing config on an EXISTING database (e.g. flipping `dataaudit.auditable`, `form.is_enabled`,
+`importexport.order`) uses this SAME mechanism — NOT a hand-written schema migration.** Do not
+write an `UpdateEntityConfigEntityValueQuery` / `UpdateEntityConfigFieldValueQuery` migration under
+`Migrations/Schema/vX_Y/` for config changes; that is the raw Oro primitive this project has
+already wrapped. Instead:
+
+- `entity_configs.yml` sets config on ANY class, not just `Product`, and at BOTH levels. A
+  top-level class key with scope keys sets entity-level config; a `fields:` block sets field-level
+  config. `AbstractSetEntityConfigs::processClass` treats every top-level key other than `fields`
+  as an entity scope:
+  ```yaml
+  Acme\Bundle\FooBundle\Entity\Bar:        # entity-level scope
+      dataaudit:
+          auditable: true
+      fields:                              # field-level scope
+          name:
+              dataaudit:
+                  auditable: true
+  ```
+- The PHP attribute defaults (`#[Config(defaultValues: …)]` / `#[ConfigField(defaultValues: …)]`)
+  only seed config when an entity/field is FIRST registered — they never update an existing
+  `oro_entity_config` row. So a code-only attribute edit silently no-ops on populated DBs. The
+  repo's pattern is **dual**: keep the attribute default (mirrors Oro core, seeds fresh installs)
+  AND add the same value to `entity_configs.yml` + bump the `SetEntityConfigs` version (applies to
+  existing DBs on `oro:migration:data:load`). Set both.
+- After the fixture runs, clear the cache (`cache:clear --env=prod`) so `ConfigManager`/the audit
+  gate re-reads the updated snapshot. The model classes that consume the config (e.g.
+  `AuditConfigProvider::isAuditableEntity` + `isAuditableField`) read the persisted DB config, not
+  the attributes, at runtime.
 
 ---
 
-## 7. PHPUnit — stub classes for entities, not `createMock`
+## 5. PHPUnit — stub classes for entities, not `createMock`
 
 For Oro entities/models in unit tests, use **Stub classes**, not `createMock()`/`createStub()`.
 Entity-extend weaves accessors (e.g. `Product::getLocalizations()`) onto the class at runtime,
@@ -183,13 +164,13 @@ throws `MethodCannotBeConfiguredException`. Same for final accessors like
 
 ---
 
-## 8. Runtime debugging — logger + `oro:logger:level`, never edit monolog
+## 6. Runtime debugging — logger + `oro:logger:level`, never edit monolog
 
 To trace why a runtime behaviour misfires (precondition denying, voter rejecting, autocomplete
 returning wrong rows):
 
-1. Inject `Psr\Log\LoggerInterface` into the suspect class (real `@logger` in services.yml; pass
-   `new NullLogger()` only in unit tests — do not default to `NullLogger`).
+1. Inject `Psr\Log\LoggerInterface` into the suspect class (real `@logger` in services.yml; use
+   `new NullLogger()` only in unit tests).
 2. Add `$this->logger->debug('ClassName.event', [...inputs/outputs...])` at branching points,
    using stable `ClassName.event` label prefixes so greps stay clean across sessions. Log the
    inputs/outputs of decisions, not whole object graphs.
@@ -204,7 +185,7 @@ returning wrong rows):
 
 ---
 
-## 9. Custom datagrid / report grid pitfalls
+## 7. Custom datagrid / report grid pitfalls
 
 Found the hard way building admin report grids; unit tests pass while the live grid is broken:
 
@@ -231,7 +212,7 @@ oro-backend-docs § Working with Enum Values.
 
 ---
 
-## 10. Postgres `jsonb` migration coercion
+## 8. Postgres `jsonb` migration coercion
 
 Oro's migration diff pipeline (DBAL 3.10 + Oro 7) **drops** the jsonb flag —
 `addColumn('x','json',['customSchemaOptions'=>['jsonb'=>true]])` and the ORM `options:['jsonb'=>true]`
@@ -248,7 +229,7 @@ require jsonb. Pattern that works:
 
 ---
 
-## 11. Oro workflow data is base64(serialize()), not jsonb
+## 9. Oro workflow data is base64(serialize()), not jsonb
 
 `oro_workflow_item.data` is a **text** column owned by Oro. Oro JSON-encodes the envelope, but
 every attribute declared `type: array`/`type: object` is run through
@@ -257,11 +238,11 @@ have **no `type: json`** — arrays are always base64+PHP-serialized at rest. Ap
 this (it reads `$workflowItem->getData()->get(...)` after Oro deserializes), and production never
 SQL-queries it. Do **not** migrate workflow-data attributes to jsonb or override the core
 normalizer; leave round-scoped, never-SQL-queried workflow state on the standard mechanism. Use
-your own jsonb column (§10) only for data you actually need to query in SQL.
+your own jsonb column (§8) only for data you actually need to query in SQL.
 
 ---
 
-## 12. Asset-version cache busting after a build
+## 10. Asset-version cache busting after a build
 
 After rebuilding webpack assets (`oro:assets:build` + `assets:install --symlink`), the
 `?v=<hash>` in `public/build/build_version.txt` does **not** change automatically. Browsers keep

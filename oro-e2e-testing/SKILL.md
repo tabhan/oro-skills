@@ -9,46 +9,51 @@ description: >
   History dialog in any scenario that opens it. Critical safety rule: on a non-isolated shared
   DB never use a full-table-truncating purge tag for real entities (Product/User/Role/...) —
   re-runnability comes from natural-key upsert instead.
-  Complements oro-behat-testing (Behat is deprecated for new work) and oro-workflow.
+  Complements oro-workflow.
 ---
 
 # Oro e2e testing rules
 
-Automated coverage for new work is **Playwright-BDD** (`playwright-bdd`), not Behat (Behat is
-deprecated for new work). The suite runs through the project's e2e harness command against the
-`--env=test` kernel.
+Automated coverage is **Playwright-BDD** (`playwright-bdd`) — Behat is no longer used. The suite
+runs via the project's e2e harness command against the `--env=test` kernel.
+
+This skill covers authoring/running the **automated BDD suite** and its Buckman-specific gotchas
+only. For interactively driving a browser (manual verification, screenshots, ad-hoc debugging,
+storage-state/session management, tracing/video, request mocking, generic selector/locator
+mechanics), use the official `oroinc/ai-dev-platform` `orocommerce-testing` plugin's
+`test-in-browser` / `use-playwright` skills instead of duplicating that here.
 
 ⚠️ **Know your DB topology first.** Many Oro projects point the `test` env at the **same database
 as dev/prod** (check `.env*.test*` for the DSN). When the e2e DB is **shared and non-isolated**
 (no per-scenario transaction rollback, one long-lived browser), test-data hygiene is mandatory and
-destructive purges are dangerous. The rules below assume that worst case; if your project genuinely
-has an isolated/throwaway test DB, the safety caveats relax but the structure still applies.
+destructive purges are dangerous. The rules below assume that worst case; on a genuinely
+isolated/throwaway test DB the safety caveats relax but the structure still applies.
 
 ## The rules
 
-1. **Data fixtures first.** Load new test data with Nelmio **Alice YAML fixtures**, referenced from
-   the feature via a `@fixture-<Bundle>:<file>.yml` tag (e.g.
-   `@fixture-AcmeProductBundle:product_filters.yml`). The harness loads them in the test env before
-   the feature runs. Prefer setting an entity's **native columns/JSON directly in the fixture** over
-   driving runtime side effects — fixtures purge cleanly and are deterministic. Only fall back to a
-   **test-support action** when the state can't be expressed as stored data (e.g. an Oro **workflow
-   transition log**, which needs real transitions to exist; a datagrid export; a reindex through
-   Oro's real delete/duplicate handlers; impersonating a user to read its scope).
+1. **Data fixtures first.** Load new test data with Nelmio **Alice YAML fixtures** via a
+   `@fixture-<Bundle>:<file>.yml` feature tag (e.g. `@fixture-AcmeProductBundle:product_filters.yml`);
+   the harness loads them in the test env before the feature runs. Prefer setting an entity's
+   **native columns/JSON directly in the fixture** over driving runtime side effects — fixtures
+   purge cleanly and are deterministic. Fall back to a **test-support action** only when the state
+   can't be expressed as stored data (e.g. an Oro **workflow transition log**, which needs real
+   transitions to exist; a datagrid export; a reindex through Oro's real delete/duplicate handlers;
+   impersonating a user to read its scope).
 
-   The action pattern (rather than one console command per bundle): each bundle drops an action class
+   The action pattern (replacing one console command per bundle): each bundle drops an action class
    under `Tests/E2e/Action/` implementing a shared `E2eTestActionInterface` (`getName()` /
-   `configure(InputDefinition)` / `execute()`), and registers it as a plain service in
+   `configure(InputDefinition)` / `execute()`), registered as a plain service in
    `Tests/E2e/Resources/config/actions.yml` — **no tag, no `_instanceof`, no per-bundle extension
    wiring**. An extension auto-discovers that one file in every bundle (test env only) and a compiler
    pass tags + indexes the services by `getName()`; a single entry command then runs them by name
    (`bin/console <prefix>:test:action <name> [args] --env=test --no-interaction`). Check the project's
-   TestBundle for the exact command prefix and interface FQCN. (This supersedes the older
+   TestBundle for the exact command prefix and interface FQCN. (Supersedes the older
    `Tests/E2e/Command/*` console-command-per-bundle approach; migrate any such command into an action.)
 
 2. **Always apply a filter when testing a grid.** A shared DB holds many pre-existing rows. Every
    grid scenario must first narrow the grid with a filter — typically a **stable code/SKU prefix the
-   fixture owns** — so assertions about which rows are present/absent are deterministic and the
-   fixture rows are pinned to page 1. Never assert on an unfiltered grid.
+   fixture owns** — so present/absent assertions are deterministic and the fixture rows are pinned
+   to page 1. Never assert on an unfiltered grid.
 
 3. **Purge before AND after each feature — but SAFELY on a shared DB.** Re-runnability comes from the
    loader's **natural-key upsert**: on load it deletes the rows matching each fixture object's unique
@@ -85,12 +90,24 @@ has an isolated/throwaway test DB, the safety caveats relax but the structure st
 - **Resolve env-specific ids via harness helpers, never hardcode** — localization ids via the
   harness's localization map (e.g. `config.localizations[code]`), entity ids via the suite's
   entity-id resolver. Hardcoded ids break across environments.
-- **Run one feature** with the harness's debug flag + a grep on its tag, so you restrict the run to
-  the impacted feature (debug mode usually means: stop on first failure, skip already-passed
-  scenarios). Check the project's harness for the exact flag names.
+- **Iterate with the debug flag, then confirm with a full non-debug run.** Chase a failure with the
+  harness's debug flag + a grep on its tag to restrict the run to the impacted feature (debug mode
+  usually means: stop on first failure, skip already-passed scenarios — check the project's harness
+  for the exact flag names). Debug mode runs a *reduced, stop-on-first-fail* set, so its concurrency
+  mix differs from a real run and can hide a cross-feature parallel race. **Always finish with a full
+  run with the debug flag OFF** — a feature is only fixed once it is green in the full parallel suite.
 - **After adding/removing a test action (or any test service) or changing a service arg, `rm -rf
   var/cache/test`** — the test kernel caches a compiled container under a hash, and a stale one will
   throw on the changed service signature (and won't pick up a newly auto-discovered `actions.yml`).
+- **Never hardcode `timeout: <ms>` wait ceilings in steps — import a shared const.** The Aaxis test
+  bundle exposes named timeout budgets at `support/timeouts.ts` (import via the `@e2e/timeouts`
+  alias): `VISIBLE_TIMEOUT` (15s, the default element/assertion wait), `SETTLE_TIMEOUT` (20s, grid
+  AJAX / ES aggregation lag), `JOB_TIMEOUT` (40s, reindex/mass-action jobs), `MEDIUM_TIMEOUT` (10s),
+  `SHORT_TIMEOUT` (5s), `PROBE_TIMEOUT` (8s, optional `.catch()`-guarded "did it appear?" looks),
+  `BRIEF_TIMEOUT` (2s, fast negative probes). Pick by intent, not raw number, and add a new named
+  const there rather than reintroducing a literal. (Genuinely one-off waits — e.g. a 60s large-file
+  upload — may stay inline with a comment. These are *ceilings* for web-first waits; a fixed
+  `waitForTimeout` sleep is a separate anti-pattern to avoid, not a value to centralize.)
 
 ## Debugging: async audit / message queue (Change History timeouts)
 
@@ -99,7 +116,7 @@ process before the audit row exists and the **Change History** grid shows it. Th
 **env-specific**: the `test` env typically uses the **DBAL** transport (`message_queue_transport_dsn: 'dbal:'`
 → the `oro_message_queue` table), while the `prod` env (the one FPM serves the browser from) usually
 uses **RabbitMQ** (`ORO_MQ_DSN=amqp://…`). So a **browser-driven** save enqueues on RabbitMQ, not
-the DBAL table. A scenario must drain the broker its mutation actually used before asserting.
+the DBAL table — drain the broker the mutation actually used before asserting.
 
 ⚠️ **Poison audit messages on a shared dev broker.** In dev **no consumer runs**, so the prod
 RabbitMQ queue (`oro.default`) accumulates a backlog. Worse, it fills with **poison messages**: an
@@ -107,8 +124,8 @@ audit for a `LocalizedFallbackValue` whose `Localization` an earlier feature cre
 Processing it walks `ChangeSetToAuditFieldsConverter → EntityNameProvider →
 LocalizedFallbackValueNameProvider->getName() → Localization->getName()` on a missing entity →
 `EntityNotFoundException` → **the consumer crashes**. A harness consume step that swallows the error
-then silently dies before reaching the scenario's own fresh audit message → the audit row never
-appears → the Change History grid stays empty.
+silently dies before reaching the scenario's own fresh audit message → the audit row never appears →
+the Change History grid stays empty.
 
 **Symptom signature:** the step times out on `locator.waitFor` for `.ui-dialog .grid-container` to
 be **visible** (the grid mounts but stays *hidden* because it has **zero rows**) — NOT the step's own
@@ -117,21 +134,36 @@ is an **async/broker** problem, not a selector, ACL, or `dataaudit.auditable` co
 the field/entity are auditable in the live `oro_entity_config[_field]` before suspecting config; if
 they are, look at the queue.
 
-**Fix to unblock a red resume run:** purge the broker queue, then resume —
-`rabbitmqctl purge_queue oro.default` (run it in the RabbitMQ container; verify with
-`rabbitmqctl list_queues name messages messages_ready messages_unacknowledged` → all 0. The plain
-`messages` column can show a **stale cached count**; trust `messages_ready`). Because a debug/resume
-run skips already-passed features, the poison-producing localization features don't re-run, so the
-queue stays clean and the scenario's own audit processes. This is a **pure environment fix — no code
-change**. The durable fix is to run a persistent consumer (so the broker never backs up) and/or have
-localization-churning features drain their queue before deleting the localization.
+**In-harness durable fix (implemented):** each feature's `AfterAll` runs `drainProdQueue` — a
+**single** `oro:message-queue:consume --time-limit="+12 seconds"` pass against the prod env, serving
+as both settle window and drain. Oro flushes buffered audit messages on `kernel.terminate` (after
+the HTTP response returns), so a benign audit can arrive on the broker tens of seconds after the
+scenario step finishes; the consumer holds a **live subscription for the whole window** (its receive
+loop keeps polling until the time limit), so a message landing mid-window is still received and
+processed in the same pass — no separate wait needed. **Poison is detected by matching
+`EntityNotFoundException` in the captured stdout+stderr** (not by exit code — the consumer also
+exits non-zero on its normal time/message limit; a clean expiry prints only `"The limit time has
+passed."`, never that exception). Only when poison is detected does the `AfterAll` call
+`purgeProdQueue()` (`rabbitmqctl purge_queue oro.default`) and throw — the feature **fails**. Raw
+queue depth is never a fail signal. There is **no purge-before guard** — a raw-depth purge before
+consuming would race concurrent workers on the shared broker. `prodQueueDepth()` is a
+manual-diagnostic helper only — the teardown no longer calls it. To clear a pre-existing backlog by
+hand before a run: `docker exec buckman-rabbitmq-1 rabbitmqctl purge_queue oro.default` (verify with
+`rabbitmqctl list_queues name messages_ready` → 0).
 
 ## Parallelism & shared-state flakiness
 
 The harness typically runs a **serial lane** (`@serial` scenarios, one worker) first, then a
-**parallel lane** (everything else) across N workers. Two whole classes of failure come from state
-shared across those workers — both look like ordinary assertion failures but are really isolation /
+**parallel lane** (everything else) across N workers. Three whole classes of failure come from state
+shared across those workers — all look like ordinary assertion failures but are really isolation /
 timing bugs, so **fixing them per-feature with sleeps or extra cleanup usually makes them worse.**
+
+**Prefer parallel; `@serial` is the fallback, not the default.** Parallel is what keeps the suite
+fast — reach for the parallel-safe fix first (key-scoped upserting fixtures; idempotent, narrowly
+scoped seed/purge that deletes only the feature's own rows; a filter on every grid/list assertion),
+and tag a feature `@serial` only when it unavoidably reads or writes **global singleton state** (the
+one web-catalog tree, the root content node, the global message queue, a system-config value) that
+no key-scoping can isolate.
 
 **1. The shared-session trap (CDP mode).** Browser isolation depends on the browser target:
 
@@ -170,16 +202,40 @@ product or **facet** presence (or *absence*, e.g. a deleted "ghost" clone) on a 
 same way the PDP / storefront-search steps already do. A single-load assertion right after a reindex
 is inherently flaky — poll, don't sleep-once.
 
+**3. Cross-feature shared-state race — passes in isolation, fails only in the full parallel run.**
+The signature: a scenario is green under `--grep` / the serial lane / the debug flag's reduced set,
+but fails in a full parallel run, and the failure looks like the data simply **isn't there at read
+time** — a seeded storefront URL returns **404** (its slug was momentarily detached), an admin grid
+shows **zero rows** / a seeded row is missing, or a value the feature created is gone mid-scenario.
+This is almost never a selector/ACL/timing bug in the failing feature: while feature A asserts, a
+*different* feature B on another worker mutates the same shared state — its `BeforeAll`/`AfterAll`
+purge deletes A's rows, its re-seed upserts (delete-then-insert) the exact row A is reading, or its
+queue drain runs the web-catalog `DirectUrlProcessor`, which regenerates and briefly detaches the
+slug A's URL resolves through. A fixture-load file lock only serializes *loads* — it does not protect
+a read in A from a write in B between loads.
+
+**Diagnose:** (1) re-run the feature alone (`--grep "<title>"`, serial lane) — if it passes alone but
+fails in the full run, it's a parallel race, not a feature bug; (2) open the HTML report trace for the
+failing step and read the **actual HTTP response** (a `404` document, or a datagrid XHR with
+`totalRecords: 0`) to confirm the data was absent, not mis-located.
+**Fix:** first try the parallel-safe options (key-scope + upsert the fixture; make seed/purge
+idempotent and own-rows-only). If the feature genuinely reads/writes global singleton state, tag the
+**feature** `@serial` so it runs on the single serial worker, before the parallel lane, with nothing
+mutating shared state underneath it.
+
 ## Authoring checklist
 
-- [ ] New data is in an Alice `@fixture-<Bundle>:<file>.yml` (native columns/JSON set directly where possible); runtime-only state goes through a `Tests/E2e/Action/` action (one `*:test:action` entry command), not a per-bundle console command.
-- [ ] Re-runnable via natural-key upsert (every fixture entity has a unique key); a truncating "fresh" purge tag is used ONLY for keyless test-only entities, NEVER for Product/User/Role/etc. on a shared DB.
+- [ ] New data lives in an Alice `@fixture-<Bundle>:<file>.yml` (native columns/JSON set directly where possible); runtime-only state goes through a `Tests/E2e/Action/` action, not a per-bundle console command.
+- [ ] Every fixture entity has a natural/unique key (re-runnable via upsert); a truncating "fresh" purge tag is used ONLY for keyless test-only entities, NEVER for Product/User/Role/etc. on a shared DB.
 - [ ] Every grid scenario applies a filter before asserting rows.
-- [ ] Feature ends logged out (and any restricted-user login signs out).
+- [ ] Feature ends logged out (any restricted-user login signs back out).
 - [ ] Any scenario that opens the Change History dialog closes it with an explicit, idempotent step.
-- [ ] Change History / audit assertions drain the correct broker (RabbitMQ for browser saves, DBAL for test-env actions); a Change-History timeout on a hidden empty grid means no audit was recorded — purge the broker (poison messages), don't chase selectors/config.
-- [ ] Parallel runs use an **isolated-context** browser (`chromium`), not a shared CDP jar; no `clearCookies`/anonymous-visitor steps sprinkled into parallel-lane features; impersonation/preview steps drop the session, not just close the tab.
-- [ ] Every storefront list/search/facet assertion after a reindex **retries/reloads** until the expected state appears (ES is eventually consistent) — never a single load + fixed sleep.
+- [ ] Change History / audit assertions account for the async broker (RabbitMQ for browser saves, DBAL for test-env actions) — see the Debugging section for the `AfterAll` drain-and-poison-detection contract; a timeout on a hidden empty grid means no audit was recorded, not a selector/config bug.
+- [ ] Parallel runs use an **isolated-context** browser (`chromium`), not a shared CDP jar; no stray `clearCookies`/anonymous-visitor steps in parallel-lane features; impersonation/preview steps drop the session, not just close the tab.
+- [ ] Storefront list/search/facet assertions after a reindex **retry/reload** until the expected state appears (ES is eventually consistent) — never a single load + fixed sleep.
+- [ ] Kept parallel-safe where possible (key-scoped upserting fixtures; idempotent own-rows-only seed/purge); tagged `@serial` ONLY for unavoidable global-singleton state. A scenario that passes alone but fails in the full parallel run is a cross-feature race — fix the sharing or route to the serial lane, don't add sleeps.
+- [ ] Confirmed with a full **non-debug** run (the debug flag's reduced set can hide a parallel race).
 - [ ] Elements located by structural hooks, not labels; env-specific ids resolved via harness helpers, not hardcoded.
-- [ ] Verified the filtered result set is correct (which rows remain / are excluded), not just that the page loads.
-- [ ] After changing a test command/service arg, cleared `var/cache/test`.
+- [ ] Wait ceilings use a named const from `@e2e/timeouts` (`VISIBLE_TIMEOUT`, `SETTLE_TIMEOUT`, …), not a hardcoded `timeout: <ms>` literal.
+- [ ] Verified the filtered result set's actual rows (present/excluded), not just that the page loads.
+- [ ] Cleared `var/cache/test` after changing a test command/service arg.

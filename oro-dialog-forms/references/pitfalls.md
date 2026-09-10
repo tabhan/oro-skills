@@ -120,31 +120,14 @@ uses the same form, its URL will include the segment correctly.
 
 ## Route cache stale after rename
 
-**Symptom:** You renamed a route. Server `request.log` shows 404 or 500 for
-the old name; `frontend_routes.json` still has the old.
+**Symptom:** You renamed a dialog-form route. Server `request.log` shows 404
+or 500 for the old name; `frontend_routes.json` (consumed by the JS trigger's
+`routing.generate()`) still has the old name.
 
-**Fix:**
+**Fix:** after the usual `cache:clear`, re-dump the JS route map:
 ```bash
-php bin/console cache:clear
 php bin/console fos:js-routing:dump --target=public/media/js/frontend_routes.json
 ```
 
 Also re-dump routes whenever you add a parameter to an existing route that
 the frontend calls via `routing.generate()`.
-
-## Container has stale service definitions after refactor
-
-**Symptom:** `Class "…\Routing\LocalizedRouter" not found` even though the file
-was deleted. Oro's `var/cache/prod/ContainerXxx/*.php` still references it.
-
-**Fix:** `rm -rf var/cache/prod && php bin/console cache:clear`. The soft
-`cache:clear` sometimes leaves stale compiled container fragments.
-
-Better long-term: put the project in dev mode locally so most changes pick
-up without manual cache clears:
-
-```dotenv
-# .env-app.local (or equivalent)
-ORO_ENV=dev
-ORO_DEBUG=1
-```

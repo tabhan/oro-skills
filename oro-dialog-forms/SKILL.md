@@ -27,7 +27,7 @@ description: >
 
 # OroCommerce Dialog Form Knowledge Base
 
-How to build a form in OroCommerce frontend that works correctly in both of:
+A form must work correctly in both of:
 
 1. **Dialog mode** — a trigger button opens a modal/drawer, the form loads via
    AJAX into `DialogWidget`, submits via AJAX, closes the dialog on success.
@@ -35,12 +35,10 @@ How to build a form in OroCommerce frontend that works correctly in both of:
    `ContentWidget`; a normal POST submit should save the data, flash a success
    message, and redirect back to the embed page.
 
-The two modes share one controller + one handler + one form template. The
-correctness depends on ~6 small details that interact; getting any one of them
-wrong produces confusing symptoms (page refresh, "Invalid server response",
-redirect to an admin-only URL, missing submit button, etc).
-
-**Consult documentation first, then write code.**
+One controller + one handler + one form template serve both modes.
+Correctness depends on ~6 small details that interact; getting any one of
+them wrong produces confusing symptoms (page refresh, "Invalid server
+response", redirect to an admin-only URL, missing submit button, etc).
 
 ---
 
@@ -54,41 +52,33 @@ redirect to an admin-only URL, missing submit button, etc).
 | Layout YAML + `_widget_content_widget` block override + `widget-form-component` | [references/layout.md](references/layout.md) |
 | Form template: `form-dialog` class, `.widget-actions`, `input_action` hidden field | [references/form-template.md](references/form-template.md) |
 | JS trigger: `UI.renderWidgetAttributes({type: 'dialog', ...})` | [references/javascript-trigger.md](references/javascript-trigger.md) |
-| Known pitfalls and how to diagnose them | [references/pitfalls.md](references/pitfalls.md) |
+| Known pitfalls and how to diagnose them (dialog/widget-specific; generic cache-clear advice trimmed — see the official plugin's backend.md) | [references/pitfalls.md](references/pitfalls.md) |
 
 ---
 
 ## Canonical end-to-end flow
 
-```
-[Trigger button]                       [Controller]                 [FormHandler]         [UpdateHandlerFacade]
-UI.renderWidgetAttributes  ──GET──▶  #[Route /…/{widgetName}]   ◀───calls──────           calls handler
-  (type: dialog)                     #[Layout] + update()           process():
-                                                                     validate, persist,
-                                                                     dispatch MQ
+**Dialog mode:**
+- Trigger button's `UI.renderWidgetAttributes({type: 'dialog', ...})` fires a
+  GET at the controller's `#[Route /…/{widgetName}]` + `#[Layout]` action,
+  which calls `FormHandler.process()` (validate, persist, dispatch MQ) via
+  `UpdateHandlerFacade`.
+- Response HTML is wrapped in `<div class="widget-content"
+  data-page-component-module="orofrontend/js/app/components/widget-form-component"
+  data-page-component-options="{_wid,savedId,message}">`.
+- `DialogWidget` opens that form. Submitting inside it POSTs with `_wid` in
+  the body to the same controller/handler, which returns HTML with `savedId`
+  populated.
+- `widget-form-component` sees `savedId` → flashes success + closes the
+  dialog.
 
-          ◀── HTML wrapped in <div class="widget-content"              returns array with
-              data-page-component-module=                              savedId when _wid
-              "orofrontend/js/app/components/widget-form-component"    set; RedirectResponse
-              data-page-component-options="{_wid,savedId,message}">    otherwise.
-
-[DialogWidget opens form]
-  user submits inside dialog
-      ──POST with _wid in body──▶ same controller ──▶ handler.process() ──▶ array{savedId:N}
-          ◀── HTML with savedId populated ───
-  widget-form-component sees savedId → flashes success + closes dialog
-```
-
-Non-dialog flow (content-widget embed on a landing page):
-
-```
-[Form embedded on /us-en/landing-page]
-  user submits without _wid
-      ──POST to /us-en/cms/…─▶ controller ─▶ handler ─▶ facade.update()
-          returns RedirectResponse (reads input_action JSON hidden field)
-                                         └── {redirectUrl: "/us-en/landing-page"}
-  browser follows 302 back to landing page, flash message shown
-```
+**Non-dialog flow** (content-widget embed on a landing page, e.g.
+`/us-en/landing-page`):
+- User submits without `_wid` → same controller → handler →
+  `facade.update()` returns a `RedirectResponse` built from the
+  `input_action` JSON hidden field (`{redirectUrl: "/us-en/landing-page"}`).
+- Browser follows the 302 back to the landing page; flash message shown
+  there.
 
 ---
 

@@ -8,40 +8,32 @@ Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills fo
 |-------|-------------|
 | [oro-backend-docs](oro-backend-docs/) | OroCommerce backend API & configuration reference (entities, services, ACL, datagrids, API, MQ, migrations) |
 | [oro-frontend-skills](oro-frontend-skills/) | OroCommerce frontend reference (page components, app modules, Twig, SCSS/CSS architecture, JS patterns) |
-| [oro-behat-testing](oro-behat-testing/) | Writing, debugging, and optimizing Behat acceptance tests for OroCommerce |
+| [oro-e2e-testing](oro-e2e-testing/) | Playwright-BDD e2e authoring rules for OroCommerce/OroPlatform (Alice fixtures, grid filters, purge/re-runnability, shared-DB safety) |
 | [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
 | [oro-workflow](oro-workflow/) | Dev-loop conventions: shell aliases, cache invalidation strategy, migration naming, service overrides, PHPUnit stubs, system-config groups |
 | [oro-conventions](oro-conventions/) | Opinionated cross-project Oro conventions & gotchas: Doctrine access, solution-approach hierarchy, aspect-interceptor overrides, form types, storefront localization, entity-config seeding, PHPUnit entity stubs, runtime debugging, datagrid pitfalls, jsonb migrations, workflow-data encoding, asset versioning |
 
 ## Installation
 
-### 1. Clone or download
+The repo checkout and the installed skills are kept separate: `install.sh` never edits this repo's content, it only manages symlinks under `~/.claude/skills` that point back at whichever checkout you ran it from.
+
+### 1. Clone
 
 ```bash
-git clone https://github.com/tabhan/oro-skills.git
+git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills
 ```
 
-### 2. Symlink skills into Claude Code's skills directory
+### 2. Install
 
 ```bash
-# Create the skills directory if it doesn't exist
-mkdir -p ~/.claude/skills
-
-# Symlink individual skills
-ln -s /path/to/oro-skills/oro-behat-testing ~/.claude/skills/oro-behat-testing
+/opt/projects/oro-skills/install.sh
 ```
 
-Or to install all skills at once:
-
-```bash
-for skill in /path/to/oro-skills/oro-*/; do
-  ln -sf "$skill" ~/.claude/skills/$(basename "$skill")
-done
-```
+This symlinks every `oro-*/` skill directory into `~/.claude/skills/`. Re-running it later also `git pull`s the checkout first (pass `--no-update` to skip that). To remove the symlinks: `install.sh --uninstall`.
 
 ### 3. Verify
 
-Start a new Claude Code session. The skill should appear in the available skills list automatically. You can verify by asking Claude Code to write a Behat test -- it will consult the skill's documentation.
+Start a new Claude Code session. The skill should appear in the available skills list automatically. You can verify by asking Claude Code to write a Playwright-BDD e2e test -- it will consult the skill's documentation.
 
 ## Skill Structure
 
@@ -66,7 +58,7 @@ skill-name/
 1. Create a new directory: `oro-<topic>/`
 2. Add `SKILL.md` with frontmatter and document index
 3. Add reference docs in `references/`
-4. Symlink into `~/.claude/skills/`
+4. Re-run `install.sh` to pick it up
 
 ## License
 
