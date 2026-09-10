@@ -2,16 +2,18 @@
 
 Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills for OroCommerce development. Each skill is a self-contained knowledge base that Claude Code consults automatically when working on relevant tasks.
 
+**Why so little content:** this repo used to carry a near-complete mirror of generic Oro/OroCommerce documentation. As of 2026-09-10 that generic material was removed — it duplicated the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite's own reference docs, which `install.sh` now installs alongside these skills (see Installation). What's left here is only content tied to a real incident/gotcha hit on this project, that the official plugin doesn't cover.
+
 ## Available Skills
 
 | Skill | Description |
 |-------|-------------|
-| [oro-backend-docs](oro-backend-docs/) | OroCommerce backend API & configuration reference (entities, services, ACL, datagrids, API, MQ, migrations) |
-| [oro-frontend-skills](oro-frontend-skills/) | OroCommerce frontend reference (page components, app modules, Twig, SCSS/CSS architecture, JS patterns) |
+| [oro-backend-docs](oro-backend-docs/) | Buckman-specific backend gotchas (entity-extend schema drift, serialized enum-extend storage) not covered by the official plugin |
+| [oro-frontend-skills](oro-frontend-skills/) | Reserved for Buckman-specific frontend incidents; currently empty — see the official plugin for generic frontend knowledge |
 | [oro-e2e-testing](oro-e2e-testing/) | Playwright-BDD e2e authoring rules for OroCommerce/OroPlatform (Alice fixtures, grid filters, purge/re-runnability, shared-DB safety) |
 | [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
-| [oro-workflow](oro-workflow/) | Dev-loop conventions: shell aliases, cache invalidation strategy, migration naming, service overrides, PHPUnit stubs, system-config groups |
-| [oro-conventions](oro-conventions/) | Opinionated cross-project Oro conventions & gotchas: Doctrine access, solution-approach hierarchy, aspect-interceptor overrides, form types, storefront localization, entity-config seeding, PHPUnit entity stubs, runtime debugging, datagrid pitfalls, jsonb migrations, workflow-data encoding, asset versioning |
+| [oro-workflow](oro-workflow/) | Dev-loop conventions specific to this project: shell aliases, cache invalidation, service overrides, system-config groups |
+| [oro-conventions](oro-conventions/) | Buckman-specific Oro conventions & gotchas: aspect-interceptor overrides, storefront localization traps, entity-config seeding, PHPUnit entity stubs, datagrid pitfalls, jsonb migrations, workflow-data encoding, asset versioning |
 
 ## Installation
 
@@ -42,6 +44,8 @@ The token is only used for the clone itself (passed as a one-off `git -c` header
 ```
 
 This symlinks every `oro-*/` skill directory into `~/.claude/skills/`. Re-running it later also `git pull`s the checkout first (pass `--no-update` to skip that). To remove the symlinks: `install.sh --uninstall`.
+
+This repo dropped its generic Oro/OroCommerce reference content (see "Why so little content" below) in favor of the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite. So by default `install.sh` also registers that marketplace and installs `orocommerce-development`, `orocommerce-review`, `orocommerce-testing`, and `orocommerce-maintenance` via the `claude plugin` CLI. Skip that with `--no-official-plugins`, or override the list with `ORO_SKILLS_OFFICIAL_PLUGINS="orocommerce-development orocommerce-review" ./install.sh`. `orocommerce-orchestrator` is deliberately not installed by default — it duplicates the plan→build→review→verify flow some projects already run via the `ai-sdlc-c1` plugin; install it yourself if a project actually wants it.
 
 ### 3. Verify
 

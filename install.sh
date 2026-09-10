@@ -20,12 +20,22 @@
 # Updating later (SSH checkout): just re-run install.sh, no token needed.
 # Updating later (HTTPS/token checkout): the token isn't stored in .git/config,
 # so pass it again on update: ORO_SKILLS_TOKEN=<token> ./install.sh
+#
+# This repo intentionally dropped its generic Oro/OroCommerce reference content
+# in favor of the official oroinc/ai-dev-platform plugin suite (see README) --
+# so by default this script also registers that marketplace and installs the
+# official plugins covering the knowledge this repo used to duplicate.
+#   ./install.sh --no-official-plugins   # skip that, oro-skills symlinks only
+#   ORO_SKILLS_OFFICIAL_PLUGINS="orocommerce-development orocommerce-review" ./install.sh
+#     (override the default plugin list; orocommerce-orchestrator is NOT installed
+#     by default since it duplicates the ai-sdlc-c1 flow some projects already use)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DEST="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
 TOKEN="${ORO_SKILLS_TOKEN:-${GITHUB_TOKEN:-}}"
+OFFICIAL_PLUGINS="${ORO_SKILLS_OFFICIAL_PLUGINS:-orocommerce-development orocommerce-review orocommerce-testing orocommerce-maintenance}"
 
 git_auth_args=()
 if [ -n "$TOKEN" ]; then
@@ -36,10 +46,12 @@ fi
 
 UPDATE=1
 UNINSTALL=0
+INSTALL_OFFICIAL=1
 for arg in "$@"; do
   case "$arg" in
     --no-update) UPDATE=0 ;;
     --uninstall) UNINSTALL=1 ;;
+    --no-official-plugins) INSTALL_OFFICIAL=0 ;;
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -77,4 +89,18 @@ for skill in "$SCRIPT_DIR"/oro-*/; do
   echo "  $name -> $skill"
 done
 
-echo "Done. Start a new Claude Code session to pick up the skills."
+if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
+  if command -v claude >/dev/null 2>&1; then
+    echo "Registering oroinc/ai-dev-platform marketplace"
+    claude plugin marketplace add oroinc/ai-dev-platform
+    for plugin in $OFFICIAL_PLUGINS; do
+      echo "Installing $plugin@ai-dev-platform"
+      claude plugin install "${plugin}@ai-dev-platform" -y
+    done
+  else
+    echo "  (claude CLI not found on PATH -- skipping official oroinc/ai-dev-platform plugin install." >&2
+    echo "   Install it yourself later: /plugin marketplace add oroinc/ai-dev-platform, then /plugin install <name>@ai-dev-platform)" >&2
+  fi
+fi
+
+echo "Done. Start a new Claude Code session to pick up the skills and plugins."
