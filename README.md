@@ -19,9 +19,21 @@ The repo checkout and the installed skills are kept separate: `install.sh` never
 
 ### 1. Clone
 
+With SSH access to this repo:
+
 ```bash
 git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills
 ```
+
+Without SSH access — using a read-only HTTPS token from the repo owner instead:
+
+```bash
+ORO_SKILLS_TOKEN=<token> ./bootstrap.sh /opt/projects/oro-skills   # if you already have this file
+# or, one-liner without a prior checkout:
+ORO_SKILLS_TOKEN=<token> bash -c "$(curl -fsSL -H "Authorization: Basic $(printf 'x-access-token:%s' "$ORO_SKILLS_TOKEN" | base64)" https://raw.githubusercontent.com/tabhan/oro-skills/main/bootstrap.sh)" -- /opt/projects/oro-skills
+```
+
+The token is only used for the clone itself (passed as a one-off `git -c` header) — it is never written into `.git/config`. Keep it and pass it again for future updates (`ORO_SKILLS_TOKEN=<token> install.sh`); `install.sh` warns if it detects an HTTPS remote and no token is set.
 
 ### 2. Install
 
