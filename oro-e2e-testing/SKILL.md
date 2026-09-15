@@ -245,10 +245,33 @@ a read in A from a write in B between loads.
 fails in the full run, it's a parallel race, not a feature bug; (2) open the HTML report trace for the
 failing step and read the **actual HTTP response** (a `404` document, or a datagrid XHR with
 `totalRecords: 0`) to confirm the data was absent, not mis-located.
-**Fix:** first try the parallel-safe options (key-scope + upsert the fixture; make seed/purge
-idempotent and own-rows-only). If the feature genuinely reads/writes global singleton state, tag the
-**feature** `@serial` so it runs on the single serial worker, before the parallel lane, with nothing
-mutating shared state underneath it.
+**Fix:** try the parallel-safe options first, roughly in this order, before reaching for `@serial`:
+1. Key-scope + upsert the fixture (worker-scoped natural key, re-loadable without a purge).
+2. Make seed/purge idempotent and own-rows-only (never a full-table/global sweep).
+3. **Simulate the effect via the DOM/network layer instead of mutating shared DB state.** When the
+   thing under test is really "what does the storefront render when X is absent/disabled" and X is a
+   global singleton (a fixed-alias content block, a system-config flag with no per-request override),
+   don't toggle the real row — intercept the response instead (`page.route()` to strip the marker
+   attribute/element the real disabled-state would omit, or `page.addInitScript()` to remove it
+   client-side) and assert the same DOM contract the disabled state produces. This reproduces the
+   effect other workers would see as "disabled" without ever writing to the shared row. Only worth the
+   residual gap (it stops covering the *toggle write path itself* — keep that one write-path
+   assertion, if it must exist, in a PHP/functional test instead) when no parallel-safe write exists.
+4. Only if none of the above apply — the feature genuinely reads/writes global singleton state (the
+   one web-catalog tree, the root content node, the global message queue, a system-config value, a
+   whole-table migration/repair action, a globally-keyed enum option with no per-worker dimension) —
+   tag the **feature** `@serial` so it runs on the single serial worker, before the parallel lane, with
+   nothing mutating shared state underneath it. Confirm it's actually unavoidable by naming the
+   specific mechanism (quote the query/action), not by copy-pasting a neighboring feature's tag.
+
+**Shared-fixture purge hazard.** Before adding a `BeforeAll`/`AfterAll` purge to a feature's steps
+file, grep the fixture filename across every `.feature` file — if more than one feature loads the
+same `@fixture-<Bundle>:<file>.yml`, do **not** add a purge hook scoped to just one of them. The
+loader caches loaded spec-sets per worker (`loadedKeys` in `hooks.ts`) and skips reload on a cache
+hit; purging the shared rows without invalidating that cache leaves the *next* feature sharing the
+fixture believing it's still loaded, so its Background silently finds the rows gone. Either rely on
+the fixture's own natural-key upsert (no purge needed) or, if a genuine per-feature purge is required,
+first confirm the fixture is feature-exclusive.
 
 ## Authoring checklist
 
