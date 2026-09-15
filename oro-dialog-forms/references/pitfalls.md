@@ -79,9 +79,11 @@ is redirected to `/admin/…/view/123` (entity view route) and either sees
 404 or an ACL error.
 
 **Root cause:** `UpdateHandlerFacade::constructResponse()` called
-`Router::redirect($entity)`, which without `input_action` falls back to
-`$request->getUri()`. Except in some wiring it calls the entity's configured
-`routeView` — which is admin-only.
+`Router::redirect($entity)`. With no `input_action` in the request it returns
+`$request->getUri()`; with one, it uses that payload's `redirectUrl` or generates
+the `route` it names. Oro's default save-and-close button supplies an `input_action`
+carrying an admin `route`, and that generated admin URL is what the storefront user
+lands on. `Router::redirect()` never reads the entity's `routeView`.
 
 **Fix:** Emit an `input_action` hidden field from the form template with
 `{"redirectUrl":"<localized page URL>"}`. See `form-template.md` §3.

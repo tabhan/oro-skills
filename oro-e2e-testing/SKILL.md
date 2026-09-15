@@ -23,6 +23,28 @@ storage-state/session management, tracing/video, request mocking, generic select
 mechanics), use the official `oroinc/ai-dev-platform` `orocommerce-testing` plugin's
 `test-in-browser` / `use-playwright` skills instead of duplicating that here.
 
+## Where the harness itself is documented — read it, don't guess
+
+This skill holds the *judgment* calls (what to tag, what to purge, what never to truncate). The
+*mechanics* of the harness live next to its code and are the authority whenever the two could
+disagree — flags, config keys, and setup steps change with the code, and the copy that ships beside
+the code is the one that gets updated:
+
+| Document | Owns |
+|---|---|
+| `src/Aaxis/Bundle/TestBundle/Resources/e2e/README.md` | The harness: `aaxis:test:e2e` and its `-d` loop, `aaxis:test:action` test-support actions, `@fixture-fresh` purge semantics, worker-scoped fixture data, Elasticsearch index + async-audit MQ drain, the parallelism model and `playwright.config.ts` projects, CDP attach, reporters, PHP-FPM tuning |
+| `src/Aaxis/Bundle/TestBundle/README.md` | The bundle: Behat helpers, `UpsertAwareFixtureLoader`, `WorkerNamespace`, test-only commands and services |
+| `src/Aaxis/Bundle/TestBundle/Resources/bin/README.md` | The `behat-each` runner |
+
+Read the relevant section BEFORE changing harness configuration, adding a test-support action, or
+reasoning about why a lane behaves the way it does. Never restate a flag or config value from
+memory — quote it from the README.
+
+**This harness is bespoke.** Generic `playwright test` / playwright-cli references describe a
+different setup: they do not know `aaxis:test:e2e`, the fixture tags, or the lane structure. If the
+paths above do not exist in the current project, it uses a different harness — only the authoring
+rules below apply, and the harness mechanics must be re-derived from that project's own config.
+
 ⚠️ **Know your DB topology first.** Many Oro projects point the `test` env at the **same database
 as dev/prod** (check `.env*.test*` for the DSN). When the e2e DB is **shared and non-isolated**
 (no per-scenario transaction rollback, one long-lived browser), test-data hygiene is mandatory and
@@ -67,6 +89,9 @@ isolated/throwaway test DB the safety caveats relax but the structure still appl
    A truncating tag is only safe for **test-only entities that have no natural key** (autoincrement-id
    only) and whose table you genuinely want emptied. For a clean post-feature state of real entities,
    delete only the fixture's own rows by key — never truncate.
+   Even in that sanctioned case, **`@fixture-fresh` MUST be paired with `@serial`** — the harness
+   throws on an unpaired one (`support/hooks.ts`), because emptying whole tables is only safe while
+   no other worker is running. An unpaired tag aborts the feature at runtime, it does not degrade.
 
 4. **Log out after each feature.** End every feature signed out so the next feature (and any live
    browser the developer is watching) starts from a clean, unauthenticated session — never inherit a
@@ -153,10 +178,12 @@ hand before a run: `docker exec buckman-rabbitmq-1 rabbitmqctl purge_queue oro.d
 
 ## Parallelism & shared-state flakiness
 
-The harness typically runs a **serial lane** (`@serial` scenarios, one worker) first, then a
-**parallel lane** (everything else) across N workers. Three whole classes of failure come from state
-shared across those workers — all look like ordinary assertion failures but are really isolation /
-timing bugs, so **fixing them per-feature with sleeps or extra cleanup usually makes them worse.**
+The harness runs a **serial lane** (`@serial` scenarios, one worker) before a **parallel lane**
+(everything else) — the exact project definitions, worker counts, and fixture-load locking are in
+the harness README's "Parallelism model"; read them there rather than assuming. What matters here is
+the consequence: three whole classes of failure come from state shared across those workers — all
+look like ordinary assertion failures but are really isolation / timing bugs, so **fixing them
+per-feature with sleeps or extra cleanup usually makes them worse.**
 
 **Prefer parallel; `@serial` is the fallback, not the default.** Parallel is what keeps the suite
 fast — reach for the parallel-safe fix first (key-scoped upserting fixtures; idempotent, narrowly

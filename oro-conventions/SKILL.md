@@ -2,13 +2,10 @@
 name: oro-conventions
 description: >-
   Buckman-specific OroCommerce gotchas and conventions, hard-won from real incidents on this
-  codebase. Covers the solution-approach hierarchy, the aaxis_aspect interceptor pattern for
-  overriding Oro core services, storefront localization traps, this project's entity-config
-  seeding mechanism, PHPUnit entity stubs for entity-extend, runtime debugging via
-  oro:logger:level, custom datagrid/report pitfalls, Postgres jsonb migration coercion, Oro
-  workflow-data encoding, and asset-version cache busting. Use this skill WHEN writing or
-  reviewing Oro PHP / YAML / Twig on this project and you want the established pattern instead of
-  guessing. Complements oro-workflow (dev-loop commands) and oro-backend-docs (API reference).
+  codebase — service overrides, localization, entity-config, datagrids, migrations, workflow data,
+  asset versioning. Use this skill WHENEVER writing or reviewing Oro PHP / YAML / Twig on this
+  project, to get the established pattern instead of guessing. Complements oro-workflow (dev-loop
+  commands) and oro-backend-docs (API reference).
 ---
 
 # Oro Development Conventions
@@ -53,7 +50,12 @@ parent constructor signature, which breaks on every Oro upgrade that adds a depe
 The aspect interceptor's compiler pass generates a proxy that **extends the target class**, so
 the type contract holds automatically and you never reference the original class or its ctor:
 
+Put the interceptor in the folder mirroring the intercepted class, never a generic
+`Interceptor/`.
+
 ```php
+use Aaxis\Bundle\AspectBundle\Annotations\Pointcut;
+
 class FooBarInterceptor
 {
     #[Pointcut]
@@ -194,7 +196,8 @@ Found the hard way building admin report grids; unit tests pass while the live g
   OLD grid until `bin/console cache:clear --env=prod`. Test-only console commands need the
   **test** cache. A stale `var/cache/tes_` dir can persist the old command set even after
   `cache:clear --env=test` → `rm -rf var/cache/test var/cache/tes_` then `cache:warmup --env=test`.
-- **`apply_callback` must be the array form** `['@service_id', 'method']`. The string form
+- **`apply_callback` (a `sorters:` node only — not valid on columns or filters) must be the array
+  form** `['@service_id', 'method']`. The string form
   `'@service->method'` is eager-resolved by `SystemAwareResolver` at config-compile time (it calls
   the method with the grid *name*) → `TypeError`/500.
 - **Never `GROUP BY` a `json` column** (Postgres 42883 "no equality operator for type json"). The

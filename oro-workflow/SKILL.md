@@ -1,9 +1,9 @@
 ---
 name: oro-workflow
 description: >
-  OroCommerce dev-loop conventions: shell aliases, cache invalidation strategy, migration
-  naming, service override patterns (interceptor, repository), PHPUnit stub conventions,
-  and system-config grouping rules. Project-tested guidance that complements the official
+  OroCommerce DEV-LOOP conventions — not Oro's workflow engine: shell aliases, cache
+  invalidation strategy, service override patterns (aspect interceptor, repository), and
+  system-config grouping rules. Project-tested guidance that complements the official
   OroCommerce docs with practical, cross-project patterns.
 
   Trigger scenarios:
@@ -16,11 +16,14 @@ description: >
   naming patterns.
 ---
 
-# OroCommerce Workflow Conventions
+# OroCommerce Dev-Loop Conventions
 
-Complements `oro-backend-docs`, `oro-frontend-skills`, `oro-e2e-testing`, and
-`oro-dialog-forms` (APIs/configuration) with day-to-day dev-loop conventions accumulated
-across multiple OroCommerce projects.
+This is about the development loop — caches, aliases, service wiring. For Oro's
+**workflow engine** (state machines, transitions, publication lanes) see `oro-conventions`.
+
+Complements `oro-backend-docs`, `oro-e2e-testing`, and `oro-dialog-forms`
+(APIs/configuration) with day-to-day dev-loop conventions accumulated across multiple
+OroCommerce projects.
 
 ## Available References
 
@@ -28,7 +31,7 @@ across multiple OroCommerce projects.
 |-------|------|-----------------|
 | **Shell aliases** | `references/aliases.md` | Before invoking `c`, `cc`, `ccw`, `ctran`, `cup`, `cab`, `cai`, `caw`, etc. |
 | **Cache invalidation** | `references/cache-invalidation.md` | After editing Twig / YAML / SCSS / entities — pick the narrowest clear |
-| **Service overrides** | `references/service-overrides.md` | Extending an OOTB Oro service, repository, or decorator |
+| **Service overrides** | `references/service-overrides.md` | Overriding an OOTB Oro service method (aspect interceptor) or extending a repository |
 | **System config groups** | `references/system-config-groups.md` | Adding `*_cron_definition` or shared system-config fields |
 
 ## Usage Rules

@@ -4,12 +4,15 @@ Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills fo
 
 **Why so little content:** this repo used to carry a near-complete mirror of generic Oro/OroCommerce documentation. As of 2026-09-10 that generic material was removed — it duplicated the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite's own reference docs, which `install.sh` now installs alongside these skills (see Installation). What's left here is only content tied to a real incident/gotcha hit on this project, that the official plugin doesn't cover.
 
+**Adding a skill:** a skill earns its place only once there is a concrete incident to record (symptom → root cause → fix). An empty placeholder skill is worse than no skill: its description is resident in every session and routes work to a body that has nothing to say. There is deliberately no frontend skill here for that reason — until a real frontend incident lands that the official plugin doesn't cover, the plugin is the answer.
+
+**Skill vs. repo README:** a skill holds the *judgment* calls (what to tag, what never to truncate). Mechanics that mirror code — CLI flags, config keys, setup steps — stay in the README that ships beside that code, and the skill points at it. A copy here cannot be updated by whoever changes that code, and a stale copy loaded into context is worse than no copy.
+
 ## Available Skills
 
 | Skill | Description |
 |-------|-------------|
 | [oro-backend-docs](oro-backend-docs/) | Buckman-specific backend gotchas (entity-extend schema drift, serialized enum-extend storage) not covered by the official plugin |
-| [oro-frontend-skills](oro-frontend-skills/) | Reserved for Buckman-specific frontend incidents; currently empty — see the official plugin for generic frontend knowledge |
 | [oro-e2e-testing](oro-e2e-testing/) | Playwright-BDD e2e authoring rules for OroCommerce/OroPlatform (Alice fixtures, grid filters, purge/re-runnability, shared-DB safety) |
 | [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
 | [oro-workflow](oro-workflow/) | Dev-loop conventions specific to this project: shell aliases, cache invalidation, service overrides, system-config groups |
@@ -45,7 +48,7 @@ The token is only used for the clone itself (passed as a one-off `git -c` header
 
 This symlinks every `oro-*/` skill directory into `~/.claude/skills/`. Re-running it later also `git pull`s the checkout first (pass `--no-update` to skip that). To remove the symlinks: `install.sh --uninstall`.
 
-This repo dropped its generic Oro/OroCommerce reference content (see "Why so little content" below) in favor of the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite. So by default `install.sh` also registers that marketplace and installs `orocommerce-development`, `orocommerce-review`, `orocommerce-testing`, and `orocommerce-maintenance` via the `claude plugin` CLI. Skip that with `--no-official-plugins`, or override the list with `ORO_SKILLS_OFFICIAL_PLUGINS="orocommerce-development orocommerce-review" ./install.sh`. `orocommerce-orchestrator` is deliberately not installed by default — it duplicates the plan→build→review→verify flow some projects already run via the `ai-sdlc-c1` plugin; install it yourself if a project actually wants it.
+This repo dropped its generic Oro/OroCommerce reference content (see "Why so little content" at the top) in favor of the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite. So by default `install.sh` also registers that marketplace and installs `orocommerce-development`, `orocommerce-review`, `orocommerce-testing`, and `orocommerce-maintenance` via the `claude plugin` CLI. Skip that with `--no-official-plugins`, or override the list with `ORO_SKILLS_OFFICIAL_PLUGINS="orocommerce-development orocommerce-review" ./install.sh`. `orocommerce-orchestrator` is deliberately not installed by default — it duplicates the plan→build→review→verify flow some projects already run via the `ai-sdlc-c1` plugin; install it yourself if a project actually wants it.
 
 ### 3. Verify
 
@@ -65,8 +68,10 @@ skill-name/
     ...
 ```
 
-- `SKILL.md` has YAML frontmatter with `name`, `description` (including trigger scenarios)
-- `references/` contains the actual knowledge base documents
+- `SKILL.md` has YAML frontmatter with `name`, `description` (including trigger scenarios). The
+  `name` MUST equal the directory name.
+- `references/` is optional and holds the knowledge-base documents when a skill has enough to
+  warrant splitting. A single-file skill (`oro-conventions`, `oro-e2e-testing`) has none.
 - Claude Code auto-discovers skills from `~/.claude/skills/*/SKILL.md`
 
 ## Adding New Skills

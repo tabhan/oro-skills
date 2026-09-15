@@ -17,10 +17,14 @@ Always prefer the alias over typing the underlying command.
 | `cai` | `c assets:install --symlink` | Install assets with symlinks |
 | `caw` | `/usr/local/bin/oro/npm run watch` | Watch JS/SCSS changes (live rebuild) |
 
-**Usage:** For JS/SCSS rebuild use `cab` (oro:assets:build). For installing assets use
-`cai` (assets:install --symlink). For JS/SCSS debugging use `caw` (npm watch). To fully
-rebuild JS after module changes, `c oro:assets:install --symlink` (not just
-`oro:assets:build`).
+**Usage:** For JS/SCSS rebuild use `cab` (oro:assets:build). For JS/SCSS debugging use
+`caw` (npm watch).
+
+**`assets:install` vs `oro:assets:install`** — both exist and they are not the same.
+`cai` is Symfony's `assets:install --symlink`, which only links bundle `Resources/public`
+into `public/`. After a **JS module change** that is not enough: run
+`c oro:assets:install --symlink`, Oro's own command, which also regenerates the module
+map. Reach for `cai` only when you specifically want the plain Symfony link step.
 
 ## Cache
 

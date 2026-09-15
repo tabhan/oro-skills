@@ -110,3 +110,8 @@ When the pre-commit hook reports drift:
 | Unique index (custom) | `uniq_buckman_{table}_{column}` | `uniq_buckman_localization_url_code` |
 | Regular index (custom) | `idx_buckman_{table}_{column}` | `idx_buckman_product_ebs_id` |
 | Oro auto-generated | `oro_idx_{entity}_{column}` | `oro_idx_localization_url_code` |
+
+Postgres truncates identifiers at 63 characters, so abbreviate the table/column segments when the
+full name would overflow rather than letting Postgres silently cut it — e.g.
+`uniq_bkm_prod_loc_pub_prod_loc`. A truncated name still works but stops matching what the
+migration declares, which makes the next schema diff look like drift.

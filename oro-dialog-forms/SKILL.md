@@ -9,14 +9,6 @@ description: >
   - Adding a "click a button → open a dialog with a form → AJAX submit" flow
   - Building a CTA / contact / request form rendered via ContentWidget and also
     openable as a DialogWidget from a trigger button
-  - Wiring a Symfony form into Oro's UpdateHandlerFacade with a custom
-    FormHandlerInterface tagged `oro_form.form.handler`
-  - Writing a frontend controller that must respond correctly in BOTH dialog
-    (widget / `_wid`) and non-dialog (landing page / POST-redirect) contexts
-  - Closing the dialog + flashing a success message after save using Oro's
-    `orofrontend/js/app/components/widget-form-component`
-  - Setting `input_action` on a form so non-AJAX submits redirect back to the
-    original embed page instead of the entity view route
 
   Read documentation BEFORE writing the controller, layout, Twig, or JS. The
   failure modes in this flow are interconnected and hard to debug in isolation.

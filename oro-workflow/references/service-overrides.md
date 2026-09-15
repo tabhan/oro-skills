@@ -31,25 +31,31 @@ arguments:
 
 Add `use` imports; never use inline full class paths in PHP.
 
-## Rule 3: Extend OOTB services with the interceptor pattern
+## Rule 3: Override an Oro core service method with the aspect interceptor
 
-When changing behavior of an Oro service, prefer **interface implementation +
-`decorates:`** over event listeners or voters.
+To change the behavior of a method on an Oro core service, use the **aspect
+interceptor** — not a class swap, and not `decorates:`.
 
 ```yaml
-# Original service: oro_some.service (implements SomeInterface)
-# Your interceptor:
-app.some.service.decorator:
-    class: App\SomeServiceDecorator
-    decorates: oro_some.service
-    arguments:
-        - '@.inner'
-        - '@other.dep'
+services:
+    App\Interceptor\SomeServiceInterceptor:
+        tags:
+            - { name: aaxis_aspect.interceptor }
 ```
 
-Your decorator implements `SomeInterface`, accepts the original service as `$inner`,
-and forwards or intercepts calls. Listeners/voters are too loose for most extension
-needs — decoration expresses the contract precisely.
+The interceptor declares a `#[Pointcut]` naming the target class and method, and the
+AspectBundle weaves it in. Place it in the folder mirroring the intercepted class,
+never a generic `Interceptor/`.
+
+**Why not `decorates:`** — a Symfony decorator replaces the service with a different
+concrete class. Any downstream consumer that typehints the ORIGINAL concrete class
+(Oro core does this in places) then gets a `TypeError` at container compile time. A
+decorator is acceptable ONLY when no consumer typehints the decorated concrete class;
+the interceptor has no such failure mode because the original class is still what is
+instantiated.
+
+Listeners and voters remain too loose for most extension needs — reach for them only
+when the extension point genuinely is an event.
 
 ## Rule 4: Extract DB queries to repositories
 
