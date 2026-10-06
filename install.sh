@@ -6,7 +6,7 @@
 # Usage:
 #   ./install.sh                 # update this checkout (git pull), then symlink all oro-* skills
 #   ./install.sh --no-update     # skip git pull, just (re)symlink
-#   ./install.sh --uninstall     # remove the symlinks this script created
+#   ./install.sh --uninstall     # remove the skill/agent/CLI symlinks this script created
 #
 # First-time install with SSH access to the repo:
 #   git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills
@@ -34,6 +34,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DEST="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
+AGENTS_DEST="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 TOKEN="${ORO_SKILLS_TOKEN:-${GITHUB_TOKEN:-}}"
 OFFICIAL_PLUGINS="${ORO_SKILLS_OFFICIAL_PLUGINS:-orocommerce-development orocommerce-review orocommerce-testing orocommerce-maintenance}"
 
@@ -66,6 +67,21 @@ if [ "$UNINSTALL" -eq 1 ]; then
       echo "  removed $link"
     fi
   done
+  for agent in "$SCRIPT_DIR"/oro-*/agents/*.md; do
+    [ -f "$agent" ] || continue
+    link="$AGENTS_DEST/$(basename "$agent")"
+    if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$agent")" ]; then
+      rm "$link"
+      echo "  removed $link"
+    fi
+  done
+  for b in atlas atlas-build atlas-setup atlas-precommit; do
+    link="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}/$b"
+    if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$SCRIPT_DIR/oro-atlas/bin/$b")" ]; then
+      rm "$link"
+      echo "  removed $link"
+    fi
+  done
   exit 0
 fi
 
@@ -88,6 +104,30 @@ for skill in "$SCRIPT_DIR"/oro-*/; do
   ln -sfn "$skill" "$SKILLS_DEST/$name"
   echo "  $name -> $skill"
 done
+
+# Subagents (e.g. oro-architect-gate) are only resolvable by agentType from ~/.claude/agents.
+mkdir -p "$AGENTS_DEST"
+echo "Symlinking agents into $AGENTS_DEST"
+for agent in "$SCRIPT_DIR"/oro-*/agents/*.md; do
+  [ -f "$agent" ] || continue
+  ln -sfn "$agent" "$AGENTS_DEST/$(basename "$agent")"
+  echo "  $(basename "$agent") -> $agent"
+done
+
+# oro-atlas ships a CLI; link it so agents can call `atlas` without an absolute path.
+ATLAS_BIN_DIR="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}"
+if [ -x "$SCRIPT_DIR/oro-atlas/bin/atlas" ]; then
+  mkdir -p "$ATLAS_BIN_DIR"
+  for b in atlas atlas-build atlas-setup atlas-precommit; do
+    [ -x "$SCRIPT_DIR/oro-atlas/bin/$b" ] || continue
+    ln -sfn "$SCRIPT_DIR/oro-atlas/bin/$b" "$ATLAS_BIN_DIR/$b"
+    echo "  $ATLAS_BIN_DIR/$b -> $SCRIPT_DIR/oro-atlas/bin/$b"
+  done
+  case ":$PATH:" in
+    *":$ATLAS_BIN_DIR:"*) ;;
+    *) echo "  (add $ATLAS_BIN_DIR to PATH, or call $SCRIPT_DIR/oro-atlas/bin/atlas directly)" >&2 ;;
+  esac
+fi
 
 if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
   if command -v claude >/dev/null 2>&1; then

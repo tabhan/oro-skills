@@ -1,0 +1,17 @@
+[
+ {"id":"slug-redirect","prompt":"I need to override how product slug redirects work when a product slug changes. Which Oro extension point should I use?","expect":["service","event","tag","search"]},
+ {"id":"order-placed-listener","prompt":"I want to run custom code when an order is placed (checkout completes). What event should I listen to?","expect":["event","workflow","search"]},
+ {"id":"products-grid-column","prompt":"Add a custom column to the backend products grid. Which extension points exist for that?","expect":["grid","search"]},
+ {"id":"override-core-service","prompt":"I need to change the behaviour of a method on a core Oro service used by many consumers. Should I decorate it or something else? Check the service first.","expect":["unsafe","service"]},
+ {"id":"mq-processor","prompt":"I want to add an async message queue processor that reacts to product import. What topics and processors exist already?","expect":["mq","search"]},
+ {"id":"workflow-transition","prompt":"Add a custom action to the quote approval workflow transition. Where do workflow actions and conditions get registered?","expect":["workflow","operation","tag","search"]},
+ {"id":"layout-block","prompt":"I want to add a new block to the storefront product view page layout. Which layout block types and updates exist?","expect":["layout","search"]},
+ {"id":"custom-tag","prompt":"What consumes the service tag oro_featuretoggle.feature? I want to register my own service with it.","expect":["tag"]},
+ {"id":"system-config","prompt":"Add a new system configuration option under Commerce > Catalog > Products. How are config sections defined?","expect":["config","search"]},
+ {"id":"entity-extend","prompt":"I need to add a field to the Product entity and customise its repository. What is the Product entity class and where is it mapped?","expect":["entity","search"]},
+ {"id":"js-mediator","prompt":"A storefront JS component should react when a datagrid finishes rendering. Which mediator events exist?","expect":["js","event","search"]},
+ {"id":"operation-button","prompt":"Add an operation button to the order view page in the admin. How are operations defined in Oro?","expect":["operation","search"]},
+ {"id":"price-list-event","prompt":"I need to hook into combined price list rebuilds. Is there an event or message topic for that?","expect":["event","mq","search"]},
+ {"id":"typehint-check","prompt":"Is it safe to use a Symfony decorator on oro_product.repository.product? Verify whether its concrete class is typehinted by consumers.","expect":["unsafe","service"]},
+ {"id":"cron-command","prompt":"Where is the cron schedule for a console command registered, and which tag marks it as schedulable?","expect":["tag","config","search"]}
+]
