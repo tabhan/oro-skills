@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Report how often Claude sessions consult atlas before editing Oro config/listeners."""
+import argparse
+import glob
+import json
+import os
+import re
+import shlex
+import sys
+from collections import defaultdict
+
+EDIT_TOOLS = {"Edit", "Write", "MultiEdit"}
+SRC_RE = re.compile(r"/src/.*(/services[^/]*\.ya?ml|/Resources/config/[^/]*\.ya?ml|Listener[^/]*\.php|/EventListener/[^/]+\.php)$")
+SEG_RE = re.compile(r"&&|\|\||;|\||\n|\$\(|`")
+ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+WORD_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
+# Path/service words too generic to prove a lookup was about the edited file.
+NOISE = {"oro", "src", "bundle", "resources", "config", "services", "service", "php", "yml", "yaml",
+         "listener", "event", "opt", "projects", "buckman", "aaxis", "app", "atlas"}
+WRAPPERS = {"sudo", "env", "command", "exec", "time", "rtk", "proxy", "nice"}
+
+
+def atlas_argvs(cmd):
+    """Argument lists of every segment whose command word is the atlas CLI (not atlas-build etc.)."""
+    out = []
+    for seg in SEG_RE.split(cmd or ""):
+        try:
+            toks = shlex.split(seg)
+        except ValueError:
+            toks = seg.split()
+        toks = [t for t in toks if t.strip("()")]
+        while toks and (ENV_RE.match(toks[0]) or toks[0] in WRAPPERS):
+            toks = toks[1:]
+        if toks and os.path.basename(toks[0].strip("()")) == "atlas":
+            out.append(toks[1:])
+    return out
+
+
+def words(text):
+    return {w.lower() for w in WORD_RE.findall(text or "") if len(w) >= 3} - NOISE
+
+
+VALUE_FLAGS = {"--project", "--limit"}
+
+
+def positional(argv):
+    """Drop global/late flags (and their values) so the subcommand is argv[0]."""
+    out, skip = [], False
+    for tok in argv:
+        if skip or tok in VALUE_FLAGS:
+            skip = not skip and tok in VALUE_FLAGS
+            continue
+        if not tok.startswith("-"):
+            out.append(tok)
+    return out
+
+
+def relevant(argv, path):
+    """A lookup counts only if it is a real query (not status/--help) sharing a word with the edited path."""
+    args = positional(argv)
+    is_query = bool(args) and args[0] != "status" and not {"-h", "--help"} & set(argv)
+    return is_query and bool(words(" ".join(args[1:])) & words(path))
+
+
+def session_files(root):
+    # Subagent transcripts live under <sid>/subagents/ and roll up to the parent session.
+    for path in glob.glob(os.path.join(root, "**", "*.jsonl"), recursive=True):
+        rel = os.path.relpath(path, root).split(os.sep)
+        yield rel[0].removesuffix(".jsonl"), path
+
+
+def events(path):
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            content = (d.get("message") or {}).get("content")
+            if d.get("type") != "assistant" or not isinstance(content, list):
+                continue
+            for b in content:
+                if b.get("type") == "tool_use":
+                    yield d.get("timestamp") or "", b["name"], b.get("input") or {}
+
+
+def collect(root):
+    sessions = defaultdict(list)
+    for sid, path in session_files(root):
+        sessions[sid].extend(events(path))
+    rows = {}
+    for sid, evs in sessions.items():
+        evs.sort(key=lambda e: e[0])
+        lookups = []
+        row = {"edits": 0, "covered": 0, "atlas": 0, "denies": 0}
+        for _, name, inp in evs:
+            argvs = atlas_argvs(inp.get("command", "")) if name == "Bash" else []
+            lookups.extend(argvs)
+            row["atlas"] += len(argvs)
+            path = inp.get("file_path", "") if name in EDIT_TOOLS else ""
+            if SRC_RE.search(path):
+                row["edits"] += 1
+                row["covered"] += any(relevant(a, path) for a in lookups)
+        rows[sid] = row
+    return rows
+
+
+def hook_denies(log, rows):
+    total = 0
+    if os.path.exists(log):
+        with open(log, errors="replace") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict) and rec.get("verdict") == "deny":
+                    total += 1
+                    if rec.get("session_id") in rows:
+                        rows[rec["session_id"]]["denies"] += 1
+    return total
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--projects-dir", default=os.path.expanduser("~/.claude/projects/-opt-projects-buckman"))
+    ap.add_argument("--hook-log", default=os.path.expanduser("~/.claude/atlas-hook.log"))
+    ap.add_argument("--all", action="store_true", help="include sessions with no relevant edits")
+    args = ap.parse_args()
+
+    rows = collect(args.projects_dir)
+    denies = hook_denies(args.hook_log, rows)
+    shown = {s: r for s, r in rows.items() if r["edits"] or r["denies"] or args.all}
+    print(f"{'session':<10}{'edits':>6}{'after-atlas':>12}{'atlas-calls':>12}{'denies':>7}")
+    for sid, r in sorted(shown.items(), key=lambda kv: -kv[1]["edits"]):
+        print(f"{sid[:8]:<10}{r['edits']:>6}{r['covered']:>12}{r['atlas']:>12}{r['denies']:>7}")
+    edits = sum(r["edits"] for r in rows.values())
+    covered = sum(r["covered"] for r in rows.values())
+    with_edits = [r for r in rows.values() if r["edits"]]
+    sess_used = sum(1 for r in with_edits if r["covered"])
+    pct = lambda a, b: f"{100 * a / b:.1f}%" if b else "n/a"
+    print(f"\nsessions scanned: {len(rows)}; with relevant edits: {len(with_edits)}")
+    print(f"relevant edits: {edits}; preceded by a relevant atlas lookup: {covered}")
+    print(f"hook denies: {denies}" + ("" if os.path.exists(args.hook_log) else " (hook log not found)"))
+    print(f"ADOPTION (edits after a relevant atlas lookup): {pct(covered, edits)}")
+    print(f"ADOPTION (sessions that used atlas before an edit): {pct(sess_used, len(with_edits))}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

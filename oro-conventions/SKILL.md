@@ -38,7 +38,7 @@ is **aspect interceptor > Symfony decorator** — see §2.
 When you want to wrap / filter / mutate the behaviour of an Oro core service method, default to
 the project's `aaxis_aspect.interceptor` pattern (Aaxis AspectBundle) before reaching for
 Symfony's `decorates:`. Use a Symfony decorator only when **no downstream consumer typehints the
-concrete class** of the decorated service.
+concrete class** of the decorated service. Check with `atlas unsafe <Class>` (e.g. `atlas unsafe ProductRepository`) (see oro-atlas).
 
 **Why decorators bite on Oro:** many Oro consumers typehint the **concrete class**
 (e.g. `WorkflowAclExtension::__construct(... WorkflowAclMetadataProvider $provider)`). A
@@ -255,3 +255,12 @@ not defined`). Fix: run `composer run set-assets-version` to bump the version so
 refetches with a consistent integrity hash. Separately, a native nginx `open_file_cache` can
 serve stale precompressed bytes right after a build (transient SRI mismatch) — the version bump
 is the durable cure.
+
+---
+
+## 11. Decision tables
+
+Situation to extension point to forbidden alternative to `atlas` confirm command, distilled from
+past incidents (entity-config gaps, cache/deploy, CI JS deps, import, Backbone, workflow, DQL):
+see [decision-tables.md](decision-tables.md). Run `atlas` before writing code to confirm the
+extension point exists; never `decorates:` a class `atlas unsafe <Class>` flags.
