@@ -5,6 +5,8 @@ import sys
 import tempfile
 import unittest
 
+os.environ["ATLAS_NO_AUTOBUILD"] = "1"
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from atlas import cli, index, store  # noqa: E402
@@ -61,7 +63,7 @@ class StoreTest(unittest.TestCase):
 class IndexTest(unittest.TestCase):
     def test_stamp_and_staleness(self):
         root = make_project()
-        out = os.path.join(root, "var", "atlas")
+        out = os.path.join(root, ".claude", "atlas")
         idx = index.update_index(root, out, {"services": 3})
         self.assertEqual(idx["platform_version"], "7.0.3")
         self.assertEqual(idx["shards"]["services"]["count"], 3)
@@ -71,7 +73,7 @@ class IndexTest(unittest.TestCase):
 
     def test_partial_build_keeps_other_shards(self):
         root = make_project()
-        out = os.path.join(root, "var", "atlas")
+        out = os.path.join(root, ".claude", "atlas")
         index.update_index(root, out, {"a": 1})
         idx = index.update_index(root, out, {"b": 2})
         self.assertEqual(sorted(idx["shards"]), ["a", "b"])
@@ -88,7 +90,7 @@ class RegistryAndCliTest(unittest.TestCase):
 
     def test_cli_search_ranking_and_missing(self):
         root = make_project()
-        out = os.path.join(root, "var", "atlas")
+        out = os.path.join(root, ".claude", "atlas")
         store.write_shard(out, "services", [
             {"id": "other", "text": "uses foo.bar", "file": "a.php", "line": 3},
             {"id": "foo.bar", "keys": ["Foo\\Bar"], "text": "x", "file": "b.php", "line": 9},

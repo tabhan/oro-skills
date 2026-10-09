@@ -46,20 +46,20 @@ def touch_later(path, text):
 class StalenessTest(unittest.TestCase):
     def setUp(self):
         self.root = make_project()
-        self.out = os.path.join(self.root, "var", "atlas")
-        index.update_index(self.root, self.out, {"services": 1})
+        self.out = os.path.join(self.root, ".claude", "atlas")
+        index.update_index(self.root, self.out, {"events": 1})
 
     def test_fresh(self):
         self.assertIsNone(index.stale_line(self.root, self.out))
 
     def test_src_edit_is_stale_with_reason(self):
         touch_later(os.path.join(self.root, "src", "Foo", "A.php"), "<?php // x")
-        self.assertEqual(index.stale_reasons(self.root, self.out), {"services": ["src"]})
-        self.assertIn("src changed since services", index.stale_line(self.root, self.out))
+        self.assertEqual(index.stale_reasons(self.root, self.out), {"events": ["src"]})
+        self.assertIn("src changed since events", index.stale_line(self.root, self.out))
 
     def test_config_and_new_src_file_are_stale(self):
         open(os.path.join(self.root, "config", "routes.php"), "w").write("x")
-        self.assertEqual(index.stale_shards(self.root, self.out), ["services"])
+        self.assertEqual(index.stale_shards(self.root, self.out), ["events"])
 
     def test_non_tracked_src_ext_ignored(self):
         open(os.path.join(self.root, "src", "Foo", "a.js"), "w").write("x")
@@ -108,14 +108,14 @@ class AtomicBuildTest(unittest.TestCase):
         self.root = make_project()
         self.ctx = Context(self.root)
 
-    def test_builds_in_staging_and_swaps(self):
-        seen = []
-        with mock.patch.object(extractors, "load_all", return_value=fake_mods(seen)):
+    def test_builds_in_place_and_ignores_itself(self):
+        with mock.patch.object(extractors, "load_all", return_value=fake_mods()):
             build.build(self.ctx, out=io.StringIO())
-        self.assertTrue(all(d.startswith("atlas.tmp-") for _, d in seen))
-        self.assertEqual(self.ctx.out_dir, os.path.join(self.root, "var", "atlas"))
+        self.assertEqual(open(os.path.join(self.ctx.out_dir, ".gitignore")).read(), "*\n")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "var")))
+        self.assertFalse([f for f in os.listdir(self.ctx.out_dir) if f.endswith(".tmp")])
+        self.assertEqual(self.ctx.out_dir, os.path.join(self.root, ".claude", "atlas"))
         self.assertEqual(sorted(index.read_index(self.ctx.out_dir)["shards"]), ["js", "services", "unsafe"])
-        self.assertEqual(sorted(os.listdir(os.path.join(self.root, "var"))), ["atlas"])
 
     def test_only_keeps_other_shards_and_failure_keeps_old_index(self):
         with mock.patch.object(extractors, "load_all", return_value=fake_mods()):
@@ -126,23 +126,34 @@ class AtomicBuildTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 build.build(self.ctx, only=["js"], out=io.StringIO())
         self.assertEqual(len(index.read_index(self.ctx.out_dir)["shards"]), 3)
-        self.assertEqual(sorted(os.listdir(os.path.join(self.root, "var"))), ["atlas"])
         with mock.patch.object(extractors, "load_all", return_value=fake_mods()):
             built = build.build(self.ctx, only=["services"], out=io.StringIO())
         self.assertEqual(sorted(built), ["services", "unsafe"])
         self.assertEqual(len(index.read_index(self.ctx.out_dir)["shards"]), 3)
 
+    def test_failed_shard_keeps_old_file_and_stamp(self):
+        with mock.patch.object(extractors, "load_all", return_value=fake_mods()):
+            build.build(self.ctx, out=io.StringIO())
+        before = open(os.path.join(self.ctx.out_dir, "js.jsonl")).read()
+        mods = fake_mods()
+        mods["js"].extract = lambda ctx: iter([{"name": "new"}, 1 / 0])
+        with mock.patch.object(extractors, "load_all", return_value=mods):
+            with self.assertRaises(ZeroDivisionError):
+                build.build(self.ctx, only=["js"], out=io.StringIO())
+        self.assertEqual(open(os.path.join(self.ctx.out_dir, "js.jsonl")).read(), before)
+        self.assertFalse(os.path.exists(os.path.join(self.ctx.out_dir, "js.jsonl.tmp")))
+
     def test_index_visible_throughout_rebuild(self):
         with mock.patch.object(extractors, "load_all", return_value=fake_mods()):
             build.build(self.ctx, out=io.StringIO())
         visible = []
-        probe = lambda: visible.append(index.read_index(os.path.join(self.root, "var", "atlas")) is not None)
+        probe = lambda: visible.append(index.read_index(os.path.join(self.root, ".claude", "atlas")) is not None)
         with mock.patch.object(extractors, "load_all", return_value=fake_mods(barrier=probe)):
             build.build(Context(self.root), out=io.StringIO())
         self.assertTrue(visible and all(visible))
 
     def test_concurrent_build_refused(self):
-        lock = os.path.join(self.root, "var", "atlas.lock")
+        lock = build.lock_path(self.ctx.out_dir)
         os.makedirs(os.path.dirname(lock))
         open(lock, "w").write(str(os.getppid()))
         with mock.patch.object(extractors, "load_all", return_value=fake_mods()):
@@ -151,7 +162,7 @@ class AtomicBuildTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(lock))
 
     def test_stale_lock_of_dead_pid_taken_over(self):
-        lock = os.path.join(self.root, "var", "atlas.lock")
+        lock = build.lock_path(self.ctx.out_dir)
         os.makedirs(os.path.dirname(lock))
         open(lock, "w").write("999999999")
         with mock.patch.object(extractors, "load_all", return_value=fake_mods()):

@@ -44,3 +44,5 @@ OroCommerce projects.
 4. **Never use `autowire: true`.** Always declare arguments explicitly in services.yml.
 5. **Repositories live in their own class.** Never inline DQL/QueryBuilder in services,
    listeners, or commands. See `service-overrides.md`.
+6. **Atlas first, even for investigation.** Before reading `vendor/` to see how Oro wires
+   something, run `atlas <event|tag|service|grid|...> <term>` (see `oro-atlas`).

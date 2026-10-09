@@ -106,7 +106,7 @@ class ExtractTest(unittest.TestCase):
                 return ("src/N/Dep.php", 3)
 
         class Ctx:
-            pass
+            vendor_memo = staticmethod(lambda name, key, compute: compute())
 
         ctx = Ctx()
         ctx.root = root
@@ -133,6 +133,7 @@ class ExtractTest(unittest.TestCase):
         rows = [svc("dec", "Buckman\\Dec", [tag]), svc("dec.inner", "Oro\\Orig")]
 
         class Ctx:
+            vendor_memo = staticmethod(lambda name, key, compute: compute())
             locator = type("L", (), {"locate": lambda self, f: (None, None)})()
 
         ctx = Ctx()
@@ -143,7 +144,7 @@ class ExtractTest(unittest.TestCase):
 
 def _ctx(root, rows, located=None):
     class Ctx:
-        pass
+        vendor_memo = staticmethod(lambda name, key, compute: compute())
 
     located = located or {}
     ctx = Ctx()

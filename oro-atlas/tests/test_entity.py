@@ -108,6 +108,8 @@ class ExtractTest(unittest.TestCase):
             open(os.path.join(root, "src", sub, "Foo.php"), "w").write(ATTR)
 
         class C:
+            vendor_memo = staticmethod(lambda name, key, compute: compute())
+
             def __init__(self):
                 self.root = root
 
@@ -130,7 +132,7 @@ class ExtractTest(unittest.TestCase):
         )
 
         class Ctx:
-            pass
+            vendor_memo = staticmethod(lambda name, key, compute: compute())
 
         ctx = Ctx()
         ctx.root = root

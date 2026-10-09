@@ -184,9 +184,9 @@ def _text(rec):
     return " ".join(parts)
 
 
-def _collect_entities(ctx):
+def _scan_entities(ctx, roots):
     seen = {}
-    for rel_root in ROOTS:
+    for rel_root in roots:
         for path in _walk(ctx.root, rel_root, ".php"):
             text = "" if TEST_PATH_RE.search(os.path.relpath(path, ctx.root)) else read_text(path)
             if "Entity" not in text and "MappedSuperclass" not in text:
@@ -196,6 +196,13 @@ def _collect_entities(ctx):
                 info["file"] = ctx.rel(path)
                 seen[info["class"]] = info
     return seen
+
+
+def _collect_entities(ctx):
+    """src/ is rescanned each build and wins over vendor/, whose scan is memoised."""
+    vendor = ctx.vendor_memo("entities-scan", None, lambda: _scan_entities(ctx, ROOTS[1:]))
+    seen = _scan_entities(ctx, ROOTS[:1])
+    return dict(vendor, **seen)
 
 
 def _collect_overrides(ctx):

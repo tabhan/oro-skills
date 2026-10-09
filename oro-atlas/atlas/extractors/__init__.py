@@ -14,6 +14,31 @@ DEPENDS = {
 }
 
 
+# Inputs each shard ingests directly; anything else cannot make it stale (composer.lock always can).
+# "src": filename suffixes read under src/ and config/; "cache": built from the compiled prod container dump.
+_YML = (".yml", ".yaml")
+INPUTS = {
+    "services": {"src": (), "cache": True},
+    "mq": {"src": (".php",), "cache": True},
+    "tags": {"src": (".php",) + _YML, "cache": True},
+    "events": {"src": (".php",), "cache": True},
+    "grids": {"src": ("datagrids.yml",), "cache": True},
+    "layouts": {"src": _YML + (".twig", ".php"), "cache": True},
+    "unsafe": {"src": (".php",) + _YML, "cache": False},
+    "entities": {"src": (".php", "entity_extend.yml", "entity_config.yml"), "cache": False},
+    "config": {"src": ("system_configuration.yml",), "cache": False},
+    "js": {"src": (".js", "jsmodules.yml"), "cache": False},
+    "workflows": {"src": ("workflows.yml", "workflows.en.yml"), "cache": False},
+    "operations": {"src": ("actions.yml",), "cache": False},
+}
+# An extractor missing from the table is assumed to read everything.
+DEFAULT_INPUT = {"src": (".php", ".yml", ".yaml", ".xml"), "cache": True}
+
+
+def inputs_of(name):
+    return INPUTS.get(name, DEFAULT_INPUT)
+
+
 def depends_of(mods, name):
     return tuple(getattr(mods[name], "DEPENDS", ())) + DEPENDS.get(name, ())
 

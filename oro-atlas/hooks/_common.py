@@ -8,6 +8,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 
 from atlas import cli, index, store  # noqa: E402
+from atlas.common import atlas_dir  # noqa: E402
 
 LOG_PATH = os.path.expanduser("~/.claude/atlas-hook.log")
 MAX_CONTEXT = 2000
@@ -62,12 +63,13 @@ def save_state(path, data):
 
 
 def build_hint(root, state):
-    return "atlas index is %s: run `%s --project %s` before relying on it." % (state.upper(), BUILD, root)
+    flag = " --incremental" if state == "stale" else ""
+    return "atlas index is %s: run `%s --project %s%s` before relying on it." % (state.upper(), BUILD, root, flag)
 
 
 def index_state(root):
     """'missing', 'stale' or 'ok' for the project's atlas index."""
-    out_dir = os.path.join(root, "var", "atlas")
+    out_dir = atlas_dir(root)
     state = "missing"
     if index.read_index(out_dir):
         state = "stale" if index.stale_shards(root, out_dir) else "ok"
@@ -76,7 +78,7 @@ def index_state(root):
 
 def query(root, shard_cmd, text, limit=3):
     """One-line hits for `text` in a shard subcommand ('tag', 'event', ...); [] when unavailable."""
-    out_dir = os.path.join(root, "var", "atlas")
+    out_dir = atlas_dir(root)
     hits = []
     try:
         recs = list(store.read_shard(out_dir, cli.SHARDS[shard_cmd]))
@@ -89,7 +91,7 @@ def query(root, shard_cmd, text, limit=3):
 
 def unsafe_for(root, target):
     """The unsafe-shard record whose id/keys/services equal `target`, or None."""
-    out_dir = os.path.join(root, "var", "atlas")
+    out_dir = atlas_dir(root)
     found = None
     try:
         for rec in store.read_shard(out_dir, "unsafe"):

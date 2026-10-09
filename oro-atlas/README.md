@@ -11,9 +11,23 @@ oro-atlas/bin/atlas-build --project /path/to/oro-project --only events,tags
 
 Reads `vendor/oro*`, `vendor/oroinc`, `vendor/aaxisdigital`, `node_modules/@oroinc` and `src/`, plus
 `php bin/console debug:container` / `debug:event-dispatcher` (`--env=prod`, JSON, cached once per
-build in `var/atlas/raw/`). Output goes to `<project>/var/atlas/`: one `<category>.jsonl` shard per
+build in `.claude/atlas/raw/`). Output goes to `<project>/.claude/atlas/`: one `<category>.jsonl` shard per
 extractor and `index.json` (composer.lock sha256, oro/platform version, timestamp, counts).
-`var/atlas/` must be git-ignored in the project.
+The directory carries its own `.gitignore` (`*`), so nothing needs ignoring in the project; an index
+left at the old `var/atlas/` is moved on first use.
+
+## Staying fresh (no daemon, no token cost)
+- Staleness is per shard: a shard is STALE only when an input it ingests changed (composer.lock/vendor
+  state, the src files of its kind, the compiled container cache, or the extractor code).
+  `atlas status` lists each shard and exits 0 (fresh) or 2 (STALE/MISSING); `--quiet` prints nothing.
+- `atlas-build --incremental` rebuilds only stale/missing shards (full build stays the default);
+  vendor scans are memoised in `cache/`, so one edited file refreshes in ~2-3s.
+- Queries refresh a src-stale shard inline when the last build was under 5s (silent); anything bigger
+  (composer/vendor/cache changes) starts a background rebuild, prints one stderr line and answers from
+  the old index. `--no-rebuild` / `ATLAS_NO_AUTOBUILD=1` disables it.
+- `atlas-setup` also registers a silent PostToolUse hook (Edit/Write/MultiEdit on src/config) and
+  post-checkout/post-merge/post-rewrite git hooks (never overwriting a foreign hook); they run
+  `atlas-build --incremental --background`, which skips when a build holds `.claude/atlas/.lock`.
 
 ## Setup (once per project)
 
@@ -22,8 +36,24 @@ oro-atlas/bin/atlas-setup /path/to/oro-project             # register hooks + bu
 oro-atlas/bin/atlas-setup /path/to/oro-project --no-build  # hooks only
 ```
 
-Idempotently merges the PreToolUse (Edit/Write), PostToolUse (Bash) and UserPromptSubmit hooks
-into `<project>/.claude/settings.local.json`, then runs `atlas-build`.
+Idempotently merges the PreToolUse (Edit/Write), PostToolUse (Bash), UserPromptSubmit and
+SubagentStart hooks into `<project>/.claude/settings.local.json` (existing settings and entries are
+kept, nothing is duplicated), then runs `atlas-build`.
+
+## Hooks
+
+- `userpromptsubmit.py`: one nudge per session on Oro extension prompts; main session only. When the
+  index is stale the nudge carries the `atlas-build --incremental` command.
+- `subagentstart.py`: injects a short (<1 KB) "query atlas before grepping vendor/" instruction into
+  every subagent of an indexed Oro project (Claude Code delivers `additionalContext` from
+  `SubagentStart` to the subagent). Silent without an index; never blocks.
+- `pretooluse_edit.py` / `posttooluse_bash.py`: deny unsafe `decorates:` and add context at edit time.
+
+## Staleness and incremental builds
+
+`atlas status` exits 0 when the index is fresh, 2 when stale (per-shard: only the shards whose inputs
+changed need rebuilding) and non-zero otherwise when no index exists. Refresh a stale index with
+`atlas-build --project <root> --incremental`; a plain `atlas-build` rebuilds everything.
 
 ## Query
 

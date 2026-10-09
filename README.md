@@ -47,7 +47,7 @@ The token is only used for the clone itself (passed as a one-off `git -c` header
 /opt/projects/oro-skills/install.sh
 ```
 
-This symlinks every `oro-*/` skill directory into `~/.claude/skills/`. Re-running it later also `git pull`s the checkout first (pass `--no-update` to skip that). It also links every `oro-*/agents/*.md` subagent (e.g. `oro-architect-gate`) into `~/.claude/agents/` (override with `CLAUDE_AGENTS_DIR`), and `oro-atlas/bin/atlas`, `atlas-build`, `atlas-setup` and `atlas-precommit` into `~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`; add it to PATH if needed). Run `atlas-setup <project>` once per Oro project to register the atlas hooks and build its index. To remove the symlinks: `install.sh --uninstall`.
+This symlinks every `oro-*/` skill directory into `~/.claude/skills/`. Re-running it later also `git pull`s the checkout first (pass `--no-update` to skip that). It also links every `oro-*/agents/*.md` subagent (e.g. `oro-architect-gate`) into `~/.claude/agents/` (override with `CLAUDE_AGENTS_DIR`), and `oro-atlas/bin/atlas`, `atlas-build`, `atlas-setup` and `atlas-precommit` into `~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`; add it to PATH if needed). Run `atlas-setup <project>` once per Oro project to register the atlas hooks (including the SubagentStart hook that points subagents at the index) and build its index. To remove the symlinks: `install.sh --uninstall`.
 
 This repo dropped its generic Oro/OroCommerce reference content (see "Why so little content" at the top) in favor of the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite. So by default `install.sh` also registers that marketplace and installs `orocommerce-development`, `orocommerce-review`, `orocommerce-testing`, and `orocommerce-maintenance` via the `claude plugin` CLI. Skip that with `--no-official-plugins`, or override the list with `ORO_SKILLS_OFFICIAL_PLUGINS="orocommerce-development orocommerce-review" ./install.sh`. `orocommerce-orchestrator` is deliberately not installed by default — it duplicates the plan→build→review→verify flow some projects already run via the `ai-sdlc-c1` plugin; install it yourself if a project actually wants it.
 
@@ -56,7 +56,7 @@ This repo dropped its generic Oro/OroCommerce reference content (see "Why so lit
 1. Re-run the installer (pass the token again for an HTTPS clone): `ORO_SKILLS_TOKEN=<token> /opt/projects/oro-skills/install.sh`.
 2. Run `atlas-setup <project>` once per Oro project. This is new and required: the atlas hooks only enforce in projects where it ran, because it writes the per-user `.claude/settings.local.json` and the git-ignored `var/atlas/` index.
 3. Restart running Claude Code sessions so they pick up the new skills, agents and hooks.
-4. When `atlas status` prints `STALE` (composer.lock changed), rebuild with `atlas-build --project <project>`.
+4. When `atlas status` prints `STALE` (exit code 2), refresh with `atlas-build --project <project> --incremental`.
 5. Re-run `atlas-setup` in every new checkout or worktree — neither file travels with git.
 6. Optional: wire `atlas-precommit` as a pre-commit gate (see `oro-atlas/README.md`).
 

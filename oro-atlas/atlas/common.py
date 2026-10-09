@@ -5,7 +5,30 @@ import os
 import re
 import subprocess
 
-OUT_SUBDIR = os.path.join("var", "atlas")
+OUT_SUBDIR = os.path.join(".claude", "atlas")
+LEGACY_SUBDIR = os.path.join("var", "atlas")  # indexes built before the move; migrated on first use
+
+
+def atlas_dir(root):
+    """The index directory; an index at the legacy location is moved there once (read in place if it cannot be)."""
+    new, old = os.path.join(root, OUT_SUBDIR), os.path.join(root, LEGACY_SUBDIR)
+    if not os.path.isdir(new) and os.path.isdir(old):
+        try:
+            os.makedirs(os.path.dirname(new), exist_ok=True)
+            os.rename(old, new)
+        except OSError:
+            new = old if os.path.isdir(old) else new
+    return new
+
+
+def ensure_ignored(out_dir):
+    """`*` inside the index directory keeps it (and the lock/log files beside the shards) out of git."""
+    path = os.path.join(out_dir, ".gitignore")
+    if not os.path.isfile(path):
+        os.makedirs(out_dir, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("*\n")
+
 
 
 class AtlasError(Exception):
@@ -94,12 +117,35 @@ _CLASSMAP_RE = re.compile(r"'((?:[^'\\]|\\\\)+)'\s*=>\s*\$(vendorDir|baseDir)\s*
 class ClassLocator:
     """Resolves FQCN -> (relative file, declaration line) from composer autoload maps."""
 
-    def __init__(self, root):
+    def __init__(self, root, cache_path=None):
         self.root = root
+        self.cache_path = cache_path
+        self._disk = self._load_disk()
+        self._dirty = False
         self.psr4 = []
         self.classmap = {}
         self._cache = {}
         self._load()
+
+    def _load_disk(self):
+        data = {}
+        if self.cache_path and os.path.isfile(self.cache_path):
+            try:
+                with open(self.cache_path, encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except (OSError, ValueError):
+                data = {}
+        return data
+
+    def save(self):
+        """Persist class -> (file, line) so later builds stat a file instead of re-reading it."""
+        if self.cache_path and self._dirty:
+            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+            tmp = "%s.tmp-%d" % (self.cache_path, os.getpid())
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self._disk, fh, separators=(",", ":"))
+            os.replace(tmp, self.cache_path)
+            self._dirty = False
 
     def _base(self, which):
         return os.path.join(self.root, "vendor") if which == "vendorDir" else self.root
@@ -113,12 +159,28 @@ class ClassLocator:
                 prefix = m.group(1).replace("\\\\", "\\")
                 dirs = [self._base(w) + d for w, d in _PATH_RE.findall(m.group(2))]
                 self.psr4.append((prefix, dirs))
-            # longest prefix first so nested namespaces win
-            self.psr4.sort(key=lambda x: -len(x[0]))
+        self._load_project_psr4()
+        # longest prefix first so nested namespaces win
+        self.psr4.sort(key=lambda x: -len(x[0]))
         p = os.path.join(comp, "autoload_classmap.php")
         if os.path.isfile(p):
             for m in _CLASSMAP_RE.finditer(open(p, encoding="utf-8", errors="replace").read()):
                 self.classmap[m.group(1).replace("\\\\", "\\")] = self._base(m.group(2)) + m.group(3)
+
+    def _load_project_psr4(self):
+        """composer.json psr-4 roots, so classes missing from a stale dumped autoload (new, uncommitted) still resolve."""
+        try:
+            with open(os.path.join(self.root, "composer.json"), encoding="utf-8") as fh:
+                psr4 = (json.load(fh).get("autoload") or {}).get("psr-4") or {}
+        except (OSError, ValueError):
+            psr4 = {}
+        known = {p for p, _ in self.psr4}
+        for prefix, paths in psr4.items():
+            dirs = [os.path.join(self.root, d.rstrip("/")) for d in ([paths] if isinstance(paths, str) else paths)]
+            if prefix in known:
+                self.psr4 = [(p, ds + [d for d in dirs if d not in ds] if p == prefix else ds) for p, ds in self.psr4]
+            else:
+                self.psr4.append((prefix, dirs))
 
     def file_of(self, fqcn):
         fqcn = fqcn.lstrip("\\")
@@ -141,6 +203,14 @@ class ClassLocator:
     def _locate(self, fqcn):
         path = self.file_of(fqcn)
         result = (None, None)
+        try:
+            st = os.stat(path) if path else None
+        except OSError:
+            st = None
+        stamp = [st.st_mtime_ns, st.st_size] if st else None
+        hit = self._disk.get(fqcn)
+        if st and hit and hit[2:] == stamp:
+            return (hit[0], hit[1])
         if path and os.path.isfile(path):
             short = re.escape(fqcn.rsplit("\\", 1)[-1])
             decl = re.compile(r"^\s*(?:(?:final|abstract|readonly)\s+)*(?:class|interface|trait|enum)\s+" + short + r"\b")
@@ -151,6 +221,8 @@ class ClassLocator:
                         line = n
                         break
             result = (os.path.relpath(os.path.realpath(path), os.path.realpath(self.root)), line)
+            self._disk[fqcn] = [result[0], result[1]] + stamp
+            self._dirty = True
         return result
 
 
@@ -159,16 +231,17 @@ class Context:
 
     def __init__(self, root, refresh_raw=False):
         self.root = root
-        self.out_dir = os.path.join(root, OUT_SUBDIR)
+        self.out_dir = atlas_dir(root)
         self.raw_dir = os.path.join(self.out_dir, "raw")
         self.refresh_raw = refresh_raw
         self._locator = None
         self._raw = {}
+        self.memo_seconds = 0.0
 
     @property
     def locator(self):
         if self._locator is None:
-            self._locator = ClassLocator(self.root)
+            self._locator = ClassLocator(self.root, os.path.join(self.out_dir, "cache", "locate.json"))
         return self._locator
 
     def container(self):
@@ -182,6 +255,32 @@ class Context:
         if "events" not in self._raw:
             self._raw["events"] = raw.events(self)
         return self._raw["events"]
+
+    def vendor_memo(self, name, key, compute):
+        """JSON-able result of scanning vendor/, reused until composer.lock, vendor/ or the extractors change."""
+        import time
+        from . import index
+        path = os.path.join(self.out_dir, "cache", name + ".json")
+        stamp = {"lock": index.composer_lock_sha(self.root), "vendor": index.vendor_state(self.root),
+                 "extractor": index.extractor_sha(), "key": key}
+        data = None
+        if not self.refresh_raw and os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    saved = json.load(fh)
+                data = saved["data"] if saved.get("stamp") == stamp else None
+            except (OSError, ValueError, KeyError):
+                data = None
+        if data is None:
+            t0 = time.time()
+            data = compute()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = "%s.tmp-%d" % (path, os.getpid())
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump({"stamp": stamp, "data": data}, fh)
+            os.replace(tmp, path)
+            self.memo_seconds += time.time() - t0
+        return data
 
     def shard(self, name):
         """Records of an already-built shard (build order guarantees dependencies)."""

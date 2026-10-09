@@ -46,11 +46,8 @@ class SkillFrontmatterTest(unittest.TestCase):
         self.assertLessEqual(len(description), 1536)
         self.assertNotIn("when_to_use", fm)
 
-    def test_paths_is_yaml_list_of_globs(self):
-        fm = frontmatter(read(ATLAS_DIR + "/SKILL.md"))
-        paths = re.findall(r'^  - "([^"]+)"$', fm.split("paths:")[1], re.M)
-        self.assertTrue(paths)
-        self.assertTrue(all(p.startswith("src/") for p in paths))
+    def test_no_paths_filter_so_it_loads_at_design_time(self):
+        self.assertNotIn("paths:", frontmatter(read(ATLAS_DIR + "/SKILL.md")))
 
 
 @unittest.skipUnless(os.path.isfile(PIPELINE), "cc prompts not checked out")

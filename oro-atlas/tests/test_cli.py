@@ -3,13 +3,15 @@ import json
 import os
 import unittest
 
+os.environ["ATLAS_NO_AUTOBUILD"] = "1"
+
 from atlas import cli, index, store
 from tests.test_core import make_project
 
 
 def _project(shards):
     root = make_project()
-    out = os.path.join(root, "var", "atlas")
+    out = os.path.join(root, ".claude", "atlas")
     for name, recs in shards.items():
         store.write_shard(out, name, recs)
     index.update_index(root, out, {k: len(v) for k, v in shards.items()})

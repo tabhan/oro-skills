@@ -38,7 +38,7 @@ is **aspect interceptor > Symfony decorator** — see §2.
 When you want to wrap / filter / mutate the behaviour of an Oro core service method, default to
 the project's `aaxis_aspect.interceptor` pattern (Aaxis AspectBundle) before reaching for
 Symfony's `decorates:`. Use a Symfony decorator only when **no downstream consumer typehints the
-concrete class** of the decorated service. Check with `atlas unsafe <Class>` (e.g. `atlas unsafe ProductRepository`) (see oro-atlas).
+concrete class** of the decorated service. Check with `atlas unsafe <Class>` (e.g. `atlas unsafe ProductRepository`) (see oro-atlas). Run atlas first even for investigation, before reading vendor/.
 
 **Why decorators bite on Oro:** many Oro consumers typehint the **concrete class**
 (e.g. `WorkflowAclExtension::__construct(... WorkflowAclMetadataProvider $provider)`). A

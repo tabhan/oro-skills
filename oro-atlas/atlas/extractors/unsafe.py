@@ -168,8 +168,8 @@ def declaration_full(src):
     return result
 
 
-def _php_files(root):
-    for sub in SCAN_ROOTS:
+def _php_files(root, roots=SCAN_ROOTS):
+    for sub in roots:
         for dp, dirs, files in os.walk(os.path.join(root, sub)):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for f in files:
@@ -177,12 +177,12 @@ def _php_files(root):
                     yield os.path.join(dp, f)
 
 
-def scan(root, parents=None, paths=None):
+def scan(root, parents=None, paths=None, roots=SCAN_ROOTS):
     """Return (kinds, uses {typehinted fqcn: [consumer]}); fills `parents` {fqcn: parent} and `paths` {fqcn: relpath}."""
     kinds, uses = {}, {}
     parents = {} if parents is None else parents
     paths = {} if paths is None else paths
-    for path in _php_files(root):
+    for path in _php_files(root, roots):
         with open(path, encoding="utf-8", errors="ignore") as fh:
             src = fh.read()
         fqcn, kind, parent = declaration_full(src)
@@ -289,9 +289,25 @@ def _candidates(uses, joined, ancestors):
     return sorted(direct | via_parent)
 
 
-def extract(ctx):
+def _scan_roots(ctx, roots):
     parents, paths = {}, {}
-    kinds, uses = scan(ctx.root, parents, paths)
+    kinds, uses = scan(ctx.root, parents, paths, roots)
+    return {"kinds": kinds, "uses": uses, "parents": parents, "paths": paths}
+
+
+def scan_all(ctx):
+    """Vendor scan (memoised until vendor/ changes) merged with a fresh scan of src/, as one full scan would."""
+    vendor = ctx.vendor_memo("unsafe-scan", None, lambda: _scan_roots(ctx, SCAN_ROOTS[:-1]))
+    own = _scan_roots(ctx, SCAN_ROOTS[-1:])
+    for t, consumers in own["uses"].items():
+        vendor["uses"].setdefault(t, []).extend(consumers)
+    for part in ("kinds", "parents", "paths"):
+        vendor[part].update(own[part])
+    return vendor["kinds"], vendor["uses"], vendor["parents"], vendor["paths"]
+
+
+def extract(ctx):
+    kinds, uses, parents, paths = scan_all(ctx)
     joined = join_services(ctx.shard("services"))
     is_contract = _contract_filter(kinds, paths, ctx)
     memo = {}

@@ -1,4 +1,5 @@
 """DI tag -> implementing services (from the container dump) + statically detectable consumers."""
+import hashlib
 import os
 import re
 import subprocess
@@ -111,10 +112,8 @@ def collect_tag_constants(dirs, known):
     return out
 
 
-def collect_consumers(ctx, known):
-    dirs = [os.path.join(ctx.root, "vendor"), os.path.join(ctx.root, "src")]
+def _scan_dirs(ctx, dirs, known, global_consts):
     consumers = {}
-    global_consts = collect_tag_constants(dirs, known)
 
     def put(tag, rec):
         consumers.setdefault(tag, []).append(rec)
@@ -128,6 +127,25 @@ def collect_consumers(ctx, known):
     for path in _grep_files(ctx.root, dirs, "!tagged_(iterator|locator)", ["*.yml", "*.yaml"]):
         for tag, line, owner in scan_yaml(read_text(path), known):
             put(tag, {"service": owner, "file": ctx.rel(path), "line": line, "via": "tagged_iterator", "confidence": "call"})
+    return consumers
+
+
+def _vendor_part(ctx, known):
+    dirs = [os.path.join(ctx.root, "vendor")]
+    consts = collect_tag_constants(dirs, known)
+    return {"consts": [[c, n, v] for (c, n), v in consts.items()], "consumers": _scan_dirs(ctx, dirs, known, consts)}
+
+
+def collect_consumers(ctx, known):
+    """Vendor consumers are memoised (keyed by the tag set); src/ is rescanned every build."""
+    key = hashlib.sha1("\n".join(sorted(known)).encode()).hexdigest()
+    vendor = ctx.vendor_memo("tags-consumers", key, lambda: _vendor_part(ctx, known))
+    src = [os.path.join(ctx.root, "src")]
+    consts = {(c, n): v for c, n, v in vendor["consts"]}
+    consts.update(collect_tag_constants(src, known))
+    consumers = {t: list(recs) for t, recs in vendor["consumers"].items()}
+    for tag, recs in _scan_dirs(ctx, src, known, consts).items():
+        consumers.setdefault(tag, []).extend(recs)
     return consumers
 
 

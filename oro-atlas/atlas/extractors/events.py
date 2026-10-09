@@ -273,12 +273,97 @@ def _listener_hint(lis):
     return (" [" + ", ".join(shown) + (", +%d" % (len(lis) - 3) if len(lis) > 3 else "") + "]") if shown else ""
 
 
+DOCTRINE_TAGS = {
+    "doctrine.event_listener": "event_listener",
+    "doctrine.event_subscriber": "event_subscriber",
+    "doctrine.orm.entity_listener": "entity_listener",
+}
+_SUBSCRIBED_RE = re.compile(r"function\s+getSubscribedEvents\s*\([^)]*\)[^{]*\{(.*?)\n\s{0,4}\}", re.S)
+_DOCTRINE_EVENT_RE = re.compile(r"(?:Events::|['\"])(\w+)['\"]?")
+DOCTRINE_EVENTS = frozenset((
+    "prePersist", "postPersist", "preUpdate", "postUpdate", "preRemove", "postRemove", "preFlush", "onFlush",
+    "postFlush", "onClear", "postLoad", "loadClassMetadata", "onClassMetadataNotFound", "postGenerateSchemaTable",
+    "postGenerateSchema",
+))
+
+
+def subscribed_doctrine_events(src):
+    """Doctrine event names a subscriber's getSubscribedEvents() returns, in source order."""
+    m = _SUBSCRIBED_RE.search(src)
+    names = [n for n in _DOCTRINE_EVENT_RE.findall(m.group(1))] if m else []
+    return [n for n in dict.fromkeys(names) if n in DOCTRINE_EVENTS]
+
+
+def _method_line(ctx, cls, method, cache):
+    """(relpath, line of `function method`) falling back to the class declaration."""
+    if (cls, method) not in cache:
+        rel, line = ctx.locator.locate(cls) if cls else (None, None)
+        path = ctx.locator.file_of(cls) if cls else None
+        found = re.search(r"function\s+%s\s*\(" % re.escape(method), read_text(path)) if path and method else None
+        if found:
+            line = read_text(path).count("\n", 0, found.start()) + 1
+        cache[(cls, method)] = (rel, line)
+    return cache[(cls, method)]
+
+
+def _doctrine_entries(defs):
+    """[(service id, class, tag kind, event or None, params)] for every Doctrine-tagged service."""
+    return [
+        (sid, d.get("class") or "", DOCTRINE_TAGS[t["name"]], (t.get("parameters") or {}).get("event"), t.get("parameters") or {})
+        for sid, d in sorted(defs.items())
+        for t in d.get("tags", []) if t["name"] in DOCTRINE_TAGS
+    ]
+
+
+def doctrine_records(ctx, defs):
+    """One record per (event, listener, entity): Doctrine listeners/subscribers from vendor and src alike."""
+    cache, rows = {}, []
+    for sid, cls, kind, event, p in _doctrine_entries(defs):
+        events = [event] if event else (
+            subscribed_doctrine_events(read_text(ctx.locator.file_of(cls) or "")) if kind == "event_subscriber" and cls else [])
+        for ev in events:
+            # Doctrine calls a method named after the event unless the tag names another one.
+            method = p.get("method") or ev
+            rel, line = _method_line(ctx, cls, method, cache)
+            rows.append({
+                "event": ev, "type": kind, "class": cls, "method": method, "priority": p.get("priority", 0),
+                "entity": p.get("entity"), "service": sid, "connection": p.get("connection") or p.get("entity_manager"),
+                "file": rel, "line": line,
+            })
+    rows.sort(key=lambda r: (r["event"], -int(r["priority"] or 0), r["class"], r["entity"] or ""))
+    seen = {}
+    for r in rows:
+        base = "doctrine:%s:%s::%s%s" % (r["event"], r["class"], r["method"], "@" + r["entity"] if r["entity"] else "")
+        seen[base] = seen.get(base, 0) + 1
+        yield _doctrine_record(r, base if seen[base] == 1 else "%s#%d" % (base, seen[base]))
+
+
+def _doctrine_record(r, rid):
+    short = lambda c: c.rsplit("\\", 1)[-1] if c else ""  # noqa: E731
+    text = "doctrine %s %s::%s priority=%s%s" % (
+        r["type"], short(r["class"]), r["method"], r["priority"], " entity=" + short(r["entity"]) if r["entity"] else " (all entities)")
+    keys = [k for k in (r["event"], short(r["class"]), r["class"], short(r["entity"]), r["entity"], r["service"]) if k]
+    return dict(r, id=rid, keys=list(dict.fromkeys(keys)), kind="doctrine_listener", listeners=[], dispatch_sites=[],
+                dispatch_count=0, free_hook=False, text=text)
+
+
+def _all_sites(ctx):
+    """Dispatch sites: vendor/ memoised until composer changes, src/ rescanned each build."""
+    vendor = ctx.vendor_memo("events-sites", None, lambda: dict(zip(("resolved", "dynamic"), collect_sites(ctx, files=_grep_files(ctx.root, SCAN_DIRS[:-1])))))
+    resolved, dynamic = collect_sites(ctx, files=_grep_files(ctx.root, SCAN_DIRS[-1:]))
+    merged = {ev: list(sites) for ev, sites in vendor["resolved"].items()}
+    for ev, sites in resolved.items():
+        merged.setdefault(ev, []).extend(sites)
+    return merged, vendor["dynamic"] + dynamic
+
+
 def extract(ctx):
     runtime = ctx.events()
     exact, subs = _listener_index(ctx.container())
-    resolved, dynamic = collect_sites(ctx)
+    resolved, dynamic = _all_sites(ctx)
     for ev in sorted(set(runtime) | set(resolved)):
         yield build_record(ctx, ev, runtime.get(ev, []), resolved.get(ev, []), exact, subs)
+    yield from doctrine_records(ctx, ctx.container()["definitions"])
     by_file = {}
     for s in dynamic:
         by_file.setdefault(s["file"], []).append(s)

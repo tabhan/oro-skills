@@ -1,12 +1,11 @@
 """atlas-build driver."""
 import argparse
 import os
-import shutil
 import sys
 import time
 
 from . import extractors, index, raw, store
-from .common import AtlasError, Context, find_project_root
+from .common import AtlasError, Context, ensure_ignored, find_project_root
 
 
 def _pid_alive(pid):
@@ -50,45 +49,73 @@ def release_lock(path):
         os.remove(path)
 
 
-def _swap(staging, final):
-    """Two renames: readers see either the old or the new tree, never a half-written one."""
-    old = "%s.old-%d" % (final, os.getpid())
-    if os.path.isdir(final):
-        os.rename(final, old)
-    os.rename(staging, final)
-    shutil.rmtree(old, ignore_errors=True)
+LOCK_NAME = ".lock"
+MAX_PASSES = 3
+
+
+def lock_path(out_dir):
+    return os.path.join(out_dir, LOCK_NAME)
+
+
+def build_running(out_dir):
+    """True while a live build process holds the lock."""
+    owner = _lock_owner(lock_path(out_dir))
+    return bool(owner) and _pid_alive(owner)
 
 
 def _run(ctx, mods, names, only, out):
     if not only:
         raw.clear(ctx)
+    # Snapshot before extracting: an edit landing mid-build must still show as stale afterwards.
+    pre = index.current_stamps(ctx.root, names)
     built = {}
     for name in names:
-        t0 = time.time()
+        t0, memo0 = time.time(), ctx.memo_seconds
         built[name] = store.write_shard(ctx.out_dir, name, mods[name].extract(ctx))
-        out.write("%-12s %7d records  %.1fs\n" % (name, built[name], time.time() - t0))
-        index.update_index(ctx.root, ctx.out_dir, {name: built[name]})
+        took = time.time() - t0
+        out.write("%-12s %7d records  %.1fs\n" % (name, built[name], took))
+        # Memoised vendor scans are a one-off cost; the steady-state time is what predicts a cheap refresh.
+        index.update_index(ctx.root, ctx.out_dir, {name: built[name]}, {name: took - (ctx.memo_seconds - memo0)}, {name: pre[name]})
     return built
 
 
 def build(ctx, only=None, out=sys.stdout):
+    """Build in place under the lock; each shard and index.json are replaced atomically, so readers never see a partial file."""
     mods = extractors.load_all()
     names = extractors.ordered(mods, only)
-    final = ctx.out_dir
-    lock = acquire_lock(final + ".lock")
-    staging = "%s.tmp-%d" % (final, os.getpid())
+    ensure_ignored(ctx.out_dir)
+    lock = acquire_lock(lock_path(ctx.out_dir))
     try:
-        shutil.rmtree(staging, ignore_errors=True)
-        if only and os.path.isdir(final):
-            shutil.copytree(final, staging)
-        os.makedirs(staging, exist_ok=True)
-        ctx.out_dir, ctx.raw_dir = staging, os.path.join(staging, "raw")
         built = _run(ctx, mods, names, only, out)
-        _swap(staging, final)
     finally:
-        ctx.out_dir, ctx.raw_dir = final, os.path.join(final, "raw")
-        shutil.rmtree(staging, ignore_errors=True)
+        if ctx._locator is not None:
+            ctx._locator.save()
         release_lock(lock)
+    return built
+
+
+def build_incremental(ctx, out=sys.stdout, background=False):
+    """Rebuild stale or missing shards (plus dependents) until none is left; returns {shard: count}.
+
+    background=True skips silently when another build runs: that build re-checks before it exits.
+    """
+    ensure_ignored(ctx.out_dir)
+    built = {}
+    for _ in range(MAX_PASSES):
+        status = index.shard_status(ctx.root, ctx.out_dir)
+        todo = [n for n, st in status.items() if st["state"] != "fresh"]
+        if not todo:
+            if not built:
+                out.write("all %d shards fresh; nothing to rebuild\n" % len(status))
+            break
+        if background and build_running(ctx.out_dir):
+            break
+        try:
+            built.update(build(ctx, todo, out))
+        except AtlasError:
+            if not background:
+                raise
+            break
     return built
 
 
@@ -96,6 +123,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="atlas-build", description="Generate the oro-atlas index")
     ap.add_argument("--project", help="project root (default: walk up from cwd)")
     ap.add_argument("--only", help="comma-separated categories to (re)build")
+    ap.add_argument("--incremental", action="store_true", help="rebuild only stale or missing shards")
+    ap.add_argument("--background", action="store_true", help="with --incremental: exit quietly when a build is already running")
     ap.add_argument("--refresh-raw", action="store_true", help="re-dump container/events even if cached")
     args = ap.parse_args(argv)
     code = 0
@@ -103,7 +132,9 @@ def main(argv=None):
         ctx = Context(find_project_root(args.project), refresh_raw=args.refresh_raw)
         only = [n for n in (args.only or "").split(",") if n]
         t0 = time.time()
-        build(ctx, only)
+        if args.incremental and only:
+            raise AtlasError("--incremental and --only are exclusive")
+        build_incremental(ctx, background=args.background) if args.incremental else build(ctx, only)
         sys.stdout.write("done in %.1fs -> %s\n" % (time.time() - t0, ctx.out_dir))
     except AtlasError as exc:
         sys.stderr.write("atlas-build: %s\n" % exc)

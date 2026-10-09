@@ -6,13 +6,8 @@ description: >-
   entity exists or should I hook into": `atlas <subcommand> <term>` answers from a generated index of
   vendor/ and src/ with file:line. Use BEFORE writing an event listener, decorator, service override,
   DI tag, datagrid extension, workflow/operation, MQ processor, system config field, layout block or
-  jsmodules entry, to reuse the OOTB hook. Run `atlas unsafe <Class>` before any `decorates:`.
-paths:
-  - "src/**/Resources/config/**"
-  - "src/**/Resources/views/layouts/**"
-  - "src/**/EventListener/**"
-  - "src/**/*Interceptor.php"
-  - "src/**/Bundle/**/*.php"
+  jsmodules entry, to reuse the OOTB hook. Also use at design/investigation time, before reading
+  vendor/ to learn how Oro wires something. Run `atlas unsafe <Class>` before any `decorates:`.
 ---
 
 # oro-atlas
@@ -44,9 +39,11 @@ instead of grepping 14k services by hand. Details: [README.md](README.md).
 - `atlas unsafe <Class>` lists classes typehinted concretely by other constructors. If the target
   is listed, `decorates:` breaks the container: use `aaxis_aspect.interceptor` (see oro-conventions §2).
 - Reuse an OOTB hook when one exists; only add a new event/tag/extension point if the atlas has none.
-- A `STALE` line means composer.lock changed: rebuild with `atlas-build` (needs the project's
-  `php bin/console` working) before trusting results.
-- If `var/atlas/` is missing, run `atlas-setup <root>` once (registers hooks, then builds; plain
+- A `STALE` line (`atlas status` exits 2) means the index is out of date: run
+  `atlas-build --incremental` (needs the project's `php bin/console` working) before trusting results.
+- Investigation counts: run atlas before reading vendor/, not only before editing. Subagents get this
+  reminder from the SubagentStart hook.
+- If `.claude/atlas/` is missing, run `atlas-setup <root>` once (registers hooks, then builds; plain
   rebuild: `atlas-build --project <root>`). Output is git-ignored.
 - If `atlas` is not on PATH, use `$ORO_SKILLS_DIR/oro-atlas/bin/atlas` (default checkout:
   `/opt/projects/oro-skills/oro-atlas/bin/atlas`) with `--project <root>`.

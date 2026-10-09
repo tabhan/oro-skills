@@ -58,7 +58,7 @@ def service_aliases(root, target):
     """Ids/classes equivalent to `target` per the services shard (aliases, class)."""
     names = {target}
     try:
-        for rec in c.store.read_shard(os.path.join(root, "var", "atlas"), "services"):
+        for rec in c.store.read_shard(c.atlas_dir(root), "services"):
             if target == rec.get("id") or target in (rec.get("aliases") or []):
                 names |= {rec.get("id"), rec.get("class")} | set(rec.get("aliases") or [])
     except Exception:  # noqa: BLE001 - shard absent: fall back to the literal id
