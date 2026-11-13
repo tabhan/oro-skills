@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-project atlas setup: git refresh hooks, legacy settings.local.json hook cleanup, index build."""
+"""Per-project atlas setup: legacy hook cleanup, then an explicit index build."""
 import json
 import os
 import subprocess
@@ -14,34 +14,15 @@ GIT_HOOKS = ("post-checkout", "post-merge", "post-rewrite")
 MARK = "# oro-atlas: refresh index"
 
 
-def git_hook_body(name):
-    # post-checkout's third argument is 0 for a single-file checkout, which moves no code.
-    guard = '[ "$3" = "0" ] && exit 0\n' if name == "post-checkout" else ""
-    return (
-        "#!/bin/sh\n%s\n%s"
-        '( "%s" --project "$(git rev-parse --show-toplevel)" --incremental --background >/dev/null 2>&1 & )\n'
-        % (MARK, guard, os.path.join(HERE, "atlas-build"))
-    )
-
-
-def install_git_hooks(project):
-    """Silent background refresh after checkout/merge/rebase; never touches a hook that is not ours."""
+def remove_git_hooks(project):
+    """Earlier versions installed background-refresh git hooks; atlas never rebuilds on its own now. Foreign hooks stay."""
     p = subprocess.run(["git", "-C", project, "rev-parse", "--git-path", "hooks"], capture_output=True, text=True)
-    if p.returncode != 0:
-        return ["git hooks: not a git work tree, skipped"]
-    hooks_dir = os.path.join(project, p.stdout.strip())
     notes = []
-    for name in GIT_HOOKS:
-        path = os.path.join(hooks_dir, name)
-        existing = open(path, encoding="utf-8", errors="replace").read() if os.path.isfile(path) else None
-        if existing is not None and MARK not in existing:
-            notes.append("git hook %s exists and is not atlas's: left alone; add `atlas-build --incremental --background` to it" % name)
-            continue
-        os.makedirs(hooks_dir, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(git_hook_body(name))
-        os.chmod(path, 0o755)
-        notes.append("git hook %s: installed" % name)
+    for name in GIT_HOOKS if p.returncode == 0 else ():
+        path = os.path.join(project, p.stdout.strip(), name)
+        if os.path.isfile(path) and MARK in open(path, encoding="utf-8", errors="replace").read():
+            os.remove(path)
+            notes.append("git hook %s: removed (atlas no longer rebuilds automatically)" % name)
     return notes
 
 
@@ -56,7 +37,7 @@ def main(argv):
         print("removed legacy atlas hooks from %s (the oro-skills plugin provides them)" % legacy.settings_path(project))
     if cleanup_only:
         return 0
-    for note in install_git_hooks(project):
+    for note in remove_git_hooks(project):
         print(note)
     build = [] if "--no-build" in argv else [sys.executable, os.path.join(HERE, "atlas-build"), "--project", project]
     return subprocess.call(build) if build else 0

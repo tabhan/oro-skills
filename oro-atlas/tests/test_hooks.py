@@ -100,7 +100,7 @@ class HookTest(Base):
         with open(os.path.join(self.root, "composer.lock"), "w") as fh:
             json.dump({"packages": [], "x": 1}, fh)
         _, out = self.edit("decorates: foo.mgr")
-        self.assertIn("STALE", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("index stale", out["hookSpecificOutput"]["additionalContext"])
 
     def test_non_watched_file_and_garbage_stdin_are_silent(self):
         self.build_index()

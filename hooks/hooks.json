@@ -27,7 +27,7 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_atlas.py\"",
-            "timeout": 130
+            "timeout": 10
           }
         ]
       }
@@ -61,16 +61,6 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_bash.py\"",
-            "timeout": 130
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_edit.py\"",
             "timeout": 10
           }
         ]

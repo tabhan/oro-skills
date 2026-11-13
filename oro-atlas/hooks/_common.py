@@ -63,9 +63,25 @@ def save_state(path, data):
         pass
 
 
+def build_command(root, state):
+    return "%s --project %s%s" % (BUILD, root, " --incremental" if state == "stale" else "")
+
+
+def stale_reason(root, state):
+    """Short why for the hint line: the changed inputs of the stale shards, or 'no index'."""
+    reason = "no index"
+    if state == "stale":
+        try:
+            reasons = index.stale_reasons(root, atlas_dir(root))
+            reason = ", ".join(sorted({r for rs in reasons.values() for r in rs})) + " changed"
+        except Exception:  # noqa: BLE001
+            reason = "inputs changed"
+    return reason
+
+
 def build_hint(root, state):
-    flag = " --incremental" if state == "stale" else ""
-    return "atlas index is %s: run `%s --project %s%s` before relying on it." % (state.upper(), BUILD, root, flag)
+    """One line naming the index state and the exact rebuild command; atlas never rebuilds on its own."""
+    return "atlas index %s (%s); rebuild: %s" % (state, stale_reason(root, state), build_command(root, state))
 
 
 def index_state(root):
@@ -110,7 +126,6 @@ def clip(text, limit=MAX_CONTEXT):
 
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 OVERRIDE_VAR = "ORO_ATLAS_ENFORCE"
-BUILD_TIMEOUT = 120
 
 EXTENSION_FILE = re.compile(
     r"(?:/Resources/config/|/Resources/views/layouts/|/layouts/[^/]+/|"
@@ -159,19 +174,3 @@ def gate(root, check_id, reason, session_id, tool, file):
         log_decision(session_id, tool, file, "bypass", check=check_id, reason=reason[:200])
         decision, text = None, "%s=0 is set by the user: enforcement off, this would be denied: %s" % (OVERRIDE_VAR, reason)
     return decision, text
-
-
-def run_build(root, incremental, log_dir=None):
-    """Foreground atlas build; (ok, seconds, log_path_or_None). Output goes to a log, never into the context."""
-    start = time.time()
-    build = os.environ.get("ORO_ATLAS_BUILD_BIN") or BUILD
-    cmd = [sys.executable, build, "--project", root] + (["--incremental"] if incremental else [])
-    log = os.path.join(new_atlas_dir(root), "session-build.log")
-    ok = False
-    try:
-        os.makedirs(new_atlas_dir(root), exist_ok=True)
-        with open(log, "wb") as fh:
-            ok = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT, timeout=BUILD_TIMEOUT).returncode == 0
-    except Exception:  # noqa: BLE001 - timeout, missing php, unwritable dir
-        ok = False
-    return ok, int(time.time() - start), log

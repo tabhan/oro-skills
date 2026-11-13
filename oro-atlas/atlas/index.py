@@ -242,4 +242,4 @@ def stale_line(root, out_dir, names=None):
     for name, rs in reasons.items():
         by_reason.setdefault(" and ".join(rs), []).append(name)
     parts = ["%s changed since %s built" % (r, ",".join(ns)) for r, ns in sorted(by_reason.items())]
-    return ("STALE: %s; run atlas-build --incremental" % "; ".join(parts)) if parts else None
+    return ("STALE: %s; rebuild (never automatic): atlas build --incremental" % "; ".join(parts)) if parts else None

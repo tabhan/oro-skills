@@ -4,9 +4,7 @@ import json
 import re
 import sys
 
-import io
 import os
-import subprocess
 
 from . import build, extractors, index, migrate, notesindex, rollup, store
 from .common import AtlasError, Context, MissingShard, atlas_dir, find_project_root
@@ -177,7 +175,7 @@ def _common_flags(suppress):
     p.add_argument("--project", default=default, help="project root (default: walk up from cwd)")
     p.add_argument("--json", action="store_true", default=default if suppress else False, help="machine-readable JSON output")
     p.add_argument("--no-rebuild", action="store_true", default=default if suppress else False,
-                   help="never auto-rebuild a shard stale for src reasons (also: ATLAS_NO_AUTOBUILD=1)")
+                   help="deprecated no-op: queries never rebuild")
     return p
 
 
@@ -205,7 +203,6 @@ def build_parser():
 
 
 ROLLUP_MAX = 3
-AUTO_BUDGET_SECONDS = 5.0
 
 
 def _entity_rollups(out_dir, rows, query):
@@ -280,12 +277,9 @@ def run_notes(root, out_dir, args, out):
             out.write("%s: %s\n" % (slug, reason))
         out.write("%d note(s) fail validation\n" % len(bad) if bad else "all notes valid\n")
         return 1 if bad else 0
-    if not (args.no_rebuild or os.environ.get("ATLAS_NO_AUTOBUILD")) and index.read_index(out_dir) \
-            and index.shard_status(root, out_dir, ["notes"])["notes"]["state"] != "fresh":
-        try:
-            build.build(Context(root), ["notes"], out=io.StringIO())
-        except AtlasError:
-            sys.stderr.write("atlas: notes index is stale and could not be refreshed\n")
+    line = index.stale_line(root, out_dir, ["notes"])
+    if line:
+        sys.stderr.write(line + "\n")
     notes = notesindex.load(out_dir)
     version = (index.read_index(out_dir) or {}).get("oro_version")
     term = " ".join(args.query)
@@ -313,39 +307,6 @@ def run_notes(root, out_dir, args, out):
     return 0 if found else 1
 
 
-def spawn_background(out_dir):
-    """Detached incremental rebuild; its output goes to build.log beside the shards."""
-    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "atlas-build")
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, "build.log"), "ab") as log:
-        subprocess.Popen([sys.executable, script, "--project", os.path.dirname(os.path.dirname(out_dir)), "--incremental", "--background"],
-                         stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True)
-
-
-def _heal(root, out_dir, shards, err):
-    """Refresh what a query is about to read: inline when only src changed and it is cheap, else in the background."""
-    warned = False
-    status = index.shard_status(root, out_dir, shards)
-    todo = sorted(n for n, st in status.items() if st["state"] != "fresh")
-    stale = [n for n in todo if status[n]["state"] == "stale"]
-    if todo:
-        meta = (index.read_index(out_dir) or {}).get("shards", {})
-        names = extractors.ordered(extractors.load_all(), stale) if stale else []
-        cost = sum(meta.get(n, {}).get("build_seconds") or AUTO_BUDGET_SECONDS + 1 for n in names)
-        if len(stale) == len(todo) and all(status[n]["reasons"] == ["src"] for n in stale) and cost <= AUTO_BUDGET_SECONDS:
-            try:
-                build.build(Context(root), names, out=io.StringIO())
-                todo = []
-            except AtlasError:
-                pass  # another build holds the lock: answer from the current shards
-        if todo:
-            if not build.build_running(out_dir):
-                spawn_background(out_dir)
-            err.write("atlas: %s stale; refreshing in the background, answering from the current index\n" % ",".join(todo))
-            warned = True
-    return warned
-
-
 def main(argv=None, out=None):
     out = out or sys.stdout
     argv = sys.argv[1:] if argv is None else list(argv)
@@ -365,18 +326,13 @@ def main(argv=None, out=None):
                 migrate.spawn(root)
             sys.stderr.write("atlas: the index is moving to .oro-ai/atlas; answering from the old index%s\n" % (
                 " (migration failed %d times; run: %s)" % (migrate.failures(root)["count"], migrate.manual_command(root)) if migrate.gave_up(root) else ""))
-            args.no_rebuild = True
         if args.cmd == "notes":
             code = run_notes(root, out_dir, args, out)
         elif args.cmd == "status":
             code = run_status(root, out_dir, out, args.json, args.quiet)
         else:
-            wanted = None if args.cmd == "search" else [SHARDS[args.cmd]]
-            warned = False
-            if not (args.no_rebuild or os.environ.get("ATLAS_NO_AUTOBUILD")) and index.read_index(out_dir):
-                warned = _heal(root, out_dir, wanted or _query_shards(out_dir), sys.stderr)
             used, code = _query(root, out_dir, args, out)
-            line = None if warned else index.stale_line(root, out_dir, used)
+            line = index.stale_line(root, out_dir, used)
             if line:
                 sys.stderr.write(line + "\n")
     except AtlasError as exc:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""SessionStart hook (startup|resume|compact): refresh a stale atlas index, then inject one status line.
+"""SessionStart hook (startup|resume|compact): inject one status line; a stale index is reported, never rebuilt.
 
-Enforcement lives in pretooluse_edit.py; this hook only keeps the index fresh and tells the model (and the user) the state.
+Enforcement lives in pretooluse_edit.py; this hook only reports the index state; rebuilding is always a deliberate command.
 """
 import json
 import os
@@ -40,23 +40,13 @@ def version_line(root):
     return text
 
 
-def refresh(root, sid):
-    """(status text, build_failed log or None); a migration in flight owns the rebuild."""
+def index_status(root):
+    """Never builds: a stale/missing index is reported with the exact command (a migration in flight owns the rebuild)."""
     state = c.index_state(root)
-    text, failed = "index fresh", None
-    if state != "ok" and migrate.pending(root):
-        text = "index %s (migration rebuilding in background)" % state
-    elif state != "ok":
-        ok, secs, log = c.run_build(root, state == "stale")
-        text = "index %s, rebuilt in %ds" % (state, secs) if ok else "index %s, BUILD FAILED (log: %s)" % (state, log)
-        failed = None if ok else log
-    path, st = c.session_state(sid)
-    if failed:
-        st["build_failed"] = failed
-    else:
-        st.pop("build_failed", None)
-    c.save_state(path, st)
-    return text, failed
+    text = "Atlas index fresh."
+    if state != "ok":
+        text = c.build_hint(root, state) + ("; migration rebuilding in background" if migrate.pending(root) else "") + "."
+    return text
 
 
 def decide(payload):
@@ -64,8 +54,7 @@ def decide(payload):
     out = None
     if root and is_oro(root):
         sid = payload.get("session_id")
-        status, _ = refresh(root, sid)
-        lines = ["[oro-atlas] %s. Atlas %s." % (version_line(root) or "Oro project", status),
+        lines = ["[oro-atlas] %s. %s" % (version_line(root) or "Oro project", index_status(root)),
                  "Edits to extension points (Resources/config, listeners, subscribers, Extension.php, entity_extend, layouts, "
                  "workflows, interceptors) are denied until an `atlas <sub> <term>` query has run this session."]
         hso = {"hookEventName": "SessionStart", "additionalContext": "\n".join(lines)}

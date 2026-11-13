@@ -27,17 +27,17 @@ Test directories (`**/Tests/**`) are not part of the staleness hash.
   `atlas status` lists each shard and exits 0 (fresh) or 2 (STALE/MISSING); `--quiet` prints nothing.
 - `atlas-build --incremental` rebuilds only stale/missing shards (full build stays the default);
   vendor scans are memoised in `cache/`, so one edited file refreshes in ~2-3s.
-- Queries refresh a src-stale shard inline when the last build was under 5s (silent); anything bigger
-  (composer/vendor/cache changes) starts a background rebuild, prints one stderr line and answers from
-  the old index. `--no-rebuild` / `ATLAS_NO_AUTOBUILD=1` disables it.
-- `atlas-setup` also registers a silent PostToolUse hook (Edit/Write/MultiEdit on src/config) and
-  post-checkout/post-merge/post-rewrite git hooks (never overwriting a foreign hook); they run
-  `atlas-build --incremental --background`, which skips when a build holds `.oro-ai/atlas/.lock`.
+- Atlas never rebuilds on its own: queries on a stale index answer from it and print one stderr line
+  `STALE: ...; rebuild (never automatic): atlas build --incremental`; the hooks name the exact command too.
+  The only automatic build left is the one-time legacy move to `.oro-ai/atlas/` (`atlas migrate`, below).
+  `--no-rebuild` is a deprecated no-op.
+- `atlas-setup` builds once when you run it and removes the background git hooks (post-checkout/post-merge/
+  post-rewrite) that earlier versions installed; foreign hooks are left alone.
 
 ## Setup (once per project)
 
 ```bash
-oro-atlas/bin/atlas-setup /path/to/oro-project             # git refresh hooks, legacy cleanup, build index
+oro-atlas/bin/atlas-setup /path/to/oro-project             # legacy cleanup, build index
 oro-atlas/bin/atlas-setup /path/to/oro-project --no-build  # without the build
 ```
 
@@ -56,12 +56,12 @@ other settings are kept), installs the git refresh hooks, then runs `atlas-build
 
 ### Enforcement
 
-- `sessionstart_atlas.py` (startup|resume|compact): Oro projects only; a stale index is rebuilt in the foreground
-  (120 s cap, log in `.oro-ai/atlas/session-build.log`) and one status line is injected. `posttooluse_bash.py`
-  marks the session as "queried" on any `atlas <sub>` command and rebuilds incrementally after `composer
+- `sessionstart_atlas.py` (startup|resume|compact): Oro projects only; injects one status line, and for a stale
+  or missing index `atlas index stale (<reason>); rebuild: <exact command>` without building. `posttooluse_bash.py`
+  marks the session as "queried" on any `atlas <sub>` command and prints the same hint after `composer
   install|update|require|remove`. The marker is keyed by `session_id`, so subagents share the parent's.
 - `pretooluse_edit.py` denies edits to extension files (`Resources/config/**`, listeners, subscribers,
-  `*Extension.php`, `entity_extend.yml`, layouts, interceptors) when the index is stale/missing/failed or no atlas
+  `*Extension.php`, `entity_extend.yml`, layouts, interceptors) when the index is stale/missing or no atlas
   query ran this session. Each deny is gated by `oro-applies --check <id>` (`hooks/checks.yml`): out of range
   skips, unknown Oro version downgrades to warn. Hook errors are swallowed; nothing blocks on a broken hook.
 - Escape hatch: `ORO_ATLAS_ENFORCE=0` in the process environment (the human's shell, before `claude`) turns every

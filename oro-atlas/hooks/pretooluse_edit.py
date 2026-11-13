@@ -86,8 +86,7 @@ def enforcement_reason(root, path, state, session_id):
     if c.is_extension_file(path):
         _, st = c.session_state(session_id)
         if state != "ok":
-            failed = st.get("build_failed")
-            found = ("atlas-index-fresh", c.build_hint(root, state) + (" The session build failed, log: %s." % failed if failed else ""))
+            found = ("atlas-index-fresh", c.build_hint(root, state) + ". Ask the user to run it, or run it yourself, then retry.")
         elif not st.get("queried"):
             found = ("atlas-query-first", "Query the atlas index before editing extension points: run `atlas <sub> <term>` "
                      "(service|event|tags|grid|workflow|operation|config|layout|mq|js|search) for what you are changing, then retry.")

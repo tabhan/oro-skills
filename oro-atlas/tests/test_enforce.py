@@ -21,8 +21,9 @@ class EnforceBase(Base):
 
     def fake_build(self, exit_code):
         path = os.path.join(self.tmp.name, "fake-build.py")
+        self.build_marker = os.path.join(self.tmp.name, "build-ran")
         with open(path, "w") as fh:
-            fh.write("import sys\nprint('x')\nsys.exit(%d)\n" % exit_code)
+            fh.write("import sys\nopen(%r, 'w').close()\nsys.exit(%d)\n" % (self.build_marker, exit_code))
         return {"ORO_ATLAS_BUILD_BIN": path}
 
     def edit_ext(self, extra_env=None, sid="s1", text="services:\n  a: ~\n"):
@@ -128,21 +129,17 @@ class EscapeHatchTest(EnforceBase):
         self.assertEqual(self.decision(out), "deny")
 
 
-class ComposerBuildTest(EnforceBase):
-    def test_composer_update_rebuilds_when_stale(self):
+class ComposerHintTest(EnforceBase):
+    def test_composer_update_hints_the_command_and_never_builds(self):
         self.make_stale()
         out = self.bash("composer update oro/platform", extra_env=self.fake_build(0))
-        self.assertIn("done", out["hookSpecificOutput"]["additionalContext"])
-
-    def test_failed_build_is_recorded_and_named_by_the_deny(self):
-        self.make_stale()
-        out = self.bash("composer install", extra_env=self.fake_build(1))
-        self.assertIn("FAILED", out["hookSpecificOutput"]["additionalContext"])
-        self.bash("atlas service x")
-        self.assertIn("session-build.log", self.edit_ext()["hookSpecificOutput"]["permissionDecisionReason"])
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("rebuild:", ctx)
+        self.assertIn("--incremental", ctx)
+        self.assertFalse(os.path.exists(self.build_marker))
 
     def test_composer_with_fresh_index_is_silent(self):
-        self.assertIsNone(self.bash("composer install", extra_env=self.fake_build(1)))
+        self.assertIsNone(self.bash("composer install"))
 
 
 class SessionStartTest(EnforceBase):
@@ -157,16 +154,18 @@ class SessionStartTest(EnforceBase):
         self.assertLessEqual(len(ctx.splitlines()), 3)
         self.assertNotIn("systemMessage", out)
 
-    def test_stale_index_is_rebuilt_in_foreground(self):
+    def test_stale_index_is_reported_with_exact_command_and_never_rebuilt(self):
         self.make_stale()
         ctx = self.start(self.fake_build(0))["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("rebuilt in", ctx)
+        self.assertIn("atlas index stale (composer.lock changed); rebuild: ", ctx)
+        self.assertIn("atlas-build --project %s --incremental" % self.root, ctx)
+        self.assertFalse(os.path.exists(self.build_marker))
 
-    def test_failed_build_is_reported_and_kept_for_the_edit_deny(self):
+    def test_stale_deny_message_carries_the_command(self):
         self.make_stale()
-        ctx = self.start(self.fake_build(1))["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("BUILD FAILED", ctx)
-        self.assertIn("session-build.log", self.edit_ext(sid="ss", text="x")["hookSpecificOutput"]["permissionDecisionReason"])
+        self.start()
+        reason = self.edit_ext(sid="ss", text="x")["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("--incremental", reason)
 
     def test_non_oro_repo_is_silent(self):
         self.assertIsNone(self.start(cwd=self.tmp.name))

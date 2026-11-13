@@ -58,20 +58,15 @@ COMPOSER_CHANGE = re.compile(r"(?:^|[\s;&|(])composer\s+(?:install|update|requir
 
 
 def track(payload, root):
-    """Mark the session as having queried atlas; rebuild incrementally after a composer change. Returns a one-line note or None."""
+    """Mark the session as having queried atlas; hint the rebuild command after a composer change. Returns a one-line note or None."""
     cmd = (payload.get("tool_input") or {}).get("command", "")
     path, state = c.session_state(payload.get("session_id"))
     note = None
     if c.QUERY_CMD.search(cmd) and not state.get("queried"):
         state["queried"] = True
         c.save_state(path, state)
-    if COMPOSER_CHANGE.search(cmd) and c.index_state(root) == "stale":
-        ok, secs, log = c.run_build(root, True)
-        note = "[oro-atlas] composer changed dependencies: incremental index rebuild %s in %ds%s." % (
-            "done" if ok else "FAILED", secs, "" if ok else " (log: %s)" % log)
-        if not ok:
-            state["build_failed"] = log
-            c.save_state(path, state)
+    if COMPOSER_CHANGE.search(cmd) and c.index_state(root) != "ok":
+        note = "[oro-atlas] composer changed dependencies; " + c.build_hint(root, c.index_state(root))
     return note
 
 
@@ -80,7 +75,7 @@ def decide(payload):
     out, verdict = None, "skip"
     note = track(payload, root) if payload.get("tool_name") == "Bash" and root else None
     if note:
-        out, verdict = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}, "rebuild"
+        out, verdict = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}, "hint"
     if payload.get("tool_name") == "Bash" and root and c.index_state(root) != "missing":
         path, state = c.session_state(payload.get("session_id"))
         seen = set(state.get("bash_flagged", []))

@@ -120,17 +120,14 @@ class BuildTest(unittest.TestCase):
     def test_search_does_not_return_notes_shard(self):
         self.assertNotIn("Env fact", run(["--project", self.root, "search", "env"])[1])
 
-    def test_notes_edit_makes_shard_stale_and_cli_refreshes(self):
+    def test_notes_edit_makes_shard_stale_and_cli_does_not_refresh(self):
         out = os.path.join(self.root, ".oro-ai", "atlas")
         self.assertEqual(index.shard_status(self.root, out, ["notes"])["notes"]["state"], "fresh")
         write_note(self.root, "newer", "Newer", surface="always")
         self.assertEqual(index.shard_status(self.root, out, ["notes"])["notes"]["state"], "stale")
-        os.environ.pop("ATLAS_NO_AUTOBUILD")
-        try:
-            code, text = run(["--project", self.root, "notes", "newer"])
-        finally:
-            os.environ["ATLAS_NO_AUTOBUILD"] = "1"
-        self.assertEqual(code, 0, text)
+        code, text = run(["--project", self.root, "notes", "newer"])
+        self.assertEqual(index.shard_status(self.root, out, ["notes"])["notes"]["state"], "stale")
+        self.assertEqual(code, 1, text)
 
 
 class ApiTest(unittest.TestCase):

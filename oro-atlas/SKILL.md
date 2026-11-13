@@ -40,11 +40,11 @@ instead of grepping 14k services by hand. Details: [README.md](README.md).
 - `atlas unsafe <Class>` lists classes typehinted concretely by other constructors. If the target
   is listed, `decorates:` breaks the container: use `aaxis_aspect.interceptor` (see oro-conventions §2).
 - Reuse an OOTB hook when one exists; only add a new event/tag/extension point if the atlas has none.
-- A `STALE` line (`atlas status` exits 2) means the index is out of date: run
-  `atlas-build --incremental` (needs the project's `php bin/console` working) before trusting results.
+- A `STALE` line (`atlas status` exits 2) means the index is out of date. Atlas never rebuilds by itself: run
+  `atlas-build --incremental` (needs the project's `php bin/console` working) or ask the user to, before trusting results.
 - Investigation counts: run atlas before reading vendor/, not only before editing. Subagents get this
   reminder from the SubagentStart hook.
-- If `.oro-ai/atlas/` is missing, run `atlas-setup <root>` once (git refresh hooks, then builds; plain
+- If `.oro-ai/atlas/` is missing, run `atlas-setup <root>` once (builds; plain
   rebuild: `atlas-build --project <root>`). Output is git-ignored.
 - If `atlas` is not on PATH, use `${CLAUDE_PLUGIN_ROOT}/bin/atlas` (or `$ORO_SKILLS_DIR/oro-atlas/bin/atlas`) with `--project <root>`.
 - Add `--json` to any query or `status` for machine-readable output.
