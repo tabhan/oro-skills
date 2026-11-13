@@ -31,6 +31,13 @@ means `$ATLAS ...`.
 5. Check for OOTB reuse: run `atlas search <keyword>` for the plan's goal; if an existing event,
    tag or config already does the job, flag the custom code as unnecessary.
 
+6. Aaxis rules (when the project has `src/Aaxis/`; see the oro-aaxis skill). Read `project_namespace` from
+   `.oro-ai/local-env/env.yml` and run `grep -rn "use <ProjectNamespace>\\\\" src/Aaxis/`; any hit is a blocker
+   (Aaxis bundles never depend on project code). Also flag: entity config changed by a hand-written
+   migration instead of `entity_configs.yml` + `AbstractSetEntityConfigs` with a version bump; Doctrine
+   mapping changed outside `Resources/config/aaxis/entity_extend.yml`; a need the catalogue maps to an
+   Aaxis bundle that the plan reimplements; an external provider wired without an interface and DI-tag registry.
+
 ## Output
 Verdict `approved` or `rejected`, then a list of findings, each with:
 - severity (blocker / risk),
