@@ -1,22 +1,113 @@
 {
   "hooks": {
     "SessionStart": [
-      {"matcher": "startup|resume", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_legacy.py\"", "timeout": 10},
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_migrate.py\"", "timeout": 10},
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_version.py\"", "timeout": 10}]}
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_legacy.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_migrate.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_version.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_atlas.py\"",
+            "timeout": 130
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      {"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/pretooluse_edit.py\"", "timeout": 10}]}
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/pretooluse_edit.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/pretooluse_bash.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      {"matcher": "Bash", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_bash.py\"", "timeout": 10}]},
-      {"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_edit.py\"", "timeout": 10}]}
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_bash.py\"",
+            "timeout": 130
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_edit.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/userpromptsubmit.py\"", "timeout": 10}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/userpromptsubmit.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ],
     "SubagentStart": [
-      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/subagentstart.py\"", "timeout": 10}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/subagentstart.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/stop.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

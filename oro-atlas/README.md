@@ -54,6 +54,20 @@ other settings are kept), installs the git refresh hooks, then runs `atlas-build
   `SubagentStart` to the subagent). Silent without an index; never blocks.
 - `pretooluse_edit.py` / `posttooluse_bash.py`: deny unsafe `decorates:` and add context at edit time.
 
+### Enforcement
+
+- `sessionstart_atlas.py` (startup|resume|compact): Oro projects only; a stale index is rebuilt in the foreground
+  (120 s cap, log in `.oro-ai/atlas/session-build.log`) and one status line is injected. `posttooluse_bash.py`
+  marks the session as "queried" on any `atlas <sub>` command and rebuilds incrementally after `composer
+  install|update|require|remove`. The marker is keyed by `session_id`, so subagents share the parent's.
+- `pretooluse_edit.py` denies edits to extension files (`Resources/config/**`, listeners, subscribers,
+  `*Extension.php`, `entity_extend.yml`, layouts, interceptors) when the index is stale/missing/failed or no atlas
+  query ran this session. Each deny is gated by `oro-applies --check <id>` (`hooks/checks.yml`): out of range
+  skips, unknown Oro version downgrades to warn. Hook errors are swallowed; nothing blocks on a broken hook.
+- Escape hatch: `ORO_ATLAS_ENFORCE=0` in the process environment (the human's shell, before `claude`) turns every
+  deny into a warning, logs `bypass` to `~/.claude/atlas-hook.log` and makes `stop.py` print a reminder.
+  `pretooluse_bash.py` and the edit hook deny any attempt by Claude to set it (commands, settings/rc/.env files).
+
 ## Staleness and incremental builds
 
 `atlas status` exits 0 when the index is fresh, 2 when stale (per-shard: only the shards whose inputs

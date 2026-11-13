@@ -58,22 +58,46 @@ def context_lines(root, path, new):
     return lines
 
 
+def override_write(path, tool, ti):
+    """Claude must never set the human-only switch, not even through a settings or rc file."""
+    new, _ = added_text(tool, ti)
+    return bool(c.ENV_FILE.search(path.replace("\\", "/")) and c.OVERRIDE_VAR in new)
+
+
 def decide(payload):
     tool = payload.get("tool_name", "")
     ti = payload.get("tool_input", {}) or {}
     path = ti.get("file_path", "")
     out, verdict = None, "skip"
-    if tool in ("Edit", "Write", "MultiEdit") and WATCHED.search(path):
+    if tool in ("Edit", "Write", "MultiEdit") and override_write(path, tool, ti):
+        hso = {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+               "permissionDecisionReason": "%s is a human-only switch; Claude must not set it." % c.OVERRIDE_VAR}
+        out, verdict = {"hookSpecificOutput": hso}, "deny-override-write"
+    elif tool in ("Edit", "Write", "MultiEdit") and WATCHED.search(path):
         root = c.project_root(path)
         if root:
-            out, verdict = analyse(root, path, tool, ti)
+            out, verdict = analyse(root, path, tool, ti, payload.get("session_id"))
     return out, verdict, path
 
 
-def analyse(root, path, tool, ti):
+def enforcement_reason(root, path, state, session_id):
+    """(check id, reason) when an extension file is edited on a stale/missing index or before any atlas query."""
+    found = None
+    if c.is_extension_file(path):
+        _, st = c.session_state(session_id)
+        if state != "ok":
+            failed = st.get("build_failed")
+            found = ("atlas-index-fresh", c.build_hint(root, state) + (" The session build failed, log: %s." % failed if failed else ""))
+        elif not st.get("queried"):
+            found = ("atlas-query-first", "Query the atlas index before editing extension points: run `atlas <sub> <term>` "
+                     "(service|event|tags|grid|workflow|operation|config|layout|mq|js|search) for what you are changing, then retry.")
+    return found
+
+
+def analyse(root, path, tool, ti, session_id=None):
     new, old = added_text(tool, ti)
     state = c.index_state(root)
-    notes, reason = [], None
+    notes, reason, decision = [], None, None
     if state != "ok":
         notes.append(c.build_hint(root, state))
     # A stale index still knows the unsafe services; only a missing one cannot judge.
@@ -83,6 +107,15 @@ def analyse(root, path, tool, ti):
         notes += context_lines(root, path, new)
         if found and not reason:
             notes.append("decorates: target not in the unsafe shard; confirm with 'atlas unsafe <service>'.")
+    gated = [("decorates-unsafe-target", reason)] if reason else []
+    gated += [g for g in [enforcement_reason(root, path, state, session_id)] if g]
+    for check_id, why in gated:
+        decision, text = c.gate(root, check_id, why, session_id, tool, path)
+        if decision:
+            reason = text
+            break
+        notes.append(text)
+    reason = reason if decision else None
     hso = {"hookEventName": "PreToolUse"}
     verdict = "silent"
     if reason:

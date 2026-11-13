@@ -17,8 +17,8 @@ UNSAFE = {"id": "Foo\\Mgr", "keys": ["Mgr", "foo.mgr"], "services": ["foo.mgr"],
 TAG = {"id": "oro_foo.tag", "keys": [], "text": "3 services; consumed by FooPass", "file": "a.php", "line": 1}
 
 
-def run(script, payload, home):
-    env = dict(os.environ, HOME=home)
+def run(script, payload, home, extra_env=None):
+    env = dict(os.environ, HOME=home, **(extra_env or {}))
     p = subprocess.run([sys.executable, os.path.join(HOOKS, script)], input=json.dumps(payload), capture_output=True, text=True, env=env)
     return p.returncode, (json.loads(p.stdout) if p.stdout.strip() else None)
 
@@ -31,7 +31,7 @@ class Base(unittest.TestCase):
         os.makedirs(os.path.join(self.root, "src", "Foo"))
         open(os.path.join(self.root, "bin", "console"), "w").close()
         with open(os.path.join(self.root, "composer.lock"), "w") as fh:
-            json.dump({"packages": []}, fh)
+            json.dump({"packages": [{"name": "oro/platform", "version": "7.0.5"}]}, fh)
         self.home = os.path.join(self.tmp.name, "home")
         os.makedirs(self.home)
         self.file = os.path.join(self.root, "src", "Foo", "services.yml")
