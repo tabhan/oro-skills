@@ -32,13 +32,13 @@ left at the old `var/atlas/` is moved on first use.
 ## Setup (once per project)
 
 ```bash
-oro-atlas/bin/atlas-setup /path/to/oro-project             # register hooks + build index
-oro-atlas/bin/atlas-setup /path/to/oro-project --no-build  # hooks only
+oro-atlas/bin/atlas-setup /path/to/oro-project             # git refresh hooks, legacy cleanup, build index
+oro-atlas/bin/atlas-setup /path/to/oro-project --no-build  # without the build
 ```
 
-Idempotently merges the PreToolUse (Edit/Write), PostToolUse (Bash), UserPromptSubmit and
-SubagentStart hooks into `<project>/.claude/settings.local.json` (existing settings and entries are
-kept, nothing is duplicated), then runs `atlas-build`.
+The hooks themselves come from the plugin (`hooks/hooks.json` at the repo root). Setup removes any
+atlas entries left in `<project>/.claude/settings.local.json` by older versions (they would fire twice;
+other settings are kept), installs the git refresh hooks, then runs `atlas-build`.
 
 ## Hooks
 
@@ -87,12 +87,9 @@ or as a `repo: local` entry (`entry: atlas-precommit`,
 
 ## Install
 
-`install.sh` symlinks this skill into `~/.claude/skills/` like the others, links
-`agents/*.md` (the `oro-architect-gate` subagent) into `~/.claude/agents/` (override with
-`CLAUDE_AGENTS_DIR`), and links `bin/atlas`, `bin/atlas-build`, `bin/atlas-setup` and `bin/atlas-precommit` into
-`~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`). `install.sh --uninstall` removes them all.
-If that directory is not on PATH, call `$ORO_SKILLS_DIR/oro-atlas/bin/atlas` directly. After
-upgrading, re-run `atlas-setup <project>` per Oro project/worktree (see the top-level README).
+Installed as part of the oro-skills plugin (see the top-level README). The plugin's `bin/` puts `atlas`,
+`atlas-build`, `atlas-setup` and `atlas-precommit` on the Bash tool PATH; `install.sh` also links them into
+`~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`) for normal shells.
 
 ## Tests
 

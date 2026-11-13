@@ -1,0 +1,11 @@
+{
+  "name": "oro-skills",
+  "owner": {"name": "oro-skills maintainers"},
+  "plugins": [
+    {
+      "name": "oro-skills",
+      "source": "./",
+      "description": "OroCommerce team skills, atlas extension-point index and hooks"
+    }
+  ]
+}

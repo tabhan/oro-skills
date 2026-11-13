@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Installs (or updates) oro-skills into this machine's Claude Code skills directory.
-# The repo checkout and the installed skills are kept separate: this script only
-# ever creates symlinks under ~/.claude/skills pointing back at this checkout.
+# Transition shim. oro-skills is a Claude Code plugin (skills, agents and hooks come from
+# the plugin). This script: removes the legacy ~/.claude/skills/oro-* and agent symlinks,
+# keeps the atlas CLIs on PATH, then registers the self-hosted marketplace and installs the
+# plugin. Marketplace source: ORO_SKILLS_MARKETPLACE (default git@github.com:tabhan/oro-skills.git).
 #
 # Usage:
 #   ./install.sh                 # update this checkout (git pull), then symlink all oro-* skills
@@ -25,6 +26,7 @@
 # in favor of the official oroinc/ai-dev-platform plugin suite (see README) --
 # so by default this script also registers that marketplace and installs the
 # official plugins covering the knowledge this repo used to duplicate.
+#   ./install.sh --no-plugin             # skip marketplace add + plugin install (symlink cleanup + bins only)
 #   ./install.sh --no-official-plugins   # skip that, oro-skills symlinks only
 #   ORO_SKILLS_OFFICIAL_PLUGINS="orocommerce-development orocommerce-review" ./install.sh
 #     (override the default plugin list; orocommerce-orchestrator is NOT installed
@@ -45,6 +47,8 @@ if [ -n "$TOKEN" ]; then
   git_auth_args=(-c "http.extraHeader=Authorization: Basic $(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')")
 fi
 
+MARKETPLACE="${ORO_SKILLS_MARKETPLACE:-git@github.com:tabhan/oro-skills.git}"
+INSTALL_PLUGIN=1
 UPDATE=1
 UNINSTALL=0
 INSTALL_OFFICIAL=1
@@ -53,6 +57,7 @@ for arg in "$@"; do
     --no-update) UPDATE=0 ;;
     --uninstall) UNINSTALL=1 ;;
     --no-official-plugins) INSTALL_OFFICIAL=0 ;;
+    --no-plugin) INSTALL_PLUGIN=0 ;;
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -95,24 +100,33 @@ if [ "$UPDATE" -eq 1 ] && [ -d "$SCRIPT_DIR/.git" ]; then
   git -C "$SCRIPT_DIR" "${git_auth_args[@]}" pull --ff-only
 fi
 
-mkdir -p "$SKILLS_DEST"
-
-echo "Symlinking skills into $SKILLS_DEST"
+# Legacy symlinks would duplicate every skill and agent next to the plugin's copy.
+echo "Removing legacy symlinks from $SKILLS_DEST and $AGENTS_DEST"
 for skill in "$SCRIPT_DIR"/oro-*/; do
-  name="$(basename "$skill")"
-  [ -f "$skill/SKILL.md" ] || continue
-  ln -sfn "$skill" "$SKILLS_DEST/$name"
-  echo "  $name -> $skill"
+  link="$SKILLS_DEST/$(basename "$skill")"
+  if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$skill")" ]; then
+    rm "$link"
+    echo "  removed $link"
+  fi
 done
-
-# Subagents (e.g. oro-architect-gate) are only resolvable by agentType from ~/.claude/agents.
-mkdir -p "$AGENTS_DEST"
-echo "Symlinking agents into $AGENTS_DEST"
 for agent in "$SCRIPT_DIR"/oro-*/agents/*.md; do
   [ -f "$agent" ] || continue
-  ln -sfn "$agent" "$AGENTS_DEST/$(basename "$agent")"
-  echo "  $(basename "$agent") -> $agent"
+  link="$AGENTS_DEST/$(basename "$agent")"
+  if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$agent")" ]; then
+    rm "$link"
+    echo "  removed $link"
+  fi
 done
+
+if [ "$INSTALL_PLUGIN" -eq 1 ]; then
+  if command -v claude >/dev/null 2>&1; then
+    echo "Registering oro-skills marketplace ($MARKETPLACE) and installing the plugin"
+    claude plugin marketplace add "$MARKETPLACE" || echo "  (marketplace add failed or already present)" >&2
+    claude plugin install oro-skills@oro-skills
+  else
+    echo "  (claude CLI not found: run 'claude plugin marketplace add $MARKETPLACE' and 'claude plugin install oro-skills@oro-skills' later)" >&2
+  fi
+fi
 
 # oro-atlas ships a CLI; link it so agents can call `atlas` without an absolute path.
 ATLAS_BIN_DIR="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}"
@@ -143,4 +157,4 @@ if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
   fi
 fi
 
-echo "Done. Start a new Claude Code session to pick up the skills and plugins."
+echo "Done. Start a new Claude Code session to pick up the plugins."

@@ -43,9 +43,8 @@ instead of grepping 14k services by hand. Details: [README.md](README.md).
   `atlas-build --incremental` (needs the project's `php bin/console` working) before trusting results.
 - Investigation counts: run atlas before reading vendor/, not only before editing. Subagents get this
   reminder from the SubagentStart hook.
-- If `.claude/atlas/` is missing, run `atlas-setup <root>` once (registers hooks, then builds; plain
+- If `.claude/atlas/` is missing, run `atlas-setup <root>` once (git refresh hooks, then builds; plain
   rebuild: `atlas-build --project <root>`). Output is git-ignored.
-- If `atlas` is not on PATH, use `$ORO_SKILLS_DIR/oro-atlas/bin/atlas` (default checkout:
-  `/opt/projects/oro-skills/oro-atlas/bin/atlas`) with `--project <root>`.
+- If `atlas` is not on PATH, use `${CLAUDE_PLUGIN_ROOT}/bin/atlas` (or `$ORO_SKILLS_DIR/oro-atlas/bin/atlas`) with `--project <root>`.
 - Add `--json` to any query or `status` for machine-readable output.
 - Treat hits as pointers: open the `file:line` before relying on a signature.

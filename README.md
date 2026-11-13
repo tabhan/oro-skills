@@ -2,7 +2,7 @@
 
 Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills for OroCommerce development. Each skill is a self-contained knowledge base that Claude Code consults automatically when working on relevant tasks.
 
-**Why so little content:** this repo used to carry a near-complete mirror of generic Oro/OroCommerce documentation. As of 2026-09-10 that generic material was removed — it duplicated the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite's own reference docs, which `install.sh` now installs alongside these skills (see Installation). What's left here is only content tied to a real incident/gotcha hit on this project, that the official plugin doesn't cover.
+**Why so little content:** this repo used to carry a near-complete mirror of generic Oro/OroCommerce documentation. As of 2026-09-10 that generic material was removed — it duplicated the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite's own reference docs, which `install.sh` installs alongside this plugin (see Installation). What's left here is only content tied to a real incident/gotcha hit on this project, that the official plugin doesn't cover.
 
 **Adding a skill:** a skill earns its place only once there is a concrete incident to record (symptom → root cause → fix). An empty placeholder skill is worse than no skill: its description is resident in every session and routes work to a body that has nothing to say. There is deliberately no frontend skill here for that reason — until a real frontend incident lands that the official plugin doesn't cover, the plugin is the answer.
 
@@ -16,81 +16,31 @@ Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills fo
 | [oro-e2e-testing](oro-e2e-testing/) | Playwright-BDD e2e authoring rules for OroCommerce/OroPlatform (Alice fixtures, grid filters, purge/re-runnability, shared-DB safety) |
 | [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
 | [oro-workflow](oro-workflow/) | Dev-loop conventions specific to this project: shell aliases, cache invalidation, service overrides, system-config groups |
-| [oro-atlas](oro-atlas/) | Generated, queryable index of Oro extension points (events, tags, services, grids, workflows, MQ, config, layouts, JS) plus `atlas unsafe <Class>` for decorator safety; `install.sh` puts `atlas` on PATH |
+| [oro-atlas](oro-atlas/) | Generated, queryable index of Oro extension points (events, tags, services, grids, workflows, MQ, config, layouts, JS) plus `atlas unsafe <Class>` for decorator safety; the plugin ships `atlas` on PATH |
 | [oro-conventions](oro-conventions/) | Buckman-specific Oro conventions & gotchas: aspect-interceptor overrides, storefront localization traps, entity-config seeding, PHPUnit entity stubs, datagrid pitfalls, jsonb migrations, workflow-data encoding, asset versioning |
 
 ## Installation
 
-The repo checkout and the installed skills are kept separate: `install.sh` never edits this repo's content, it only manages symlinks under `~/.claude/skills` that point back at whichever checkout you ran it from.
-
-### 1. Clone
-
-With SSH access to this repo:
+oro-skills is a self-hosted Claude Code plugin: skills, the `oro-architect-gate` agent and the atlas hooks (`hooks/hooks.json`, commands use `${CLAUDE_PLUGIN_ROOT}`) all come from the plugin, never from per-project `settings.json`/`settings.local.json`. It is never published to a public or shared marketplace; the marketplace is this repo.
 
 ```bash
-git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills
+claude plugin marketplace add git@github.com:tabhan/oro-skills.git
+claude plugin install oro-skills@oro-skills
+claude plugin list                      # oro-skills@oro-skills enabled
 ```
 
-Without SSH access — using a read-only HTTPS token from the repo owner instead:
+Local development without installing: `claude --plugin-dir /opt/projects/oro-skills`. Validate manifests with `claude plugin validate /opt/projects/oro-skills`. Updates: `claude plugin marketplace update oro-skills`, then `claude plugin update oro-skills@oro-skills`.
 
-```bash
-ORO_SKILLS_TOKEN=<token> ./bootstrap.sh /opt/projects/oro-skills   # if you already have this file
-# or, one-liner without a prior checkout:
-ORO_SKILLS_TOKEN=<token> bash -c "$(curl -fsSL -H "Authorization: Basic $(printf 'x-access-token:%s' "$ORO_SKILLS_TOKEN" | base64)" https://raw.githubusercontent.com/tabhan/oro-skills/main/bootstrap.sh)" -- /opt/projects/oro-skills
-```
+Release rule: every push to `main` bumps `version` in `.claude-plugin/plugin.json`; without a bump installed copies never update.
 
-The token is only used for the clone itself (passed as a one-off `git -c` header) — it is never written into `.git/config`. Keep it and pass it again for future updates (`ORO_SKILLS_TOKEN=<token> install.sh`); `install.sh` warns if it detects an HTTPS remote and no token is set.
+The `atlas`, `atlas-build`, `atlas-setup` and `atlas-precommit` CLIs are also in the plugin's `bin/` (on the Bash tool's PATH while the plugin is enabled). For a normal shell, `install.sh` links them into `~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`).
 
-### 2. Install
+### Migrating from the symlink install
 
-```bash
-/opt/projects/oro-skills/install.sh
-```
+`install.sh` is now a transition shim: it removes the old `~/.claude/skills/oro-*` and `~/.claude/agents/oro-architect-gate.md` symlinks (they would duplicate every skill next to the plugin's copy), keeps the CLIs on PATH, registers the marketplace and installs the plugin (`--no-plugin` skips that step; `ORO_SKILLS_MARKETPLACE` overrides the marketplace source). `install.sh --uninstall` removes the CLI links.
 
-This symlinks every `oro-*/` skill directory into `~/.claude/skills/`. Re-running it later also `git pull`s the checkout first (pass `--no-update` to skip that). It also links every `oro-*/agents/*.md` subagent (e.g. `oro-architect-gate`) into `~/.claude/agents/` (override with `CLAUDE_AGENTS_DIR`), and `oro-atlas/bin/atlas`, `atlas-build`, `atlas-setup` and `atlas-precommit` into `~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`; add it to PATH if needed). Run `atlas-setup <project>` once per Oro project to register the atlas hooks (including the SubagentStart hook that points subagents at the index) and build its index. To remove the symlinks: `install.sh --uninstall`.
+Then, once per Oro project: run `atlas-setup <project>`. It no longer registers hooks; it removes the old atlas entries from `.claude/settings.local.json` (otherwise every hook fires twice), installs the git refresh hooks and builds the index. Re-run it in every new checkout or worktree. When `atlas status` prints `STALE` (exit 2), refresh with `atlas-build --project <project> --incremental`.
 
-This repo dropped its generic Oro/OroCommerce reference content (see "Why so little content" at the top) in favor of the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite. So by default `install.sh` also registers that marketplace and installs `orocommerce-development`, `orocommerce-review`, `orocommerce-testing`, and `orocommerce-maintenance` via the `claude plugin` CLI. Skip that with `--no-official-plugins`, or override the list with `ORO_SKILLS_OFFICIAL_PLUGINS="orocommerce-development orocommerce-review" ./install.sh`. `orocommerce-orchestrator` is deliberately not installed by default — it duplicates the plan→build→review→verify flow some projects already run via the `ai-sdlc-c1` plugin; install it yourself if a project actually wants it.
+The official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugins (`orocommerce-development`, `-review`, `-testing`, `-maintenance`) are installed by `install.sh` as before; skip with `--no-official-plugins` or override with `ORO_SKILLS_OFFICIAL_PLUGINS`.
 
-### Upgrading an existing install
-
-1. Re-run the installer (pass the token again for an HTTPS clone): `ORO_SKILLS_TOKEN=<token> /opt/projects/oro-skills/install.sh`.
-2. Run `atlas-setup <project>` once per Oro project. This is new and required: the atlas hooks only enforce in projects where it ran, because it writes the per-user `.claude/settings.local.json` and the git-ignored `var/atlas/` index.
-3. Restart running Claude Code sessions so they pick up the new skills, agents and hooks.
-4. When `atlas status` prints `STALE` (exit code 2), refresh with `atlas-build --project <project> --incremental`.
-5. Re-run `atlas-setup` in every new checkout or worktree — neither file travels with git.
-6. Optional: wire `atlas-precommit` as a pre-commit gate (see `oro-atlas/README.md`).
-
-### 3. Verify
-
-Start a new Claude Code session. The skill should appear in the available skills list automatically. You can verify by asking Claude Code to write a Playwright-BDD e2e test -- it will consult the skill's documentation.
-
-## Skill Structure
-
-Each skill follows the Claude Code skill convention:
-
-```
-skill-name/
-  SKILL.md              # Metadata (name, description, triggers) + document index
-  references/
-    README.md           # Quick-start overview
-    topic-1.md          # Reference document
-    topic-2.md          # Reference document
-    ...
-```
-
-- `SKILL.md` has YAML frontmatter with `name`, `description` (including trigger scenarios). The
-  `name` MUST equal the directory name.
-- `references/` is optional and holds the knowledge-base documents when a skill has enough to
-  warrant splitting. A single-file skill (`oro-conventions`, `oro-e2e-testing`) has none.
-- Claude Code auto-discovers skills from `~/.claude/skills/*/SKILL.md`
-
-## Adding New Skills
-
-1. Create a new directory: `oro-<topic>/`
-2. Add `SKILL.md` with frontmatter and document index
-3. Add reference docs in `references/`
-4. Re-run `install.sh` to pick it up
-
-## License
-
-MIT
+Clone access: `git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills` (or `bootstrap.sh` with a read-only `ORO_SKILLS_TOKEN` from the repo owner).

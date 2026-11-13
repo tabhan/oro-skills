@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/pretooluse_edit.py\"", "timeout": 10}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_bash.py\"", "timeout": 10}]},
+      {"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_edit.py\"", "timeout": 10}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/userpromptsubmit.py\"", "timeout": 10}]}
+    ],
+    "SubagentStart": [
+      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/subagentstart.py\"", "timeout": 10}]}
+    ]
+  }
+}

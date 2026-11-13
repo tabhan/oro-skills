@@ -1,0 +1,14 @@
+{
+  "name": "oro-skills",
+  "version": "0.2.0",
+  "description": "OroCommerce team skills, atlas extension-point index and hooks",
+  "skills": [
+    "./oro-atlas",
+    "./oro-backend-docs",
+    "./oro-conventions",
+    "./oro-dialog-forms",
+    "./oro-e2e-testing",
+    "./oro-workflow"
+  ],
+  "agents": ["./oro-atlas/agents/oro-architect-gate.md"]
+}

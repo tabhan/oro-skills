@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register the atlas hooks in <project>/.claude/settings.local.json (idempotent), then build the index."""
+"""Per-project atlas setup: git refresh hooks, legacy settings.local.json hook cleanup, index build."""
 import json
 import os
 import subprocess
@@ -7,30 +7,28 @@ import sys
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 HOOKS = os.path.join(os.path.dirname(HERE), "hooks")
-REGISTRATIONS = [
-    ("PreToolUse", "Edit|Write|MultiEdit", "pretooluse_edit.py"),
-    ("PostToolUse", "Bash", "posttooluse_bash.py"),
-    ("PostToolUse", "Edit|Write|MultiEdit", "posttooluse_edit.py"),
-    ("UserPromptSubmit", None, "userpromptsubmit.py"),
-    ("SubagentStart", None, "subagentstart.py"),
-]
+LEGACY_SCRIPTS = ("pretooluse_edit.py", "posttooluse_bash.py", "posttooluse_edit.py", "userpromptsubmit.py", "subagentstart.py")
 
 
-def command_for(script):
-    return "python3 %s" % os.path.join(HOOKS, script)
+def is_legacy(command):
+    return "oro-atlas" in command and any(script in command for script in LEGACY_SCRIPTS)
 
 
-def merge(settings):
-    """Add each atlas hook unless a command for that script is already registered under the event."""
-    hooks = settings.setdefault("hooks", {})
-    for event, matcher, script in REGISTRATIONS:
-        groups = hooks.setdefault(event, [])
-        present = any(script in h.get("command", "") and "oro-atlas" in h.get("command", "") for g in groups for h in g.get("hooks", []))
-        entry = {"hooks": [{"type": "command", "command": command_for(script), "timeout": 10}]}
-        if matcher:
-            entry = {"matcher": matcher, **entry}
-        if not present:
-            groups.append(entry)
+def remove_legacy(settings):
+    """Drop atlas hook entries from settings.local.json: the plugin's hooks/hooks.json now provides them."""
+    hooks = settings.get("hooks", {})
+    for event in list(hooks):
+        kept = []
+        for group in hooks[event]:
+            group["hooks"] = [h for h in group.get("hooks", []) if not is_legacy(h.get("command", ""))]
+            if group["hooks"]:
+                kept.append(group)
+        if kept:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    if "hooks" in settings and not settings["hooks"]:
+        del settings["hooks"]
     return settings
 
 
@@ -75,17 +73,17 @@ def main(argv):
         sys.stderr.write("usage: atlas-setup <oro-project-root>\n")
         return 2
     path = os.path.join(project, ".claude", "settings.local.json")
-    settings = {}
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as fh:
             settings = json.load(fh)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(merge(settings), fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    os.replace(tmp, path)
-    print("hooks registered in %s" % path)
+        cleaned = remove_legacy(json.loads(json.dumps(settings)))
+        if cleaned != settings:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(cleaned, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+            os.replace(tmp, path)
+            print("removed legacy atlas hooks from %s (the oro-skills plugin provides them)" % path)
     for note in install_git_hooks(project):
         print(note)
     build = [] if "--no-build" in argv else [sys.executable, os.path.join(HERE, "atlas-build"), "--project", project]

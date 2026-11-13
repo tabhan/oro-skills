@@ -37,26 +37,15 @@ class SubagentStartTest(Base):
         self.assertEqual((p.returncode, p.stdout), (0, ""))
 
 
-class SetupRegistrationTest(unittest.TestCase):
-    def test_subagentstart_registered_once_and_user_hooks_kept(self):
-        setup = os.path.join(HOOKS, "..", "bin", "atlas-setup")
-        with tempfile.TemporaryDirectory() as tmp:
-            os.makedirs(os.path.join(tmp, "bin"))
-            os.makedirs(os.path.join(tmp, ".claude"))
-            open(os.path.join(tmp, "bin", "console"), "w").close()
-            path = os.path.join(tmp, ".claude", "settings.local.json")
-            user = {"hooks": {"SubagentStart": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}, "env": {"A": "1"}}
-            with open(path, "w") as fh:
-                json.dump(user, fh)
-            for _ in range(3):
-                subprocess.run([sys.executable, setup, tmp, "--no-build"], check=True, capture_output=True)
-            with open(path) as fh:
-                data = json.load(fh)
-            cmds = [h["command"] for g in data["hooks"]["SubagentStart"] for h in g["hooks"]]
-            self.assertEqual(len(cmds), 2)
-            self.assertEqual(cmds[0], "echo mine")
-            self.assertTrue(cmds[1].endswith("hooks/subagentstart.py"))
-            self.assertEqual(data["env"], {"A": "1"})
+class PluginHooksTest(unittest.TestCase):
+    def test_plugin_registers_subagentstart_once(self):
+        path = os.path.join(HOOKS, "..", "..", "hooks", "hooks.json")
+        with open(path) as fh:
+            data = json.load(fh)
+        cmds = [h["command"] for g in data["hooks"]["SubagentStart"] for h in g["hooks"]]
+        self.assertEqual(len(cmds), 1)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}", cmds[0])
+        self.assertIn("oro-atlas/hooks/subagentstart.py", cmds[0])
 
 
 if __name__ == "__main__":

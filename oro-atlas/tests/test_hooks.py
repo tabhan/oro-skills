@@ -217,23 +217,25 @@ class BashHookTest(Base):
 
 
 class SetupTest(unittest.TestCase):
-    def test_setup_merges_idempotently(self):
+    def test_setup_removes_legacy_hooks_and_keeps_user_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, "bin"))
             os.makedirs(os.path.join(tmp, ".claude"))
             open(os.path.join(tmp, "bin", "console"), "w").close()
             path = os.path.join(tmp, ".claude", "settings.local.json")
+            legacy = "python3 /x/oro-skills/oro-atlas/hooks/pretooluse_edit.py"
             with open(path, "w") as fh:
-                json.dump({"permissions": {"allow": ["x"]}, "hooks": {"PostToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "git add"}]}]}}, fh)
+                json.dump({"permissions": {"allow": ["x"]}, "hooks": {
+                    "PostToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "git add"}]}],
+                    "PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": legacy}]}]}}, fh)
             setup = os.path.join(HOOKS, "..", "bin", "atlas-setup")
             for _ in range(2):
                 subprocess.run([sys.executable, setup, tmp, "--no-build"], check=True, capture_output=True)
             with open(path) as fh:
                 data = json.load(fh)
             self.assertEqual(data["permissions"], {"allow": ["x"]})
-            self.assertEqual(len(data["hooks"]["PostToolUse"]), 3)
-            self.assertEqual([len(data["hooks"][e]) for e in ("PreToolUse", "UserPromptSubmit")], [1, 1])
-            self.assertTrue(data["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith("hooks/pretooluse_edit.py"))
+            self.assertEqual(list(data["hooks"]), ["PostToolUse"])
+            self.assertEqual(data["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "git add")
 
 
 class PrecommitTest(Base):

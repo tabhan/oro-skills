@@ -25,17 +25,20 @@ class InstallScriptTest(unittest.TestCase):
     def run_install(self, home, *args):
         env = dict(os.environ, CLAUDE_SKILLS_DIR=home + "/skills", CLAUDE_AGENTS_DIR=home + "/agents",
                    ORO_ATLAS_BIN_DIR=home + "/bin")
-        return subprocess.run([REPO + "/install.sh", "--no-update", "--no-official-plugins", *args],
+        return subprocess.run([REPO + "/install.sh", "--no-update", "--no-official-plugins", "--no-plugin", *args],
                               env=env, capture_output=True, text=True, check=True)
 
-    def test_agents_linked_and_uninstalled(self):
+    def test_legacy_symlinks_removed_and_bins_linked(self):
         with tempfile.TemporaryDirectory() as home:
+            os.makedirs(home + "/skills")
+            os.makedirs(home + "/agents")
+            os.symlink(ATLAS_DIR, home + "/skills/oro-atlas")
+            os.symlink(ATLAS_DIR + "/agents/oro-architect-gate.md", home + "/agents/oro-architect-gate.md")
             self.run_install(home)
-            link = home + "/agents/oro-architect-gate.md"
-            self.assertEqual(os.path.realpath(link), os.path.realpath(ATLAS_DIR + "/agents/oro-architect-gate.md"))
+            self.assertEqual(os.listdir(home + "/skills") + os.listdir(home + "/agents"), [])
             self.assertTrue(all(os.path.islink(home + "/bin/" + b) for b in ("atlas", "atlas-build", "atlas-setup", "atlas-precommit")))
             self.run_install(home, "--uninstall")
-            self.assertEqual(os.listdir(home + "/agents") + os.listdir(home + "/bin"), [])
+            self.assertEqual(os.listdir(home + "/bin"), [])
 
 
 class SkillFrontmatterTest(unittest.TestCase):
