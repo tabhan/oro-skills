@@ -138,8 +138,12 @@ EXTENSION_FILE = re.compile(
 )
 NOT_EXTENSION = re.compile(r"/(?:Tests|Twig)/")
 # Files through which a human-only switch could be flipped behind a Bash deny.
-ENV_FILE = re.compile(r"(?:/settings[^/]*\.json$|/\.claude/|/\.(?:zsh|bash)(?:rc|_profile)$|/\.z?profile$|/\.env[^/]*$)")
-ENV_TARGET_CMD = re.compile(r"settings[^\s/]*\.json|\.claude/|\.(?:zsh|bash)(?:rc|_profile)|\.z?profile|\.env\b")
+ENV_FILE = re.compile(r"(?:/settings[^/]*\.json$|/\.claude/|/\.(?:ba|z|k|c|tc)?sh(?:rc|env)$"
+                      r"|/\.(?:bash_profile|bash_login|bash_logout|zprofile|zlogin|zlogout|profile|pam_environment|envrc)$"
+                      r"|/\.config/fish/|/etc/(?:profile|bash\.bashrc|zshenv|zprofile|zshrc|environment)|/\.env[^/]*$)")
+ENV_TARGET_CMD = re.compile(r"settings[^\s/]*\.json|\.claude/|\.(?:ba|z|k|c|tc)?sh(?:rc|env)\b"
+                            r"|\.(?:bash_profile|bash_login|bash_logout|zprofile|zlogin|zlogout|profile|pam_environment|envrc)\b"
+                            r"|\.config/fish/|/etc/(?:profile|bash\.bashrc|zshenv|zprofile|zshrc|environment)|\.env\b")
 QUERY_CMD = re.compile(
     r"(?:^|[\s/;&|(])aaxis-oro\s+atlas\s+(?:--project\s+\S+\s+)?(?:entity|operation|grid|event|mq|service|config|tags?|layout|workflow|js|search|unsafe|notes)\b"
 )

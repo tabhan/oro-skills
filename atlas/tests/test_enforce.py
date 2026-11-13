@@ -173,6 +173,25 @@ class EscapeHatchTest(EnforceBase):
         for cmd in ("echo $ORO_ATLAS_ENFORCE", "printf %s \"${ORO_ATLAS_ENFORCE}\"", "ls -la", "aaxis-oro atlas service foo"):
             self.assertIsNone(self.bash(cmd, script="pretooluse_bash.py"), cmd)
 
+    def test_read_only_mentions_pass(self):
+        for cmd in ("grep -rn ORO_ATLAS_ENFORCE README.md", "rg ORO_ATLAS_ENFORCE atlas/", "cat atlas/README.md | grep ORO_ATLAS_ENFORCE",
+                    "git log -S ORO_ATLAS_ENFORCE --oneline", "git diff origin/main -- atlas/hooks/_common.py",
+                    "echo 'ORO_ATLAS_ENFORCE=0 disables the gate'", "grep -n ORO_ATLAS_ENFORCE ~/.zshrc", "grep -n ORO_ATLAS_ENFORCE ~/.bashrc",
+                    "grep 'ORO_ATLAS_ENFORCE=0' docs.md", "python3 -m unittest atlas.tests.test_enforce -k ORO_ATLAS_ENFORCE"):
+            self.assertIsNone(self.bash(cmd, script="pretooluse_bash.py"), cmd)
+
+    def test_setting_or_persisting_the_switch_is_denied(self):
+        for cmd in ("echo 'export ORO_ATLAS_ENFORCE=0' >> ~/.zshrc", "ORO_ATLAS_ENFORCE=0 claude", "FOO=1 ORO_ATLAS_ENFORCE=0 claude",
+                    "set -a; ORO_ATLAS_ENFORCE=0; set +a", "typeset -x ORO_ATLAS_ENFORCE=0",
+                    "printf 'ORO_ATLAS_ENFORCE=0\\n' | tee -a ~/.config/environment.d/x.conf",
+                    "cd /x && export ORO_ATLAS_ENFORCE=0", "echo ORO_ATLAS_ENFORCE=0 >> .env.local",
+                    "echo 'export ORO_ATLAS_ENFORCE=0' >> ~/.bashrc", "echo 'export ORO_ATLAS_ENFORCE=0' >> ~/.bash_profile",
+                    "echo 'ORO_ATLAS_ENFORCE=0' >> ~/.profile", "echo 'export ORO_ATLAS_ENFORCE=0' >> ~/.zshenv",
+                    "echo 'set -x ORO_ATLAS_ENFORCE 0' >> ~/.config/fish/config.fish", "echo 'ORO_ATLAS_ENFORCE=0' | sudo tee -a /etc/environment",
+                    "echo 'ORO_ATLAS_ENFORCE=0' >> ~/.pam_environment", "echo 'export ORO_ATLAS_ENFORCE=0' >> .envrc",
+                    "sed -i '$a export ORO_ATLAS_ENFORCE=0' /etc/profile.d/x.sh"):
+            self.assertEqual(self.decision(self.bash(cmd, script="pretooluse_bash.py")), "deny", cmd)
+
     def test_obfuscated_assembly_into_settings_or_rc_is_denied(self):
         for cmd in ("jq '.env.ORO_ATLAS_\"ENFORCE\"=\"0\"' ~/.claude/settings.json > /tmp/x",
                     "python3 -c \"import json;d['env']['ORO_ATLAS_'+'ENFORCE']='0'\" ~/.claude/settings.local.json",

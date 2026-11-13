@@ -9,8 +9,12 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 import _common as c  # noqa: E402
 
-# Any mention that is not a plain read (`$VAR` / `${VAR}`) is treated as an attempt to set it.
-MENTION = re.compile(r"(?<![$\w{])%s\b|\$\{%s:?=" % (c.OVERRIDE_VAR, c.OVERRIDE_VAR))
+V = c.OVERRIDE_VAR
+# Assignment in command position: `VAR=0 cmd`, `export VAR=..`, `env VAR=.. cmd`, `declare/typeset -x VAR=..`, `${VAR:=..}`.
+ASSIGN = re.compile(r"(?:^|[;&|(]\s*)(?:(?:export|declare\s+-\w+|typeset\s+-\w+|env(?:\s+-\S+)*|[A-Za-z_]\w*=\S*)\s+)*%s=|\$\{%s:?=" % (V, V))
+GUARDED = r"(?:%s|systemd|supervisor|/etc/environment|environment\.d|\.service\b)" % c.ENV_TARGET_CMD.pattern
+REDIRECT_OR_TEE = re.compile(r">>?\s*[\"']?[^\s;&|]*%s|\btee\b[^;&|]*%s" % (GUARDED, GUARDED))
+REWRITER = re.compile(r"\bsed\s+(?:-\w*i|--in-place)|\bjq\b|\bpython3?\b|\bperl\b|\bnode\b|\bruby\b|\bawk\s+-i\b|\b(?:cp|mv|install|dd)\b")
 
 
 def flat(text):
@@ -19,10 +23,12 @@ def flat(text):
 
 
 def attempts_override(cmd):
-    direct = c.OVERRIDE_VAR in cmd and MENTION.search(cmd)
-    # Obfuscated assembly is only judged when the command also touches a settings/rc/.env file.
-    assembled = c.ENV_TARGET_CMD.search(cmd) and ("ATLAS_ENF" in flat(cmd) or c.OVERRIDE_VAR in flat(cmd))
-    return bool(direct or assembled)
+    """True only for commands that set the switch or write it into persistent config; read-only mentions pass."""
+    unquoted = re.sub(r"[\"'\\]", "", cmd)
+    sets = ASSIGN.search(cmd) or ASSIGN.search(unquoted)
+    mentions = V in cmd or "ATLAS_ENF" in flat(cmd)
+    writes = mentions and re.search(GUARDED, cmd) and (REDIRECT_OR_TEE.search(cmd) or REWRITER.search(cmd))
+    return bool(sets or writes)
 
 
 GIT_COMMIT = re.compile(r"(?:^|[;&|(]\s*)git\b(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+commit\b")
