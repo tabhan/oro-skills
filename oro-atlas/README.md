@@ -96,6 +96,10 @@ Installed as part of the oro-skills plugin (see the top-level README). The plugi
 `atlas-build`, `atlas-setup` and `atlas-precommit` on the Bash tool PATH; `install.sh` also links them into
 `~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`) for normal shells.
 
+## Notes
+
+`.oro-ai/notes/*.md` project notes are indexed too (`atlas notes`, anchored notes shown under query hits); format and hook API in [NOTES.md](NOTES.md).
+
 ## Tests
 
 ```bash

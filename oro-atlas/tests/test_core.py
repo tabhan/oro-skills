@@ -83,7 +83,7 @@ class RegistryAndCliTest(unittest.TestCase):
     def test_registry_contract(self):
         mods = load_all()
         self.assertIn("services", mods)
-        self.assertEqual(ordered(mods, ["services"]), ["services", "unsafe"])
+        self.assertEqual(ordered(mods, ["services"]), ["services", "unsafe", "notes"])
         self.assertEqual(ordered(mods, ["unsafe"]), ["unsafe"])
         with self.assertRaises(AtlasError):
             ordered(mods, ["nope"])

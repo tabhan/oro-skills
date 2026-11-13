@@ -8,7 +8,7 @@ import io
 import os
 import subprocess
 
-from . import build, extractors, index, migrate, rollup, store
+from . import build, extractors, index, migrate, notesindex, rollup, store
 from .common import AtlasError, Context, MissingShard, atlas_dir, find_project_root
 
 # subcommand -> shard filename stem
@@ -109,10 +109,25 @@ def collect(out_dir, shards, query, limit):
     return [row for row in found if row[1]]
 
 
-def render_text(rows, query, scope, tagged, out, rollups=None):
+def attach_notes(rows, notes, version):
+    """{(shard, record id): [note]}: each note is listed once, under its first matching hit, capped per query."""
+    shown, left, seen = {}, notesindex.NOTE_LINES_PER_QUERY, set()
+    for shard, hits, _ in rows:
+        for rec in hits:
+            fresh = [n for n in notesindex.anchored_for_hit(notes, rec, version) if n["id"] not in seen][:left]
+            seen.update(n["id"] for n in fresh)
+            left -= len(fresh)
+            if fresh:
+                shown[(shard, rec.get("id"))] = fresh
+    return shown
+
+
+def render_text(rows, query, scope, tagged, out, rollups=None, attached=None):
     for shard, hits, total in rows:
         for rec in hits:
             out.write(format_hit(rec, shard if tagged else None) + "\n")
+            for n in (attached or {}).get((shard, rec.get("id")), []):
+                out.write("    note: %s - %s\n" % (n["id"], n["title"]))
             if rollups and rec["id"] in rollups:
                 rollup.render(rollups[rec["id"]], out)
         if total > len(hits):
@@ -177,6 +192,14 @@ def build_parser():
         p.add_argument("--limit", type=int, default=5)
     st = sub.add_parser("status", help="show per-shard freshness (exit 2 when any shard is STALE/MISSING)", parents=[late])
     st.add_argument("--quiet", action="store_true", help="no output, exit status only")
+    nt = sub.add_parser("notes", help="list or search project notes (.oro-ai/notes)", parents=[late])
+    nt.add_argument("query", nargs="*", help="words matched against slug, title, kind, anchors and body")
+    tier = nt.add_mutually_exclusive_group()
+    tier.add_argument("--always", action="store_true", help="the always tier (what SessionStart injects)")
+    tier.add_argument("--anchored", action="store_true", help="only anchored notes")
+    tier.add_argument("--lint", action="store_true", help="list notes that fail validation and would be skipped")
+    nt.add_argument("--all", action="store_true", help="include notes whose oro range excludes this project")
+    nt.add_argument("--limit", type=int, default=None)
     sub.add_parser("migrate", help="rebuild the index under .oro-ai/atlas and remove the legacy directory", parents=[late])
     return ap
 
@@ -220,23 +243,74 @@ def _unsafe_hint(out_dir, query):
     return msg
 
 
+def _query_shards(out_dir):
+    """Shards `search` covers; notes have their own command."""
+    return [n for n in store.list_shards(out_dir) if n != "notes"]
+
+
 def _query(root, out_dir, args, out):
     query = " ".join(args.query)
-    shards = store.list_shards(out_dir) if args.cmd == "search" else [SHARDS[args.cmd]]
+    shards = _query_shards(out_dir) if args.cmd == "search" else [SHARDS[args.cmd]]
     rows = run_lookup(out_dir, shards, query, args.limit)
     if args.cmd == "unsafe" and "\\" in query:
         # A fully qualified name is exact intent; other records only echo it inside their summary text.
         rows = [(s, [h for h in hits if score(h, [normalize(query)]) == 0] or hits, t) for s, hits, t in rows]
     rollups = _entity_rollups(out_dir, rows, query) if args.cmd == "entity" else {}
+    attached = attach_notes(rows, notesindex.load(out_dir), (index.read_index(out_dir) or {}).get("oro_version"))
     if args.json:
-        results = [{"shard": s, "total": t, "hits": [dict(h, rollup=rollups[h["id"]]) if h["id"] in rollups else h for h in hits]} for s, hits, t in rows]
+        def hit_json(s, h):
+            h = dict(h, rollup=rollups[h["id"]]) if h["id"] in rollups else h
+            found = attached.get((s, h["id"]))
+            return dict(h, notes=[{"slug": n["id"], "title": n["title"], "file": n["file"]} for n in found]) if found else h
+        results = [{"shard": s, "total": t, "hits": [hit_json(s, h) for h in hits]} for s, hits, t in rows]
         json.dump({"query": query, "results": results}, out, ensure_ascii=False)
         out.write("\n")
     else:
-        render_text(rows, query, "all shards" if args.cmd == "search" else shards[0], args.cmd == "search", out, rollups)
+        render_text(rows, query, "all shards" if args.cmd == "search" else shards[0], args.cmd == "search", out, rollups, attached)
         if not rows and args.cmd == "unsafe":
             out.write(_unsafe_hint(out_dir, query) + "\n")
     return shards, (0 if rows else 1)
+
+
+def run_notes(root, out_dir, args, out):
+    """atlas notes: 0 when something is listed, 1 when nothing matches."""
+    if args.lint:
+        bad = notesindex.lint(root)
+        for slug, reason in bad:
+            out.write("%s: %s\n" % (slug, reason))
+        out.write("%d note(s) fail validation\n" % len(bad) if bad else "all notes valid\n")
+        return 1 if bad else 0
+    if not (args.no_rebuild or os.environ.get("ATLAS_NO_AUTOBUILD")) and index.read_index(out_dir) \
+            and index.shard_status(root, out_dir, ["notes"])["notes"]["state"] != "fresh":
+        try:
+            build.build(Context(root), ["notes"], out=io.StringIO())
+        except AtlasError:
+            sys.stderr.write("atlas: notes index is stale and could not be refreshed\n")
+    notes = notesindex.load(out_dir)
+    version = (index.read_index(out_dir) or {}).get("oro_version")
+    term = " ".join(args.query)
+    if term:
+        found = notesindex.search(notes, term, version, args.all)
+    else:
+        found = notesindex.by_recency(notes if args.all else notesindex.active_notes(notes, version))
+    if args.always:
+        found = [n for n in found if n["surface"] == "always"]
+    elif args.anchored:
+        found = [n for n in found if n["surface"] == "anchored"]
+    limit = args.limit or (notesindex.ALWAYS_CAP if (args.always or not term) else 5)
+    if args.json:
+        json.dump({"query": term, "total": len(found), "notes": found[:limit]}, out, ensure_ascii=False)
+        out.write("\n")
+    else:
+        for n in found[:limit]:
+            out.write(notesindex.format_note(n, version) + "\n")
+        if len(found) > limit:
+            out.write("... %d more (use --limit)\n" % (len(found) - limit))
+        if args.always and len(found) > notesindex.ALWAYS_CAP:
+            out.write("warning: %d always notes exceed the cap of %d\n" % (len(found), notesindex.ALWAYS_CAP))
+        if not found:
+            out.write("no notes%s\n" % (" for '%s'" % term if term else ""))
+    return 0 if found else 1
 
 
 def spawn_background(out_dir):
@@ -292,13 +366,15 @@ def main(argv=None, out=None):
             sys.stderr.write("atlas: the index is moving to .oro-ai/atlas; answering from the old index%s\n" % (
                 " (migration failed %d times; run: %s)" % (migrate.failures(root)["count"], migrate.manual_command(root)) if migrate.gave_up(root) else ""))
             args.no_rebuild = True
-        if args.cmd == "status":
+        if args.cmd == "notes":
+            code = run_notes(root, out_dir, args, out)
+        elif args.cmd == "status":
             code = run_status(root, out_dir, out, args.json, args.quiet)
         else:
             wanted = None if args.cmd == "search" else [SHARDS[args.cmd]]
             warned = False
             if not (args.no_rebuild or os.environ.get("ATLAS_NO_AUTOBUILD")) and index.read_index(out_dir):
-                warned = _heal(root, out_dir, wanted or store.list_shards(out_dir), sys.stderr)
+                warned = _heal(root, out_dir, wanted or _query_shards(out_dir), sys.stderr)
             used, code = _query(root, out_dir, args, out)
             line = None if warned else index.stale_line(root, out_dir, used)
             if line:

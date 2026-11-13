@@ -30,6 +30,8 @@ INPUTS = {
     "js": {"src": (".js", "jsmodules.yml"), "cache": False},
     "workflows": {"src": ("workflows.yml", "workflows.en.yml"), "cache": False},
     "operations": {"src": ("actions.yml",), "cache": False},
+    # Reads .oro-ai/notes/*.md (stamped via "notes") and, through DEPENDS, the shards its anchors resolve against.
+    "notes": {"src": (), "cache": False, "notes": True},
 }
 # An extractor missing from the table is assumed to read everything.
 DEFAULT_INPUT = {"src": (".php", ".yml", ".yaml", ".xml"), "cache": True}

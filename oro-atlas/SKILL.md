@@ -32,6 +32,7 @@ instead of grepping 14k services by hand. Details: [README.md](README.md).
 | jsmodules entry, mediator event, JS component | `atlas js <fragment>` |
 | Entity table, class, extend/config | `atlas entity <fragment>` |
 | Unsure which category | `atlas search <fragment>` |
+| Project notes (gotchas, decisions, env facts) | `atlas notes <term>` (format: [NOTES.md](NOTES.md)) |
 | Is the index fresh? | `atlas status` |
 
 ## Rules

@@ -9,13 +9,14 @@ import sys
 import time
 
 from . import __version__, extractors
+from . import notesindex
 from .common import sha256_file
 
 INDEX_NAME = "index.json"
 SRC_EXTS = (".php", ".yml", ".yaml", ".xml")
 _PKG = os.path.dirname(os.path.abspath(__file__))
 # Stamp key -> label shown to the user.
-LABELS = {"lock": "composer.lock", "vendor": "vendor", "src": "src", "cache": "container cache", "extractor": "extractor code"}
+LABELS = {"lock": "composer.lock", "vendor": "vendor", "src": "src", "cache": "container cache", "extractor": "extractor code", "notes": "notes"}
 
 
 def composer_lock_sha(root):
@@ -81,7 +82,7 @@ def cache_state(root):
 def extractor_sha():
     """Hash of the atlas code that shapes records, so upgrading an extractor invalidates what it built."""
     paths = sorted(glob.glob(os.path.join(_PKG, "extractors", "*.py")))
-    paths += [os.path.join(_PKG, n) for n in ("common.py", "miniyaml.py", "raw.py")]
+    paths += [os.path.join(_PKG, n) for n in ("common.py", "miniyaml.py", "raw.py", "notesindex.py")]
     h = hashlib.sha256()
     for p in paths:
         h.update(sha256_file(p).encode())
@@ -103,6 +104,7 @@ def current_stamps(root, names):
             "lock": lock, "vendor": vendor, "extractor": ext,
             "src": by_exts.get(exts) if exts else None,
             "cache": cache if spec["cache"] else None,
+            "notes": notesindex.fingerprint(root) if spec.get("notes") else None,
         }
     return result
 
