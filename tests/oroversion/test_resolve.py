@@ -57,12 +57,17 @@ class ActiveSetTest(unittest.TestCase):
         self.assertEqual(files[os.path.join(SKILL, "references", "table.md")], [])
 
     def test_unknown_policy(self):
-        # default-range content stays; ranges containing the highest supported version are advisory-active;
-        # a pinned-old range (<8) is inactive.
+        # only version-neutral content (no upper bound, lower bound <= 7.0.0) is active; v7/ and v8/ are both inactive.
         files = rel(R.active_files(SKILL, None))
-        self.assertIn("references/v8/workflow.md", files)
-        self.assertIn("scripts/plain.sh", files)
+        self.assertNotIn("references/v8/workflow.md", files)
         self.assertNotIn("references/v7/workflow.md", files)
+        self.assertNotIn("scripts/new.sh", files)
+        self.assertIn("scripts/plain.sh", files)
+
+    def test_unknown_neutrality(self):
+        for rng, active in ((">=7.0.0", True), ("^7.0 or >=8.0", False), (">=7.0.0 or >=9", True), (">=7.0.0 <8", False), ("<8", False),
+                            (">=8.0.0", False), ("==7.0.5", False), ("^7.0", False), (">=7.0.5", False), (">=6.0", True)):
+            self.assertEqual(R.status(rng, None) == R.ACTIVE, active, rng)
 
 
 class CheckGateTest(unittest.TestCase):
@@ -78,14 +83,13 @@ class CheckGateTest(unittest.TestCase):
     def test_unknown_downgrades_deny(self):
         d = R.check_decision(self.reg, "always-deny", None)
         self.assertEqual((d["run"], d["severity"]), (True, "warn"))
-        d = R.check_decision(self.reg, "eight-only", None)
-        self.assertEqual((d["run"], d["severity"]), (True, "warn"))
+        self.assertFalse(R.check_decision(self.reg, "eight-only", None)["run"])
         self.assertFalse(R.check_decision(self.reg, "seven-only", None)["run"])
 
     def test_unknown_downgrades_every_deny_annotated_or_not(self):
         reg = R.load_registry(REGISTRY)
         reg["bare"] = {"id": "bare", "severity": "deny"}
-        for cid in ("bare", "always-deny", "eight-only"):
+        for cid in ("bare", "always-deny"):
             d = R.check_decision(reg, cid, None)
             self.assertEqual((d["run"], d["severity"]), (True, "warn"), cid)
         self.assertEqual(R.check_decision(reg, "unregistered", None)["severity"], "warn")
@@ -145,6 +149,11 @@ class CliTest(unittest.TestCase):
         self.assertEqual(p.returncode, 4)
         self.assertIn("advisory", p.stderr)
         self.assertIn("scripts/plain.sh", p.stdout)
+        self.assertNotIn("v8/workflow.md", p.stdout)
+        self.assertNotIn("v7/workflow.md", p.stdout)
+        p = cli(project(None), "--list-inactive", SKILL)
+        self.assertIn("v8/workflow.md", p.stdout)
+        self.assertIn("v7/workflow.md", p.stdout)
         self.assertEqual(cli(project(None), os.path.join(SKILL, "SKILL.md")).returncode, 4)
 
     def test_applies_exit_codes(self):
@@ -167,6 +176,8 @@ class CliTest(unittest.TestCase):
         self.assertEqual((p.returncode, p.stdout.split()[0]), (1, "skip"))
         p = cli(project(None), "--check", "always-deny", "--registry", REGISTRY)
         self.assertEqual((p.returncode, p.stdout.split()[0]), (4, "warn"))
+        p = cli(project(None), "--check", "eight-only", "--registry", REGISTRY)
+        self.assertEqual((p.returncode, p.stdout.split()[0]), (4, "skip"))
 
     def test_list_inactive(self):
         p = cli(project("7.0.5"), "--list-inactive", SKILL)

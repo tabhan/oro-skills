@@ -59,10 +59,12 @@ oro-applies --project P --list-inactive <dir>
 oro-applies --project P --check <id>           # hook-check gate: run | warn | skip (exit 0 / 0 / 1; 4 unknown)
 ```
 
-Higher-version content is inactive on lower projects. Unknown version: default-range content and ranges
-containing `HIGHEST_SUPPORTED` (`lib/oroversion/resolve.py`) stay active as advisory, the rest is inactive,
-stderr says "Oro version unknown; version-specific rules shown as advisory", and every `deny` check (annotated or
-not) is downgraded to `warn` (never block on unknown). An unclosed, nested or stray `<!-- oro -->` marker prints a
+Higher-version content is inactive on lower projects. Unknown version: only version-neutral content stays active
+(default range or unannotated, i.e. no upper bound and no lower bound above 7.0.0, such as `>=7.0.0`); everything
+version-specific (`v7/`, `v8/`, `<8`, `>=8.0.0`, `==7.0.5`) is inactive and listed, never applied. stderr says
+"Oro version unknown; only version-neutral rules are active, version-specific rules are inactive (advisory)".
+`--check` follows the same rule: a version-neutral check runs, a version-specific one is `skip`, and every `deny`
+check (annotated or not) that runs is downgraded to `warn` (never block on unknown); exit stays 4. An unclosed, nested or stray `<!-- oro -->` marker prints a
 warning (the lint will fail on it). Skill descriptions load globally and stay version-neutral; a skill body
 points at `oro-applies --list-active <skill>` and reads only what it lists.
 

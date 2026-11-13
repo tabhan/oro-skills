@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "lib"))
 from oroversion import ConstraintError, detect  # noqa: E402
 from oroversion import resolve as R  # noqa: E402
 
-ADVISORY_LINE = "Oro version unknown; version-specific rules shown as advisory"
+UNKNOWN_LINE = "Oro version unknown; only version-neutral rules are active, version-specific rules are inactive (advisory)"
 
 
 def main(argv):
@@ -44,7 +44,7 @@ def main(argv):
     version = det.version
     unknown = version is None
     if unknown:
-        sys.stderr.write("oro-applies: %s (%s)\n" % (ADVISORY_LINE, det.reason))
+        sys.stderr.write("oro-applies: %s (%s)\n" % (UNKNOWN_LINE, det.reason))
     warnings = []
     try:
         if a.check:

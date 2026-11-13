@@ -9,10 +9,10 @@ import re
 
 from .constraint import Constraint, ConstraintError, DEFAULT_RANGE, Version
 
-# Rules whose range contains this version stay active when the project version is unknown.
-HIGHEST_SUPPORTED = Version(8, 0, 0)
+# With an unknown project version only version-neutral ranges (no upper bound, lower bound <= this) stay active.
+NEUTRAL_FLOOR = Version(7, 0, 0)
 
-ACTIVE, ADVISORY, INACTIVE = "active", "advisory", "inactive"
+ACTIVE, INACTIVE = "active", "inactive"
 
 _SCRIPT_EXT = (".sh", ".py", ".bash")
 _TEXT_EXT = (".md", ".yml", ".yaml") + _SCRIPT_EXT
@@ -53,9 +53,11 @@ def status(range_text, version):
     c = Constraint(range_text)
     if version is not None:
         return ACTIVE if c.matches(version) else INACTIVE
-    if c.text == DEFAULT_RANGE:
-        return ACTIVE
-    return ADVISORY if c.matches(HIGHEST_SUPPORTED) else INACTIVE
+    return ACTIVE if _is_neutral(c) else INACTIVE
+
+
+def _is_neutral(constraint):
+    return any(hi is None and (lo is None or lo <= NEUTRAL_FLOOR) for lo, _, hi, _ in constraint.intervals())
 
 
 def _split_row(line):
@@ -215,4 +217,4 @@ def check_decision(registry, check_id, version, default_severity="deny"):
         reason += " -> skipped (out of range)"
     elif unknown and severity == "deny":
         severity, reason = "warn", reason + " -> deny downgraded to warn (version unknown)"
-    return {"run": run, "severity": severity if run else None, "advisory": unknown or s == ADVISORY, "reason": reason}
+    return {"run": run, "severity": severity if run else None, "advisory": unknown, "reason": reason}
