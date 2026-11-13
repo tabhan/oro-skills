@@ -16,6 +16,7 @@ HELP = """usage: aaxis-oro <group> [args]
   env      check|repair|reset|baseline|import-attachments|restore|workers|switch   local environment
   test     [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]   explicit-target runner
   version  [diff|applies]                                      Oro version and which guidance applies
+  spec     coverage|report                                     spec AC traceability: static coverage, run verification
   dev      lint                                                lint the plugin's version-scoped guidance
 """
 
@@ -78,6 +79,9 @@ def main(argv):
     elif group == "version":
         from oroversion import cli
         code = cli.version_main(rest)
+    elif group == "spec":
+        from spectrace import cli as spec_cli
+        code = spec_cli.main(rest)
     elif group == "dev" and rest[:1] == ["lint"]:
         from oroversion import cli
         code = cli.lint_main(rest[1:])

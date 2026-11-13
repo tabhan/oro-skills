@@ -16,6 +16,7 @@ code, and deterministic work lives in scripts, not prose.
 | [atlas](atlas/) | Generated index of Oro extension points (events, tags, services, grids, workflows, MQ, config, layouts, JS) plus `unsafe <Class>` for decorator safety. Run first, before reading `vendor/`. |
 | [solutions](solutions/) | Task-indexed solution knowledge: dialog/content-widget forms, core service overrides (interceptor), entity schema/config, enums, datagrids, migrations, dev loop, Aaxis bundles catalogue, POC standard. |
 | [e2e](e2e/) | Playwright-BDD authoring rules and decision list (fixtures, grid filters, purge, parallel lanes). |
+| [spec](spec/) | Spec-per-feature in `/spec`, AC ids, `@spec` / `Group('spec:...')` test tags, `aaxis-oro spec coverage|report`. |
 | [env](env/) | Local and local-test environment: check, repair, reset, baseline, workers, host switch. |
 
 Agent: `architect-gate` (read-only plan/diff gate against the atlas index and the Aaxis rules).
@@ -25,6 +26,7 @@ Agent: `architect-gate` (read-only plan/diff gate against the atlas index and th
 ```
 aaxis-oro atlas <sub> <term> | build | setup | precommit | status | notes | migrate
 aaxis-oro env check|repair|reset|baseline|import-attachments|restore|workers|switch
+aaxis-oro spec coverage|report
 aaxis-oro test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]
 aaxis-oro version [diff|applies]
 aaxis-oro dev lint

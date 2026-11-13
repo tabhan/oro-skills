@@ -1,12 +1,15 @@
 {
   "name": "aaxis-oro",
-  "version": "0.15.3",
+  "version": "0.16.0",
   "description": "OroCommerce team skills, atlas extension-point index and hooks",
   "skills": [
     "./atlas",
     "./solutions",
     "./e2e",
-    "./env"
+    "./env",
+    "./spec"
   ],
-  "agents": ["./atlas/agents/architect-gate.md"]
+  "agents": [
+    "./atlas/agents/architect-gate.md"
+  ]
 }
