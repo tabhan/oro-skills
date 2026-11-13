@@ -20,7 +20,10 @@ OWN_FILES = (".oro-ai/config.json", ".oro-ai/.gitignore")
 MIGRATED, KEPT = "migrated-rules", "kept-rules"
 BACKUP_REL = os.path.join(".oro-ai", "setup", "CLAUDE.original.md")
 RULES_REL = os.path.join(".oro-ai", "setup", "rules.md")
-ASK = "usage: aaxis-oro setup <status|sync|rules|apply-rules> [--project P] [--dry-run] [--json] [--plan FILE]\n"
+RULES_JSON = os.path.join(".oro-ai", "setup", "rules.json")
+APPLIED = os.path.join(".oro-ai", "setup", "applied")
+NOTES_OPEN, NOTES_CLOSE = "<!-- claude-notes -->", "<!-- /claude-notes -->"
+ASK = "aaxis-oro setup <status|sync|rules|apply-rules> [--project P] [--dry-run] [--json] [--plan FILE]\n"
 
 
 class SetupError(Exception):
@@ -88,13 +91,19 @@ def claude_md_state(root):
     return "imports" if "@CLAUDE_base.md" in text else "handwritten"
 
 
+def triage_pending(root):
+    return os.path.isfile(os.path.join(root, RULES_JSON)) and not os.path.isfile(os.path.join(root, APPLIED))
+
+
 def tracked_plan(root):
     tracked = [t for t in git_tracked(root, ".oro-ai") if t not in OWN_FILES]
     return tracked
 
 
 def plan_lines(n, have_gitignore):
-    out = ["  git rm -r --cached -q .oro-ai"]
+    out = ["  WARNING: after this is committed and pulled, teammates' working copies lose these files (git deletes them);",
+           "  tell them to back up or move .oro-ai/ first.",
+           "  git rm -r --cached -q .oro-ai"]
     if not have_gitignore:
         out.append("  aaxis-oro setup sync")
     out.append("  git add .oro-ai/.gitignore .oro-ai/config.json")
@@ -117,6 +126,8 @@ def sync(root, dry):
     for name in BLOCKS:
         new = sync_block(new, name, template_block(name))
     state = "created" if text is None else ("updated" if new != text else "unchanged")
+    if text is None and foundation_state(root) != "done":
+        lines.append("note: foundation not run; run orocommerce-foundation:setup first so its Storefront themes and Area facts sections exist")
     if state != "unchanged" and not dry:
         write(pm, new)
     lines.append("CLAUDE_project.md: %s" % state)
@@ -177,7 +188,10 @@ def status(root, as_json):
     cs = claude_md_state(root)
     add("claude-md", cs, cs != "handwritten")
     pm, ok = project_md_state(root)
-    add("project-md", pm + ("" if ok else "; run: aaxis-oro setup sync"), ok)
+    sync_hint = "; run: aaxis-oro setup sync" if f == "done" else "; after the foundation step run: aaxis-oro setup sync"
+    add("project-md", pm + ("" if ok else sync_hint), ok)
+    pend = triage_pending(root)
+    add("rules", "triage pending; run: aaxis-oro setup apply-rules --plan <file>" if pend else "ok", not pend)
     cfg = os.path.isfile(os.path.join(root, ".oro-ai", "config.json"))
     add("config", "ok" if cfg else "missing; run: aaxis-oro setup sync", cfg)
     gi = os.path.isfile(os.path.join(root, ".oro-ai", ".gitignore"))
@@ -237,6 +251,9 @@ def split_blocks(text):
 def rules(root, dry):
     path = os.path.join(root, "CLAUDE.md")
     text = read(path)
+    if triage_pending(root) and (text is None or "@CLAUDE_base.md" in text):
+        print("triage pending: %s; apply with: aaxis-oro setup apply-rules --plan <file>" % RULES_REL)
+        return 0
     if text is None or "@CLAUDE_base.md" in text:
         print("nothing to triage (CLAUDE.md %s)" % ("missing" if text is None else "already imports CLAUDE_base.md"))
         return 0
@@ -247,24 +264,51 @@ def rules(root, dry):
         if not os.path.isfile(bk):
             write(bk, text)
         write(os.path.join(root, RULES_REL), "\n".join(table) + "\n")
-        write(os.path.join(root, ".oro-ai", "setup", "rules.json"), json.dumps(items, ensure_ascii=False, indent=1))
+        write(os.path.join(root, RULES_JSON), json.dumps(items, ensure_ascii=False, indent=1))
+        if os.path.isfile(os.path.join(root, APPLIED)):
+            os.remove(os.path.join(root, APPLIED))
     print("%d rules from hand-written CLAUDE.md; table: %s; original kept at %s" % (len(items), RULES_REL, BACKUP_REL))
     return 0
 
 
+def grouped(items, acts, act):
+    """Rule texts of one action under their original section headings, in source order."""
+    out, last = [], None
+    for k in sorted(items):
+        if acts[k] != act:
+            continue
+        if items[k]["section"] != last:
+            last = items[k]["section"]
+            out.append("## " + (last or "Rules"))
+        out.append(items[k]["text"])
+    return "\n\n".join(out)
+
+
+def sync_kept(ctext, kept):
+    """Keep rules live inside the foundation's claude-notes sentinels, the only part its --force rebuild preserves."""
+    if marker(KEPT) in ctext or marker(KEPT, True) in ctext:
+        return sync_block(ctext, KEPT, kept)
+    if NOTES_OPEN in ctext and NOTES_CLOSE in ctext and ctext.index(NOTES_OPEN) < ctext.index(NOTES_CLOSE):
+        k = ctext.index(NOTES_CLOSE)
+        return ctext[:k].rstrip("\n") + "\n\n" + kept + "\n" + ctext[k:]
+    return ctext.rstrip("\n") + "\n\n" + NOTES_OPEN + "\n" + kept + "\n" + NOTES_CLOSE + "\n"
+
+
 def apply_rules(root, plan_path, dry):
     plan = json.load(sys.stdin if plan_path == "-" else open(plan_path, encoding="utf-8"))
-    items = {i["id"]: i for i in json.load(open(os.path.join(root, ".oro-ai", "setup", "rules.json"), encoding="utf-8"))}
+    with open(os.path.join(root, RULES_JSON), encoding="utf-8") as fh:
+        items = {i["id"]: i for i in json.load(fh)}
+    ids = [int(x["id"]) for x in plan["items"]]
     acts = {int(x["id"]): x["action"] for x in plan["items"]}
+    dups = sorted({k for k in ids if ids.count(k) > 1})
     missing = sorted(set(items) - set(acts))
     bad = sorted(k for k, a in acts.items() if a not in ("keep", "move", "drop") or k not in items)
-    if missing or bad:
-        sys.stderr.write("plan must give keep|move|drop for every rule id; missing %s, invalid %s\n" % (missing, bad))
+    if missing or bad or dups:
+        sys.stderr.write("plan must give keep|move|drop once per rule id; missing %s, invalid %s, duplicate %s\n" % (missing, bad, dups))
         return 64
-    section = lambda act, title: "\n\n".join(["## " + title] + [items[k]["text"] for k in sorted(items) if acts[k] == act])
     counts = {a: sum(1 for v in acts.values() if v == a) for a in ("keep", "move", "drop")}
-    moved = marker(MIGRATED) + "\n" + section("move", "Project rules") + "\n" + marker(MIGRATED, True)
-    kept = marker(KEPT) + "\n" + section("keep", "Kept rules") + "\n" + marker(KEPT, True)
+    moved = marker(MIGRATED) + "\n" + grouped(items, acts, "move") + "\n" + marker(MIGRATED, True)
+    kept = marker(KEPT) + "\n" + grouped(items, acts, "keep") + "\n" + marker(KEPT, True)
     pm, cm = os.path.join(root, "CLAUDE_project.md"), os.path.join(root, "CLAUDE.md")
     ptext = read(pm) or read(os.path.join(TEMPLATES, "CLAUDE_project.md"))
     ctext = read(cm)
@@ -272,10 +316,15 @@ def apply_rules(root, plan_path, dry):
         sys.stderr.write("run orocommerce-foundation:setup (--force) first: CLAUDE.md must import CLAUDE_base.md\n")
         return 3
     new_p = sync_block(ptext, MIGRATED, moved) if counts["move"] else ptext
-    new_c = sync_block(ctext, KEPT, kept) if counts["keep"] else ctext
-    if not dry:
+    new_c = sync_kept(ctext, kept) if counts["keep"] else ctext
+    if dry:
+        for name, txt in (("CLAUDE_project.md", moved if counts["move"] else ""), ("CLAUDE.md", kept if counts["keep"] else "")):
+            if txt:
+                print("--- %s (first 40 lines)\n%s" % (name, "\n".join(txt.splitlines()[:40])))
+    else:
         write(pm, new_p)
         write(cm, new_c)
+        write(os.path.join(root, APPLIED), "applied\n")
     print("rules: %(move)d moved to CLAUDE_project.md, %(keep)d kept in CLAUDE.md, %(drop)d dropped" % counts)
     return 0
 

@@ -90,6 +90,49 @@ class SetupTest(unittest.TestCase):
         run("apply-rules", "--plan", os.path.join(self.d, "plan.json"), cwd=self.d)
         self.assertEqual(open(os.path.join(self.d, "CLAUDE_project.md")).read().count("aaxis-oro:migrated-rules:start"), 1)
 
+    def _triage(self):
+        self.put("CLAUDE.md", HAND)
+        run("rules", cwd=self.d)
+        self.put("CLAUDE.md", IMPORTS)
+
+    def test_keep_inside_sentinels_survives_force_rebuild(self):
+        self._triage()
+        self.put("plan.json", json.dumps({"items": [{"id": 1, "action": "drop"}, {"id": 2, "action": "move"}, {"id": 3, "action": "keep"}]}))
+        run("apply-rules", "--plan", os.path.join(self.d, "plan.json"), cwd=self.d)
+        text = open(os.path.join(self.d, "CLAUDE.md")).read()
+        a, b = text.index("<!-- claude-notes -->"), text.index("<!-- /claude-notes -->")
+        self.assertIn("Plain paragraph rule.", text[a:b])
+        self.assertIn("## Key Rules", open(os.path.join(self.d, "CLAUDE_project.md")).read())
+        # foundation --force keeps exactly the text between the sentinels
+        lifted = text[a:b + len("<!-- /claude-notes -->")]
+        rebuilt = "@CLAUDE_base.md\n\n" + lifted + "\n"
+        self.assertIn("Plain paragraph rule.", rebuilt)
+
+    def test_status_flags_pending_triage_until_applied(self):
+        self._triage()
+        code, out = run("status", cwd=self.d)
+        self.assertIn("triage pending", out)
+        code, out = run("rules", cwd=self.d)
+        self.assertIn("triage pending", out)
+        self.put("plan.json", json.dumps({"items": [{"id": i, "action": "keep"} for i in (1, 2, 3)]}))
+        run("apply-rules", "--plan", os.path.join(self.d, "plan.json"), cwd=self.d)
+        code, out = run("status", cwd=self.d)
+        self.assertNotIn("triage pending", out)
+
+    def test_apply_rejects_duplicate_ids(self):
+        self._triage()
+        self.put("plan.json", json.dumps({"items": [{"id": 1, "action": "keep"}, {"id": 1, "action": "drop"}, {"id": 2, "action": "keep"}, {"id": 3, "action": "keep"}]}))
+        code, out = run("apply-rules", "--plan", os.path.join(self.d, "plan.json"), cwd=self.d)
+        self.assertEqual(code, 64)
+        self.assertIn("duplicate [1]", out)
+
+    def test_dry_run_prints_text(self):
+        self._triage()
+        self.put("plan.json", json.dumps({"items": [{"id": 1, "action": "drop"}, {"id": 2, "action": "move"}, {"id": 3, "action": "keep"}]}))
+        code, out = run("apply-rules", "--dry-run", "--plan", os.path.join(self.d, "plan.json"), cwd=self.d)
+        self.assertIn("## Key Rules", out)
+        self.assertFalse(os.path.exists(os.path.join(self.d, "CLAUDE_project.md")))
+
     def test_apply_rejects_incomplete_plan(self):
         self.put("CLAUDE.md", HAND)
         run("rules", cwd=self.d)

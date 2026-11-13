@@ -2,8 +2,7 @@
 ## Extension design rules
 
 - Designing or implementing an Oro extension (event, DI tag, service override, datagrid, workflow/operation, MQ,
-  config, layout, JS) means consulting `aaxis-oro:solutions` and the Oro docs first, and citing both in the plan and
-  in the change description.
-- The planner's Step 5b dispatches `aaxis-oro:architect-gate` as a 4th plan review (beside security, performance, ux);
-  a plan with an uncited or inappropriate extension-point choice does not pass.
+  config, layout, JS) means consulting `aaxis-oro:solutions` and the Oro docs first, and citing both in the plan.
+- After the plan is written and before Execute, run `aaxis-oro:architect-gate` on it and save its verdict to
+  `.oro-ai/task/<TICKET>/architect-gate.md`. REJECT blocks Execute until the plan is fixed and the gate passes.
 <!-- aaxis-oro:plan-rules:end -->
