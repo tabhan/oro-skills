@@ -18,7 +18,7 @@ code, and deterministic work lives in scripts, not prose.
 | [e2e](e2e/) | Playwright-BDD authoring rules and decision list (fixtures, grid filters, purge, parallel lanes). |
 | [env](env/) | Local and local-test environment: check, repair, reset, baseline, workers, host switch. |
 
-Agent: `oro-architect-gate` (read-only plan/diff gate against the atlas index and the Aaxis rules).
+Agent: `architect-gate` (read-only plan/diff gate against the atlas index and the Aaxis rules).
 
 ## CLI
 

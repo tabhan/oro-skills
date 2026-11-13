@@ -18,7 +18,7 @@ class CatalogueTest(unittest.TestCase):
     def test_skill_has_install_prompt_and_gate_check(self):
         skill = open(os.path.join(ROOT, "solutions", "SKILL.md")).read()
         self.assertIn("hantab@aaxis.io", skill)
-        gate = open(os.path.join(ROOT, "atlas", "agents", "oro-architect-gate.md")).read()
+        gate = open(os.path.join(ROOT, "atlas", "agents", "architect-gate.md")).read()
         self.assertIn("project_namespace", gate)
         self.assertIn("src/Aaxis/", gate)
         self.assertIn("AppBundle/", gate)

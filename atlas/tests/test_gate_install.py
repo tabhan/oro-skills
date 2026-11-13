@@ -33,7 +33,7 @@ class InstallScriptTest(unittest.TestCase):
             os.makedirs(home + "/skills")
             os.makedirs(home + "/agents")
             os.symlink(ATLAS_DIR, home + "/skills/oro-atlas")
-            os.symlink(ATLAS_DIR + "/agents/oro-architect-gate.md", home + "/agents/oro-architect-gate.md")
+            os.symlink(ATLAS_DIR + "/agents/architect-gate.md", home + "/agents/oro-architect-gate.md")
             self.run_install(home)
             self.assertEqual(os.listdir(home + "/skills") + os.listdir(home + "/agents"), [])
             self.assertTrue(os.path.islink(home + "/bin/aaxis-oro"))
@@ -84,7 +84,7 @@ class PromptGateTest(unittest.TestCase):
         self.assertIn("atlas unavailable", text)
 
     def test_gate_agent_resolves_cli_and_degrades(self):
-        text = read(ATLAS_DIR + "/agents/oro-architect-gate.md")
+        text = read(ATLAS_DIR + "/agents/architect-gate.md")
         for step in ("command -v aaxis-oro", "$ORO_SKILLS_DIR/bin/aaxis-oro", ATLAS_BIN):
             self.assertIn(step, text)
         self.assertIn("atlas unavailable", text)

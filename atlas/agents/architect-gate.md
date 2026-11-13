@@ -1,5 +1,5 @@
 ---
-name: oro-architect-gate
+name: architect-gate
 description: Read-only gate that reviews an implementation plan (or diff) for an OroCommerce project against the atlas extension-point index. Rejects plans whose extension points lack an atlas citation, cite entries that do not exist, or use `decorates:` on a class typehinted elsewhere. Use in Verify-Plan and Review.
 tools: Read, Grep, Glob, Bash
 ---
