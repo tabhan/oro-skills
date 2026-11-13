@@ -25,6 +25,9 @@ class Mapping(unittest.TestCase):
             "src/A/Bundle/XBundle/Resources/translations/messages.en.yml": {"translations"},
             "src/A/Bundle/XBundle/Resources/config/oro/routing.yml": {"routing", "code"},
             "src/A/Bundle/XBundle/Controller/FooController.php": {"routing", "code"},
+            "src/A/Bundle/XBundle/Tests/DataFixtures/X.php": set(),
+            "src/A/Bundle/XBundle/Migrations/Data/ORM/LoadX.php": {"migrations", "code"},
+            "src/A/Bundle/XBundle/DataFixtures/X.php": {"fixtures", "code"},
             "src/A/Bundle/XBundle/Resources/public/img/a.png": {"assets"},
             "src/A/Bundle/XBundle/Resources/views/layouts/b/theme.yml": {"assets"},
             "src/A/Bundle/XBundle/Resources/views/layouts/b/styles.scss": {"assets"},
@@ -51,6 +54,18 @@ class Refresh(Base):
             write(os.path.join(self.project, rel), "a\n")
         self.git("add", "-A")
         self.git("commit", "-qm", "init")
+        self.set_baseline_key()
+
+    def baseline_key(self):
+        return subprocess.run([os.path.join(ROOT, "scripts", "local-env", "lib", "baseline-key.sh"), self.project],
+                              capture_output=True, text=True).stdout.strip()
+
+    def set_baseline_key(self):
+        path = os.path.join(self.project, ".oro-ai", "local-env", "env.yml")
+        with open(path) as fh:
+            text = fh.read()
+        with open(path, "w") as fh:
+            fh.write(text.replace("baseline_key: null", "baseline_key: %s" % self.baseline_key()))
 
     def git(self, *args):
         subprocess.run(["git", "-C", self.project, *args], check=True, capture_output=True)
@@ -66,7 +81,7 @@ class Refresh(Base):
         p = self.refresh("--dry-run")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("steps since none", p.stdout)
-        for s in ("composer", "cache-local", "cache-test", "migrate", "baseline-stale", "entity", "translations", "routing", "assets"):
+        for s in ("composer", "cache-local", "cache-test", "migrate", "baseline-stale", "entity", "translations", "routing-local", "routing-test", "assets"):
             self.assertIn("would run %s" % s, p.stdout)
         self.assertFalse(os.path.exists(os.path.join(self.project, ".oro-ai", "local-env", "refresh.json")))
         self.assertEqual(self.calls(), "")
@@ -82,6 +97,7 @@ class Refresh(Base):
         self.assertIn("oro:migration:load --force --env=prod", self.calls())
         self.assertIn("cache:warmup --env=behat_test", self.calls())
         self.assertIn("fos:js-routing:dump --env=prod", self.calls())
+        self.assertIn("fos:js-routing:dump --env=behat_test", self.calls())
         self.assertNotIn("oro:migration:load --force --env=behat_test", self.calls())
         self.assertIn("up to date", self.refresh().stdout)
 
@@ -142,6 +158,43 @@ class Refresh(Base):
         p = self.gate("local")
         self.assertEqual(p.returncode, 3)
         self.assertEqual(self.gate("local", "--no-refresh-check").returncode, 0)
+
+    def test_routing_change_runs_dump_per_stack_and_gates_both(self):
+        self.refresh()
+        write(os.path.join(self.project, "src/B/FooController.php"), "x\n")
+        for target in ("local", "local-test"):
+            self.assertEqual(self.gate(target).returncode, 3, target)
+        p = self.refresh("--dry-run")
+        for s in ("routing-local", "routing-test", "cache-local", "cache-test"):
+            self.assertIn("would run %s" % s, p.stdout)
+        self.assertNotIn("would run assets", p.stdout)
+
+    def test_stale_baseline_refuses_local_test_only(self):
+        self.refresh()
+        self.assertEqual(self.gate().returncode, 0)
+        write(os.path.join(self.project, ".oro-ai", "local-env", "env.yml"),
+              open(os.path.join(self.project, ".oro-ai", "local-env", "env.yml")).read().replace(self.baseline_key(), "a" * 64))
+        p = self.gate()
+        self.assertEqual(p.returncode, 3)
+        self.assertEqual(p.stdout.strip(), "baseline stale; run: aaxis-oro env baseline")
+        self.assertEqual(self.gate("local").returncode, 0)
+        self.assertEqual(self.gate("local-test", "--no-refresh-check").returncode, 0)
+
+    def test_migration_change_makes_baseline_stale_even_after_refresh(self):
+        self.refresh()
+        write(os.path.join(self.project, "src/B/Migrations/Schema/M.php"), "new\n")
+        self.assertEqual(self.refresh().returncode, 0)
+        p = self.gate()
+        self.assertEqual(p.returncode, 3)
+        self.assertIn("baseline stale", p.stdout)
+
+    def test_baseline_key_is_cached_until_inputs_change(self):
+        import time
+        cmd = [os.path.join(ROOT, "scripts", "local-env", "lib", "refresh.py"), "baseline-key", "--project", self.project]
+        first = subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
+        t = time.time()
+        self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).stdout.strip(), first)
+        self.assertLess(time.time() - t, 1.0)
 
     def test_non_git_project_is_not_gated(self):
         import shutil

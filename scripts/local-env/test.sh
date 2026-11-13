@@ -48,6 +48,10 @@ check_env_overrides() {
 check_env_overrides "$@"
 if [ "$NO_REFRESH_CHECK" = 0 ]; then
     msg=$(python3 "$LE_LIB/refresh.py" gate --project "$PROJECT" --target "$TARGET") || { say "$msg"; exit 3; }
+    # The test baseline is only rebuilt by `env baseline`, so a stale key must stop local-test runs too.
+    if [ "$TARGET" = local-test ] && key=$(python3 "$LE_LIB/refresh.py" baseline-key --project "$PROJECT") && [ "$key" != "$BASELINE_KEY" ]; then
+        say "baseline stale; run: aaxis-oro env baseline"; exit 3
+    fi
 fi
 if [ ${#MISMATCH[@]} -gt 0 ]; then
     say "guard: $TARGET refuses env overrides; nothing was run"; printf '  %s\n' "${MISMATCH[@]:0:5}"; exit 3

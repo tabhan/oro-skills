@@ -48,11 +48,11 @@ Categories come from `lib/refresh.py` (Tests/ dirs ignored). Steps run in this o
 | any `Migrations/` | local `oro:migration:load --force`; local-test only reports `baseline-stale` (nothing rebuilds it automatically: run `aaxis-oro env baseline`) |
 | `entity_extend.yml`, `config/oro/entity*.yml`, `entity_configs.yml` | local `oro:entity-config:update` + `oro:entity-extend:update` |
 | `translations/*.yml` | local `oro:translation:load --rebuild-cache` + `oro:translation:dump` |
-| `routing*.yml`, `*Controller.php` | `fos:js-routing:dump` once (Oro writes `*_routes.json` through the public media filesystem) |
+| `routing*.yml`, `*Controller.php` | `fos:js-routing:dump` per stack: `routing-local` (prod) and `routing-test` (behat_test); Oro writes `*_routes.json` through the public gaufrette FileManager, so on gridfs projects each stack's dump lands in its own Mongo |
 | `Resources/public/**`, theme/assets/jsmodules yml, package files, `*.scss/js/ts/css` under `src` | `oro:assets:install` (`--symlink` when `public/bundles` holds symlinks; it also builds, once) |
 
 `aaxis-oro test` runs `refresh.py gate` first: exit 3 and `tree not refreshed since <sha>; run: aaxis-oro dev refresh` when a
-step applicable to the target is due (git index + worktree hashes, well under 1s; skipped outside a git work tree).
+step applicable to the target is due (git index + worktree hashes, well under 1s; skipped outside a git work tree). Kernels here all run `ORO_DEBUG=0` (dotenv, nginx template, phpunit.xml), so code edits do not self-heal and stay gated. For `local-test` it also refuses with `baseline stale; run: aaxis-oro env baseline` when `baseline_key` differs from the current key (cached by a composer.lock/Migrations/DataFixtures fingerprint, so only the first check after a change costs ~1.5s). `oro:translation:dump` also writes through gaufrette (`JsTranslationDumper`), but translations only change the local DB, so it stays local-only.
 
 ## Scripts
 

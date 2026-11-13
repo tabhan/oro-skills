@@ -3,6 +3,7 @@
 
   plan   --project P [--all] [--target local|local-test]   print "<step>\\t<reason>" lines (all steps when --all or no record)
   gate   --project P --target local|local-test              exit 1 + one-line message when a step applicable to the target is due
+  baseline-key --project P                                  baseline key, cached by a fingerprint of composer.lock + Migrations + DataFixtures
   record --project P                                        store HEAD + input hashes in .oro-ai/local-env/refresh.json
 """
 import argparse
@@ -14,7 +15,7 @@ import subprocess
 import sys
 import time
 
-CATEGORIES = ("composer", "migrations", "entity", "translations", "routing", "assets", "code")
+CATEGORIES = ("composer", "migrations", "entity", "translations", "routing", "fixtures", "assets", "code")
 ASSET_NAMES = {"theme.yml", "assets.yml", "jsmodules.yml", "jsmodules_dev.yml", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
 ASSET_EXT = {".scss", ".css", ".js", ".ts", ".jsx", ".tsx"}
 # id, stack (shared steps serve both stacks), triggering categories, execution order is list order.
@@ -26,7 +27,9 @@ STEPS = (
     ("baseline-stale", "local-test", ("migrations", "composer")),
     ("entity", "local", ("entity",)),
     ("translations", "local", ("translations",)),
-    ("routing", "shared", ("routing", "composer")),
+    # Oro writes the dump through the public gaufrette filesystem, which is per stack when it is gridfs.
+    ("routing-local", "local", ("routing", "composer")),
+    ("routing-test", "local-test", ("routing", "composer")),
     ("assets", "shared", ("assets",)),
 )
 
@@ -46,6 +49,8 @@ def categories_of(path):
         out.add("migrations")
     if ("config" in parts[:-1] and "oro" in parts[:-1] and re.match(r"^entity[^/]*\.ya?ml$", name)) or name in ("entity_extend.yml", "entity_configs.yml"):
         out.add("entity")
+    if "DataFixtures" in parts[:-1]:
+        out.add("fixtures")
     if "translations" in parts[:-1] and ext in (".yml", ".yaml", ".xlf"):
         out.add("translations")
     if re.match(r"^routing[^/]*\.ya?ml$", name) or (in_src and name.endswith("Controller.php")):
@@ -126,9 +131,35 @@ def due(project, target=None, everything=False):
     return rec, plan
 
 
+def baseline_key(project):
+    """Prints the baseline key; baseline-key.sh walks vendor/ (over a second), so reuse it while its inputs are unchanged."""
+    cur = compute(project)
+    if cur is None:
+        return 1
+    fp = hashlib.sha256("".join(cur[1][c] for c in ("composer", "migrations", "fixtures")).encode()).hexdigest()
+    cache = os.path.join(project, ".oro-ai", "local-env", "baseline-key-cache.json")
+    try:
+        with open(cache, encoding="utf-8") as fh:
+            hit = json.load(fh)
+        if hit.get("fp") == fp and hit.get("key"):
+            print(hit["key"])
+            return 0
+    except (OSError, ValueError):
+        pass
+    p = subprocess.run([os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline-key.sh"), project], capture_output=True, text=True)
+    key = p.stdout.strip()
+    if p.returncode != 0 or not key:
+        return 1
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    with open(cache, "w", encoding="utf-8") as fh:
+        json.dump({"fp": fp, "key": key}, fh)
+    print(key)
+    return 0
+
+
 def main(argv):
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("plan", "gate", "record"))
+    ap.add_argument("cmd", choices=("plan", "gate", "record", "baseline-key"))
     ap.add_argument("--project", default=os.getcwd())
     ap.add_argument("--target", choices=("local", "local-test"))
     ap.add_argument("--all", action="store_true")
@@ -145,6 +176,8 @@ def main(argv):
             fh.write("\n")
         os.replace(tmp, state_path(project))
         return 0
+    if a.cmd == "baseline-key":
+        return baseline_key(project)
     rec, plan = due(project, a.target, a.all)
     if a.cmd == "plan":
         print("#since %s" % (rec["commit"][:10] if rec and rec.get("commit") else "none"))

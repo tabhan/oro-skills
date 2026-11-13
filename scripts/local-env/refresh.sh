@@ -4,7 +4,8 @@
 # or pull, for both stacks, running only the steps the changed inputs need. State: .oro-ai/local-env/refresh.json.
 # Usage: refresh.sh [--all] [--project P] [--dry-run]    (--all or no record: every step)
 # Console steps go through `aaxis-oro test <target> console` so each one is bound to its own stack (local: prod/dev
-# kernel, local-test: test/behat_test); shared steps (composer, routes dump, assets) touch public/ and vendor/ once.
+# kernel, local-test: test/behat_test); shared steps (composer, assets) touch vendor/ and public/ once. The routes dump runs per stack: Oro writes it through the
+# public gaufrette filesystem, which is gridfs (that stack's Mongo) on gridfs projects.
 # composer install keeps scripts enabled (they install assets and clear caches) and adds --no-dev only when vendor/
 # was installed without dev packages. Never sudo, down -v, FLUSHALL, db.sh or reinstall.sh.
 # Exit: 0 ok or nothing to do, 1 a step failed (refresh.json untouched), 3 guard abort, 64 usage.
@@ -34,7 +35,8 @@ step_baseline() { echo "baseline stale (composer.lock/migrations changed): run a
 step_migrate() { tc local console oro:migration:load --force; }
 step_entity() { tc local console oro:entity-config:update && tc local console oro:entity-extend:update; }
 step_translations() { tc local console oro:translation:load --rebuild-cache && tc local console oro:translation:dump; }
-step_routing() { tc local console fos:js-routing:dump; }
+step_routing_local() { tc local console fos:js-routing:dump; }
+step_routing_test() { tc local-test console fos:js-routing:dump --env=behat_test; }
 step_assets() {
     local sl=(); [ -n "$(find public/bundles -maxdepth 1 -type l -print -quit 2>/dev/null)" ] && sl=(--symlink)
     tc local console oro:assets:install "${sl[@]}"
