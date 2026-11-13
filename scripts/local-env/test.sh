@@ -124,19 +124,29 @@ case $ACTION in
         [ -f "$out.c" ] && grep -E '^(OK \(|Tests:|FAILURES!|ERRORS!|WARNINGS!|No tests executed)' "$out.c" | tail -4; rm -f "$out.c"
         [ $ran = 0 ] && { echo "FAIL no tests executed (checked: ${suites[*]:-all}); check --filter/path"; rc=1; } ;;
     e2e)
-        MQ_PID=""; PIDF="$PROJECT/.oro-ai/local-env/mq-consumer.pid"; mkdir -p "$(dirname "$PIDF")"; [ -e "$(dirname "$PIDF")/.gitignore" ] || printf '*\n' > "$(dirname "$PIDF")/.gitignore"
-        stop_consumer() { [ -n "$MQ_PID" ] && kill -- -"$MQ_PID" 2>/dev/null; MQ_PID=""; rm -f "$PIDF"; }
+        MQ_PID=""; MQ_STARTED=""; PIDF="$PROJECT/.oro-ai/local-env/mq-consumer.pid"; mkdir -p "$(dirname "$PIDF")"; [ -e "$(dirname "$PIDF")/.gitignore" ] || printf '*\n' > "$(dirname "$PIDF")/.gitignore"
+        CNTF="$(dirname "$PIDF")/mq-restarts.count"; rm -f "$CNTF"
+        stop_consumer() {
+            if [ -n "$MQ_PID" ]; then
+                kill -- -"$MQ_PID" 2>/dev/null
+                for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do kill -0 -- -"$MQ_PID" 2>/dev/null || break; sleep 0.5; done
+                kill -9 -- -"$MQ_PID" 2>/dev/null
+            fi
+            MQ_PID=""; rm -f "$PIDF"
+        }
         trap stop_consumer EXIT; trap 'exit 130' INT TERM
         # A stale pid file from a killed wrapper run is ours to clean; a consumer already attached to the vhost is reused.
         [ -f "$PIDF" ] && kill -- -"$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"
         if php bin/console aaxis:test:queue-status oro.default --env=behat_test 2>>"$LOG" | grep -Eq '"consumers": ?[1-9]'; then
             say "e2e: queue consumer already running on $MQ_VHOST; reusing"
         else
-            setsid php bin/console oro:message-queue:consume --env=behat_test --no-debug >> "$LOG" 2>&1 < /dev/null &
-            MQ_PID=$!; echo "$MQ_PID" > "$PIDF"; say "e2e: started behat_test queue consumer (pid $MQ_PID)"
+            # Oro exits the consumer on "cache has changed" and expects a supervisor; nothing else restarts it here.
+            setsid bash -c 'n=0; while :; do php bin/console oro:message-queue:consume --env=behat_test --no-debug; rc=$?; n=$((n+1)); echo $n > "$1"; [ $rc -eq 0 ] || sleep 1; done' _ "$CNTF" >> "$LOG" 2>&1 < /dev/null &
+            MQ_PID=$!; MQ_STARTED=1; echo "$MQ_PID" > "$PIDF"; say "e2e: started behat_test queue consumer (pid $MQ_PID)"
         fi
         php bin/console aaxis:test:e2e --env=behat_test "$@" >> "$LOG" 2>&1; rc=$?
         stop_consumer
+        [ -n "$MQ_STARTED" ] && say "consumer: $(cat "$CNTF" 2>/dev/null || echo 0) restarts"; rm -f "$CNTF"
         sed 's/\x1b\[[0-9;]*m//g' "$LOG" | grep -E '^(\[[0-9]+\] )?\s*[0-9]+ (passed|failed|flaky|skipped|did not run)|[0-9]+ (scenarios?|steps?) \(|^(\[[0-9]+\] )?(HTML report|Error|FAIL)' | tail -8
         res=$(ls -dt var/e2e-results/*/ 2>/dev/null | head -1); [ -n "$res" ] && echo "results: ${res%/}" || echo "results: none found" ;;
 esac

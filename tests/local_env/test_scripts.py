@@ -494,5 +494,26 @@ class NodePhp(unittest.TestCase):
         self.assertEqual(subprocess.run(["python3", tool, "php-ok", "~8.5.0", "8.4.1"]).returncode, 1)
 
 
+class E2eConsumer(Base):
+    def test_consumer_restarts_and_dies_with_the_run(self):
+        os.makedirs(os.path.join(self.project, "bin"))
+        marker = os.path.join(self.tmp, "consume.count")
+        console = os.path.join(self.project, "bin", "console")
+        write(console, """#!/usr/bin/env bash
+case "$*" in
+    *queue-status*) echo '{"consumers": 0}' ;;
+    *message-queue:consume*) echo x >> "%(m)s"; if [ "$(wc -l < "%(m)s")" -ge 3 ]; then echo $$ > "%(m)s.pid"; exec sleep 300; fi; exit 0 ;;
+    *test:e2e*) for _ in $(seq 300); do [ -f "%(m)s.pid" ] && exit 0; sleep 0.1; done; exit 1 ;;
+esac
+""" % {"m": marker})
+        os.chmod(console, 0o755)
+        p = subprocess.run([os.path.join(ROOT, "bin", "aaxis-oro"), "test", "--project", self.project, "local-test", "e2e"],
+                           capture_output=True, text=True, env=self.env, cwd=self.project)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertRegex(p.stdout, r"consumer: [2-9] restarts")
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(read(marker + ".pid")), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
