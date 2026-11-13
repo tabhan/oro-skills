@@ -5,6 +5,8 @@
   env.py migrate [--project P]      move <P>/.claude/oro-local-env/env.yml to the new location, converting to the schema
   env.py get [--project P] <a.b>    print one value (lists as comma-separated)
   env.py path [--project P]         print the env.yml path
+  env.py init [--project P] [NAME]  create env.yml with defaults (project name: NAME, else PROJECT_NAME in .env-app.local, else the directory)
+  env.py asks [--project P]         print the dotted keys setup must still ask for, one per line
 
 Exit 2 when migrate finds both files and they differ; 64 on usage errors. Stdlib only (miniyaml from atlas).
 Domains and certificates are never defaulted: validate lists them as asks for setup.
@@ -207,8 +209,20 @@ def migrate(project, out=sys.stdout):
     return 0
 
 
+def init(project, name=None):
+    path = new_path(project)
+    if os.path.exists(path):
+        return 0
+    if not name:
+        m = re.search(r"^PROJECT_NAME=(\S+)", open(os.path.join(project, ".env-app.local")).read() if os.path.exists(os.path.join(project, ".env-app.local")) else "", re.M)
+        name = m.group(1) if m else re.sub(r"[^a-z0-9_-]", "-", os.path.basename(os.path.abspath(project)).lower())
+    save(path, with_defaults({"project": name}))
+    print("env.yml: created %s" % path)
+    return 0
+
+
 def main(argv):
-    if not argv or argv[0] not in ("validate", "migrate", "get", "path"):
+    if not argv or argv[0] not in ("validate", "migrate", "get", "path", "init", "asks"):
         sys.stderr.write(__doc__)
         return 64
     cmd, rest = argv[0], argv[1:]
@@ -221,6 +235,11 @@ def main(argv):
         return migrate(project)
     if cmd == "path":
         print(new_path(project))
+        return 0
+    if cmd == "init":
+        return init(project, rest[0] if rest else None)
+    if cmd == "asks":
+        print("\n".join(missing_asks(with_defaults(load(new_path(project))))))
         return 0
     if cmd == "get":
         if len(rest) != 1 or not os.path.exists(new_path(project)):

@@ -66,7 +66,7 @@ if [ -z "$BASELINE_KEY" ]; then bad baseline-key "no baseline built yet (baselin
 elif [ "$key" != "$BASELINE_KEY" ]; then bad baseline-key "stale: composer.lock/migrations/fixtures changed (baseline.sh)"
 else ok baseline-key "${key:0:12}"; fi
 
-# managed files (templates arrive with the setup work)
+# managed files: every rendered config must equal its template render
 if [ -x "$LE_DIR/render.sh" ]; then
     while IFS= read -r line; do bad template "$line"; done < <("$LE_DIR/render.sh" --check --project "$PROJECT" 2>&1 | grep -v '^$')
 fi

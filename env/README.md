@@ -46,6 +46,8 @@ Exit codes: 0 ok, 1 failure, 2 drift (`check.sh`), 3 guard abort, 10 sudo needed
 
 | Script | Purpose |
 |---|---|
+| `env setup [--set k=v]` (`setup.sh`) | migrate or create env.yml, ask for domains/certs/namespace (`ask:` lines, exit 64, rerun with `--set`), `workers --write`, render, `repair --only params` when `parameters.yml` exists, scaffold the POC bundle, print `SUDO-NEEDED` steps and `NEXT: docker compose up -d ...`; idempotent |
+| `env render [--check\|--diff]` (`render.sh`) | render the managed files from `env/templates/`; `--check`/`--diff`/`--dry-run` are read-only; replaced files are backed up to `var/backups/oro-local-env/` and appended to `.git/info/exclude` when not already ignored (`.gitignore` is never edited) |
 | `env check [--json]` (`check.sh`) | read-only drift report: Node (`.nvmrc` vs `parameters.yml` vs shell), PHP vs `composer.json`, Mongo port and cache flag, nginx/fpm, `/etc/hosts`, test DBs, vhost, baseline key |
 | `repair.sh [--only params\|vhost\|hosts\|templates]` | fixes what check reports: `parameters.yml` keys, test vhost, sudo steps for `/etc/hosts`; dotenv files it edits are backed up to `var/backups/oro-local-env/` |
 | `baseline.sh [--refresh]` | `oro:install --env=behat_test` into `db`, then PG template + Mongo private baseline; no-op while `baseline_key` matches |
@@ -76,3 +78,24 @@ line with the elapsed time. `phpunit` always sets `ORO_ENV=test`; `e2e` runs
 
 Tests: `python3 -m unittest discover -s tests/local_env` (guards run against stubbed docker/curl/php in
 `tests/local_env/stubs/`).
+
+## Templates
+
+`env/templates/` holds the sources; `{{dotted.key}}` reads env.yml (plus derived values: Postgres/RabbitMQ credentials
+and server version from `.env-app.local`, RabbitMQ image from `docker-compose.yml`, workers, session db), `{{#if flag}}`
+blocks keep env-specific lines. An unset value stops the render naming the key.
+
+| Template | Output | Mode |
+|---|---|---|
+| `docker-compose.override.yml.tmpl` | `docker-compose.override.yml` | whole file; Mongo `27017:27017`, `--wiredTigerCacheSizeGB`, `mem_limit`, no dummy profile |
+| `env-app.local.tmpl` | `.env-app.local` | merge: `KEY=value` enforced in place, `!KEY` removed (NODE_VERSION, COMPOSE_PROFILES), all else kept |
+| `env-app.test-stack.local.tmpl` | `.env-app.behat_test.local`, `.env-app.test.local` | one template; behat_test adds ORO_ENV/ORO_DEBUG/MQ/session, test adds admin and install options |
+| `nginx-test.conf.tmpl` | staged `.oro-ai/local-env/rendered/nginx-test.conf`, installed at `/etc/nginx/conf.d/<domain>.conf` by a printed sudo step | `fastcgi_param ORO_ENV behat_test`, shared pool, no websocket |
+| `supervisor-mc_test.conf.tmpl` | staged, installed at `/etc/supervisor/conf.d/mc_test.conf` | only with `local_test.supervisor_consumer: true`, `autostart=false` |
+| `poc-bundle/` | `src/Aaxis/Bundle/AppBundle` | create-if-missing scratch bundle with its own `.gitignore` `*` |
+| `nginx-e2e-pool-fallback.md` | not rendered | second php-fpm pool, only if cross-hits appear |
+
+Obsolete files (`.env-app.e2e.local`, `config/config_e2e.yml`) are reported by `check` and removed (with backup) by
+setup. Installed nginx/supervisor files are compared with the render when readable; a difference is drift with a
+`(sudo)` marker and `render`/`setup` print the exact `sudo cp ... && sudo nginx -t && sudo supervisorctl signal HUP nginx`.
+Override the install directories in tests with `LE_NGINX_DIR` / `LE_SUPERVISOR_DIR`.

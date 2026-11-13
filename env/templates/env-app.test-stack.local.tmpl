@@ -1,0 +1,24 @@
+# Local test stack ({{target}} kernel env), rendered from env.yml. Namespaces are oro_test*; app caches stay on disk,
+# Redis holds only sessions (behat_test web). Derived DSNs are literal because dotenv expands ${VAR} when a file is read.
+{{#if behat_test}}
+ORO_ENV=behat_test
+ORO_DEBUG=0
+ORO_MQ_DSN=amqp://{{rabbit_user}}:{{rabbit_pass}}@127.0.0.1:5672/{{local_test.mq_vhost}}
+ORO_SESSION_DSN={{redis_url}}/{{session_db}}
+{{/if}}
+ORO_DB_URL=postgres://{{pg_user}}:{{pg_password}}@127.0.0.1:5432/{{local_test.db}}?sslmode=disable&charset=utf8&serverVersion={{pg_server_version}}
+ORO_DB_DSN=postgres://{{pg_user}}:{{pg_password}}@127.0.0.1:5432/{{local_test.db}}?sslmode=disable&charset=utf8&serverVersion={{pg_server_version}}
+ORO_SEARCH_ENGINE_DSN={{search_url}}?prefix={{local_test.es_prefix}}search
+ORO_WEBSITE_SEARCH_ENGINE_DSN={{search_url}}?prefix={{local_test.es_prefix}}website_search
+ORO_MONGODB_DSN_PUBLIC=mongodb://127.0.0.1:{{services.mongo.port}}/{{local_test.mongo_public}}
+ORO_MONGODB_DSN_PRIVATE=mongodb://127.0.0.1:{{services.mongo.port}}/{{local_test.mongo_private}}
+E2E_WORKERS={{workers}}
+E2E_CONSOLE_ENV=test
+{{#if test}}
+ORO_ADMIN_USERNAME=admin
+ORO_ADMIN_PASSWORD=admin
+ORO_TEST_INSTALL_ORGANIZATION_NAME={{admin_org}}
+ORO_TEST_INSTALL_USER_EMAIL={{admin_email}}
+ORO_TEST_INSTALL_APPLICATION_URL=https://{{local_test.domain}}
+ORO_TEST_INSTALL_LANGUAGE={{local_test.admin.language}}
+{{/if}}

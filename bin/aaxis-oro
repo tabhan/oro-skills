@@ -14,7 +14,7 @@ HELP = """usage: aaxis-oro <group> [args]
   atlas    <entity|event|service|tag|unsafe|grid|workflow|operation|mq|config|layout|js|search|notes|status>
            <term> | build | setup | precommit | migrate    extension-point index (atlas --help)
   memory   <inventory|apply>                                   migrate project auto-memory to .oro-ai/notes
-  env      check|repair|reset|baseline|import-attachments|restore|workers|switch   local environment
+  env      setup|render|check|repair|reset|baseline|import-attachments|restore|workers|switch   local environment
   test     [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]   explicit-target runner
   review   check [--staged|--range A..B|--files F...] [--plan FILE]   deterministic review checks (exit 0/1/3/64)
   version  [diff|applies]                                      Oro version and which guidance applies
@@ -25,10 +25,11 @@ HELP = """usage: aaxis-oro <group> [args]
 ENV_SCRIPTS = {
     "check": "check.sh", "repair": "repair.sh", "reset": "reset.sh", "baseline": "baseline.sh",
     "import-attachments": "import-attachments.sh", "restore": "restore-local.sh", "workers": "workers.sh",
-    "switch": "switch.sh",
+    "switch": "switch.sh", "setup": "setup.sh", "render": "render.sh",
 }
 ENV_HELP = """usage: aaxis-oro env <command> [--project P] [--dry-run] [--verbose]
 
+  setup [--set k=v]         create/migrate env.yml, render all   render [--check|--diff]  managed config files vs templates
   check [--json]            drift report (exit 2 on drift)        repair [--only X]      fix what check reports
   reset [--skip-reindex]    reset the test stack                  baseline [--refresh]   build the test baseline
   import-attachments        qa attachments into GridFS            restore --yes          qa dump into the local db

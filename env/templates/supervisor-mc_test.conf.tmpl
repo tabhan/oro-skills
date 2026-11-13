@@ -1,0 +1,13 @@
+; Managed by aaxis-oro env. Optional consumer for the test stack; start it only for the duration of a run.
+[program:mc_test]
+command=php ./bin/console oro:message-queue:consume --env=behat_test
+numprocs=1
+autostart=false
+autorestart=true
+directory={{app_root}}
+redirect_stderr=true
+stopasgroup=true
+killasgroup=true
+user={{user}}
+stdout_logfile=/var/log/php/mc_test-stdout.log
+stderr_logfile=/var/log/php/mc_test-stderr.log

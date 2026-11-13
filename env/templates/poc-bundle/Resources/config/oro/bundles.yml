@@ -1,0 +1,2 @@
+bundles:
+    - { name: Aaxis\Bundle\AppBundle\AaxisAppBundle, priority: 500 }

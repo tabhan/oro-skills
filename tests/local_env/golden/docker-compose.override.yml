@@ -1,0 +1,57 @@
+# Managed by aaxis-oro env: rendered from env.yml and the plugin template. Edit env.yml, not this file.
+name: $PROJECT_NAME
+services:
+    pgsql:
+        environment:
+            POSTGRES_USER: $POSTGRES_USER
+            POSTGRES_DB: $POSTGRES_DB
+            POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+            POSTGRES_ROOT_PASSWORD: $POSTGRES_ROOT_PASSWORD
+        ports:
+            - '5432:5432'
+    # The management image is required: the e2e harness reads unacked counts from its HTTP API.
+    rabbitmq:
+        image: oroinc/rabbitmq:4.2.5-management-alpine
+        environment:
+            RABBITMQ_DEFAULT_USER: $RABBITMQ_DEFAULT_USER
+            RABBITMQ_DEFAULT_PASS: $RABBITMQ_DEFAULT_PASS
+        volumes:
+            - rabbitmq:/var/lib/rabbitmq
+        ports:
+            - '5672:5672'
+            - '15672:15672'
+    elasticsearch:
+        environment:
+            ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+        ports:
+            - '9200:9200'
+            - '9300:9300'
+    redis:
+        ports:
+            - '6379:6379'
+        volumes:
+            - redis:/data
+        restart: on-failure
+    mailcatcher:
+        ports:
+            - '1025:1025'
+            - '1080:1080'
+        restart: on-failure
+    # Fixed host port (the dotenv files point at it) and a capped WiredTiger cache so mongod cannot OOM the host.
+    mongodb:
+        command: ['--wiredTigerCacheSizeGB', '0.5']
+        mem_limit: 2g
+        ports: !override
+            - '27017:27017'
+    gotenberg:
+        ports:
+            - '3000:3000'
+    yamllint:
+        image: cytopia/yamllint:latest
+        volumes:
+            - @PROJECT@:@PROJECT@
+        working_dir: @PROJECT@
+volumes:
+    rabbitmq:
+    npm_cache:
+    redis:
