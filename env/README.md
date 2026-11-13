@@ -44,7 +44,7 @@ Categories come from `lib/refresh.py` (Tests/ dirs ignored). Steps run in this o
 | Changed | Step |
 |---|---|
 | `composer.lock` | `composer install --no-interaction --no-scripts` (Oro's script handlers run pnpm/assets, which `assets` covers; `--no-dev` only if vendor was installed without dev; one `--ignore-platform-req` per entry of env.yml `composer_ignore_platform_reqs`), caches, routes dump |
-| `config/**`, `Resources/config/**`, `*.php` / `*.twig` under `src` | delete `var/cache/<env>` and `cache:warmup`: local, then test + behat_test |
+| `config/**`, `Resources/config/**`, `*.php` / `*.twig` under `src` | delete `var/cache/<env>` (also `tes_`) and `cache:warmup`: local (prod, dev), then behat_test; the `test` cache is only deleted, since the test kernel rebuilds its extend-entity cache from the test DB on first boot (`OroEntityExtendBundle::ensureInitialized`) and warmup fails before that |
 | any `Migrations/` | local `oro:migration:load --force`; local-test only reports `baseline-stale` (nothing rebuilds it automatically: run `aaxis-oro env baseline`) |
 | `entity_extend.yml`, `config/oro/entity*.yml`, `entity_configs.yml` | local `oro:entity-config:update` + `oro:entity-extend:update` |
 | `translations/*.yml` | local `oro:translation:load --rebuild-cache` + `oro:translation:dump` |
@@ -53,6 +53,11 @@ Categories come from `lib/refresh.py` (Tests/ dirs ignored). Steps run in this o
 
 `aaxis-oro test` runs `refresh.py gate` first: exit 3 and `tree not refreshed since <sha>; run: aaxis-oro dev refresh` when a
 step applicable to the target is due (git index + worktree hashes, well under 1s; skipped outside a git work tree). Kernels here all run `ORO_DEBUG=0` (dotenv, nginx template, phpunit.xml), so code edits do not self-heal and stay gated. For `local-test` it also refuses with `baseline stale; run: aaxis-oro env baseline` when `baseline_key` differs from the current key (cached by a composer.lock/Migrations/DataFixtures fingerprint, so only the first check after a change costs ~1.5s). `oro:translation:dump` also writes through gaufrette (`JsTranslationDumper`), but translations only change the local DB, so it stays local-only.
+
+A run also prints `WARN tracked file modified: ...` for tracked files it newly modified (never reverted), and
+`WARN stale public/media/js files ...` after a routes/translation step when `check` item `media-shadow` applies: with a
+non-local public gaufrette adapter, `public/media/js/*_routes.json` and `translation/*.json` left on disk shadow the dump
+(nginx serves the file). `env repair --only media` moves them to `.oro-ai/local-env/moved-aside/<ts>/`, never deletes.
 
 ## Scripts
 
