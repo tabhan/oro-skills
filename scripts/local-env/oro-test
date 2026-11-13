@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# oro: ">=7.0.0"
+# Run phpunit, e2e or a console command against an EXPLICIT target after verifying what that target really
+# resolves to (db, search prefix, MQ vhost, Mongo dbs, session db) against env.yml. No default target.
+# Usage: oro-test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args...]
+#   local-test  phpunit (ORO_ENV=test), e2e (aaxis:test:e2e on behat_test), console (default --env=behat_test)
+#   local       console only (default --env=prod); tests never run against the local data stack
+#   verify      only print the verification line
+# Exit: command's own code; 3 target mismatch or refused combination; 64 usage.
+source "$(dirname "$0")/lib/common.sh"
+src_project=$PWD
+if [ "${1:-}" = "--project" ]; then [ -d "${2:-}" ] || { echo "usage: --project needs a directory" >&2; exit 64; }; src_project=$(cd "$2" && pwd); shift 2; fi
+TARGET=${1:-}; ACTION=${2:-}
+case $TARGET in local|local-test) ;; *) echo "usage: oro-test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args...]" >&2; exit 64 ;; esac
+case $ACTION in phpunit|e2e|console|verify) ;; *) echo "usage: oro-test <local|local-test> <phpunit|e2e|console|verify> [args...]" >&2; exit 64 ;; esac
+shift 2
+le_init oro-test --project "$src_project"
+
+dotenv_val() { (cd "$PROJECT" && php bin/console debug:dotenv --env="$1" ORO_ 2>/dev/null) | awk -v k="$2" '$1==k{print $2; exit}'; }
+dsn_path() { sed -E 's#^[A-Za-z0-9+-]+://[^/]*/?([^?]*).*#\1#'; }
+dsn_prefix() { sed -n 's/.*[?&]prefix=\([^&]*\).*/\1/p'; }
+MISMATCH=()
+expect_eq() { [ "$3" = "$4" ] || MISMATCH+=("$1 $2 is '$3', expected '$4'"); }
+expect_pre() { case $3 in "$4"*) ;; *) MISMATCH+=("$1 $2 is '$3', expected prefix '$4'") ;; esac; }
+
+verify_test_env() { # env, with_web: also check the web-only settings
+    local e=$1 web=$2 v
+    expect_eq "$e" ORO_DB_DSN "$(dotenv_val "$e" ORO_DB_DSN | dsn_path)" "$TEST_DB"
+    for v in ORO_SEARCH_ENGINE_DSN ORO_WEBSITE_SEARCH_ENGINE_DSN; do expect_pre "$e" "$v" "$(dotenv_val "$e" $v | dsn_prefix)" "$ES_PREFIX"; done
+    expect_eq "$e" ORO_MONGODB_DSN_PUBLIC "$(dotenv_val "$e" ORO_MONGODB_DSN_PUBLIC | dsn_path)" "$MONGO_PUB"
+    expect_eq "$e" ORO_MONGODB_DSN_PRIVATE "$(dotenv_val "$e" ORO_MONGODB_DSN_PRIVATE | dsn_path)" "$MONGO_PRIV"
+    if [ "$web" = 1 ]; then
+        expect_eq "$e" ORO_MQ_DSN "$(dotenv_val "$e" ORO_MQ_DSN | dsn_path)" "$MQ_VHOST"
+        expect_eq "$e" ORO_SESSION_DSN "$(dotenv_val "$e" ORO_SESSION_DSN | dsn_path)" "$SESSION_DB"
+    fi
+}
+
+live_db() { (cd "$PROJECT" && php bin/console dbal:run-sql "select current_database()" --env="$1" 2>/dev/null) | tr -s ' ' | grep -E '^ ?[A-Za-z0-9_]+ ?$' | grep -v current_database | tr -d ' ' | head -1; }
+
+if [ "$TARGET" = local-test ]; then
+    verify_test_env test 0; verify_test_env behat_test 1
+    expect_eq test "live current_database()" "$(live_db test)" "$TEST_DB"
+    desc="db=$TEST_DB es=$ES_PREFIX* mq=$MQ_VHOST mongo=$MONGO_PUB,$MONGO_PRIV session=$SESSION_DB"
+else
+    expect_eq prod ORO_DB_DSN "$(dotenv_val prod ORO_DB_DSN | dsn_path)" "$LOCAL_DB"
+    expect_eq prod "live current_database()" "$(live_db prod)" "$LOCAL_DB"
+    case $(dotenv_val prod ORO_MONGODB_DSN_PRIVATE | dsn_path) in oro_test*) MISMATCH+=("prod mongo private points at a test db") ;; esac
+    desc="db=$LOCAL_DB"
+fi
+if [ ${#MISMATCH[@]} -gt 0 ]; then
+    say "guard: $TARGET does not resolve to its configured stack; nothing was run"
+    printf '  %s\n' "${MISMATCH[@]:0:5}"; printf '  %s\n' "${MISMATCH[@]}" >> "$LOG"
+    exit 3
+fi
+say "oro-test: $TARGET verified ($desc)"
+[ "$ACTION" = verify ] && exit 0
+
+cd "$PROJECT" || exit 1
+if [ "$TARGET" = local ]; then
+    [ "$ACTION" = console ] || { say "guard: tests never run against the local data stack; use local-test"; exit 3; }
+    has_env=0; for a in "$@"; do case $a in --env|--env=*) has_env=1 ;; esac; done
+    [ $has_env = 1 ] && exec php bin/console "$@" || exec php bin/console "$@" --env=prod
+fi
+truncate_test_log
+case $ACTION in
+    console)
+        has_env=0; for a in "$@"; do case $a in --env|--env=*) has_env=1 ;; esac; done
+        [ $has_env = 1 ] && exec php bin/console "$@" || exec php bin/console "$@" --env=behat_test ;;
+    phpunit)
+        bin=bin/phpunit; [ -x "$bin" ] || bin=vendor/bin/phpunit
+        ORO_ENV=test php "$bin" "$@" > "$LOG" 2>&1; rc=$?
+        grep -E '^(OK \(|Tests:|FAILURES!|ERRORS!|WARNINGS!|No tests executed)' "$LOG" | tail -4 ;;
+    e2e)
+        php bin/console aaxis:test:e2e --env=behat_test "$@" > "$LOG" 2>&1; rc=$?
+        grep -E '^\s*[0-9]+ (passed|failed|flaky|skipped|did not run)|scenarios? (passed|failed)' "$LOG" | tail -6
+        res=$(ls -dt var/e2e-results/*/ 2>/dev/null | head -1); [ -n "$res" ] && echo "results: ${res%/}" ;;
+esac
+echo "exit=$rc log=$LOG"
+exit "$rc"

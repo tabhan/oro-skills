@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# oro: ">=7.0.0"
+# Explicit-target test runner; see scripts/local-env/oro-test.
+exec "$(cd "$(dirname "$(readlink -f "$0")")" && pwd)/../scripts/local-env/oro-test" "$@"

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+echo "curl $*" >> "$STUB_LOG"
+case "$*" in
+    *_cat/indices/*) prefix=$(sed -E 's#.*_cat/indices/([^*]*)\*.*#\1#' <<< "$*"); tr ':' '\n' <<< "${STUB_ES:-}" | grep "^$prefix" ;;
+esac
+exit 0

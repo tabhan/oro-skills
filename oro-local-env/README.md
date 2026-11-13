@@ -34,3 +34,37 @@ python3 -m unittest discover -s tests/local_env
 ```
 
 `migrate` is idempotent; it exits 2 and changes nothing when both files exist and differ.
+
+## Scripts
+
+All live in `scripts/local-env/`, read `<project>/.oro-ai/local-env/env.yml` and accept `--project P`, `--dry-run`,
+`--verbose` (`--json` where noted). Output is one line per phase; detail goes to
+`<project>/.oro-ai/local-env/logs/<script>-<ts>.log` (last 10 kept per script).
+
+Exit codes: 0 ok, 1 failure, 2 drift (`check.sh`), 3 guard abort, 10 sudo needed (the command is printed as
+`SUDO-NEEDED: <cmd>`; scripts never run sudo), 64 usage.
+
+| Script | Purpose |
+|---|---|
+| `check.sh [--json]` | read-only drift report: Node (`.nvmrc` vs `parameters.yml` vs shell), PHP vs `composer.json`, Mongo port and cache flag, nginx/fpm, `/etc/hosts`, test DBs, vhost, baseline key |
+| `repair.sh [--only node\|vhost\|hosts\|templates]` | fixes what check reports; backs up edited files to `var/backups/oro-local-env/` |
+| `baseline.sh [--refresh]` | `oro:install --env=behat_test` into `db`, then PG template + Mongo private baseline; no-op while `baseline_key` matches |
+| `reset.sh [--skip-reindex]` | PG clone from template, Mongo restore, ES indices by name, test session Redis db, `behat_test.log`, MQ queues, reindex |
+| `es-drop-prefix.sh`, `pg-drop.sh`, `mongo-drop.sh`, `mq-vhost-drop.sh` | single-resource drops behind the guard |
+| `import-attachments.sh`, `restore-local.sh --yes` | qa attachments into GridFS through `FileManager`; qa dump into the local data db |
+| `workers.sh [--write]` | `max(1, min(floor(cpus/4), floor((ram_gb-4)/3)))`, RAM from MemTotal |
+| `oro-test <local\|local-test> <phpunit\|e2e\|console\|verify>` | explicit-target runner, no default; also on PATH as `bin/oro-test` |
+| `supervisor.sh`, `oro-project` | print the sudo command for process control / host switch (`oro-project --install` links the tool into `/usr/local/bin`) |
+
+Guard (every destructive path): the names come from `env.yml`, must start with `oro_test` (Mongo `oro_test_`), are
+listed before deleting and deleted one by name (ES refuses wildcard deletes); any name outside the prefix aborts
+with exit 3 before anything is touched, and an empty list is a no-op. The Redis flush only targets the test session
+db (never 0). `session_redis_db` defaults to 7 (the last entry of `redis_dbs` when 7 is absent).
+
+`oro-test` verifies what the target resolves to before running: `ORO_DB_DSN`, search prefixes, Mongo dbs per env
+(`test` and `behat_test` for `local-test`), plus MQ vhost and session db for `behat_test`, plus a live
+`select current_database()`. Mismatch exits 3 and runs nothing. `phpunit` always sets `ORO_ENV=test`; `e2e` runs
+`aaxis:test:e2e --env=behat_test`; both print a summary of at most ~15 lines and the log path.
+
+Tests: `python3 -m unittest discover -s tests/local_env` (guards run against stubbed docker/curl/php in
+`tests/local_env/stubs/`).

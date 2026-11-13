@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Test stub: records every call and answers the few queries the local-env scripts make.
+echo "docker $*" >> "$STUB_LOG"
+IFS=: read -ra PGDBS <<< "${STUB_PG_DBS:-}"
+case "$*" in
+    *"select 1 from pg_database where datname='"*)
+        name=$(sed -E "s/.*datname='([^']*)'.*/\1/" <<< "$*")
+        for d in "${PGDBS[@]}"; do [ "$d" = "$name" ] && echo 1; done ;;
+    *listDatabases*) tr ':' '\n' <<< "${STUB_MONGO_DBS:-}" ;;
+    *"rabbitmqctl list_vhosts"*) tr ':' '\n' <<< "${STUB_VHOSTS:-}" ;;
+    *"rabbitmqctl list_queues"*) echo name; tr ':' '\n' <<< "${STUB_QUEUES:-}" ;;
+    *"redis-cli"*ping*) echo PONG ;;
+esac
+exit 0
