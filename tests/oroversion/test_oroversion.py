@@ -101,14 +101,16 @@ class DetectTest(unittest.TestCase):
         r = detect(d)
         self.assertFalse(r.cached)
         cache = os.path.join(d, ".oro-ai", "version.json")
-        data = json.load(open(cache))
+        with open(cache) as fh:
+            data = json.load(fh)
         self.assertEqual(data["lock_sha256"], r.lock_sha256)
         self.assertTrue(detect(d).cached)
         with open(os.path.join(d, "composer.lock"), "w") as fh:
             fh.write('{"packages":[{"name":"oro/platform","version":"7.0.6"}]}')
         r2 = detect(d)
         self.assertEqual((str(r2.version), r2.cached), ("7.0.6", False))
-        self.assertNotEqual(json.load(open(cache))["lock_sha256"], data["lock_sha256"])
+        with open(cache) as fh:
+            self.assertNotEqual(json.load(fh)["lock_sha256"], data["lock_sha256"])
 
 
 class CliTest(unittest.TestCase):

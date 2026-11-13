@@ -34,6 +34,33 @@ Exit codes: 0 known, 4 unknown or undetectable (no lock, no Oro package, dev bra
 The result is cached in `<project>/.oro-ai/version.json` as
 `{version, source_pkg, lock_sha256, detected_at}`; a different `composer.lock` hash triggers re-detection.
 
+## Units and the resolver
+
+`bin/oro-applies` decides which units apply to the project's detected version. A unit is:
+
+| Unit | Where the range is written |
+|---|---|
+| file | markdown frontmatter `oro: ">=8.0.0"`; script header `# oro: ">=8.0.0"` (first 15 lines); or implicitly `^N.0` for files under a `vN/` directory (e.g. `references/v8/`) |
+| section | `<!-- oro: ">=8.0" topic: some-id -->` ... `<!-- /oro -->` in markdown |
+| table row | a column headed `Oro` (blank = default); optional `Topic` column |
+| hook check | `oro-atlas/hooks/checks.yml` entries `- id: ...`, `severity: deny`, `oro: "..."` |
+| note | frontmatter, same as files |
+
+`topic:` (frontmatter, section marker, `# topic:` header, `Topic` column) groups variants of the same guidance.
+
+```bash
+oro-applies --project P <path-or-topic>...     # 0 all apply, 1 some out of range (listed), 4 version unknown, 64 usage
+oro-applies --project P --list-active <dir>    # files that apply, plus line spans of inactive sections/rows to skip
+oro-applies --project P --list-inactive <dir>
+oro-applies --project P --check <id>           # hook-check gate: run | warn | skip (exit 0 / 0 / 1; 4 unknown)
+```
+
+Higher-version content is inactive on lower projects. Unknown version: default-range content and ranges
+containing `HIGHEST_SUPPORTED` (`lib/oroversion/resolve.py`) stay active as advisory, the rest is inactive,
+stderr says "Oro version unknown; version-specific rules shown as advisory", and a `deny` check is downgraded
+to `warn` (never block on unknown). Skill descriptions load globally and stay version-neutral; a skill body
+points at `oro-applies --list-active <skill>` and reads only what it lists.
+
 ## Library
 
 `lib/oroversion` (`constraint.py`, `detect.py`) is stdlib-only Python 3; `Constraint(text).matches(version)`

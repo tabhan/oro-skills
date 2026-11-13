@@ -1,0 +1,9 @@
+checks:
+  - id: always-deny
+    severity: deny
+  - id: eight-only
+    severity: deny
+    oro: ">=8.0.0"
+  - id: seven-only
+    severity: deny
+    oro: "<8.0.0"

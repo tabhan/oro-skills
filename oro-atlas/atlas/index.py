@@ -147,6 +147,7 @@ def update_index(root, out_dir, built, durations=None, pre=None):
         atlas_version=__version__,
         composer_lock_sha256=sha,
         platform_version=platform_version(root),
+        oro_version=platform_version(root),
         generated_at=stamp,
     )
     idx.pop("src_fingerprint", None)
