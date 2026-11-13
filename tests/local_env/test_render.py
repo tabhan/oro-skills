@@ -91,7 +91,7 @@ class Render(RenderBase):
         a = set(read(os.path.join(self.project, ".env-app.behat_test.local")).splitlines())
         b = set(read(os.path.join(self.project, ".env-app.test.local")).splitlines())
         self.assertEqual({l.split("=")[0] for l in a ^ b if "=" in l},
-                         {"ORO_ENV", "ORO_DEBUG", "ORO_MQ_DSN", "ORO_SESSION_DSN", "ORO_ADMIN_USERNAME", "ORO_ADMIN_PASSWORD",
+                         {"ORO_ENV", "ORO_DEBUG", "ORO_MQ_DSN", "ORO_SESSION_DSN", "ORO_WEBSOCKET_SERVER_DSN", "ORO_WEBSOCKET_FRONTEND_DSN", "ORO_WEBSOCKET_BACKEND_DSN", "ORO_ADMIN_USERNAME", "ORO_ADMIN_PASSWORD",
                           "ORO_TEST_INSTALL_ORGANIZATION_NAME", "ORO_TEST_INSTALL_USER_EMAIL", "ORO_TEST_INSTALL_APPLICATION_URL",
                           "ORO_TEST_INSTALL_LANGUAGE"})
         for text in (a, b):
@@ -155,6 +155,23 @@ class Render(RenderBase):
         text = read(os.path.join(self.project, ".oro-ai/local-env/rendered/supervisor-mc_test.conf"))
         self.assertIn("autostart=false", text)
         self.assertIn("--env=behat_test", text)
+
+    def test_area_dirs_self_ignore_when_oro_ai_is_tracked(self):
+        write(os.path.join(self.project, ".oro-ai", "task", "T-1", "plan.md"), "plan\n")
+        subprocess.run(["git", "-C", self.project, "add", ".oro-ai/task"], check=True)
+        subprocess.run(["git", "-C", self.project, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"], check=True)
+        self.run_script("setup.sh", "--non-interactive")
+        self.run_script("check.sh")
+        self.assertEqual(read(os.path.join(self.project, ".oro-ai", "local-env", ".gitignore")), "*\n")
+        status = subprocess.run(["git", "-C", self.project, "status", "--porcelain", "--", ".oro-ai"], capture_output=True, text=True).stdout
+        self.assertEqual(status, "")
+
+    def test_websocket_values_are_explicit_for_behat_test(self):
+        self.run_script("render.sh")
+        text = read(os.path.join(self.project, ".env-app.behat_test.local"))
+        self.assertIn("ORO_WEBSOCKET_BACKEND_DSN=tcp://127.0.0.1:8081", text)
+        self.assertNotIn("E2E_CONSOLE_ENV", text)
+        self.assertIn("location /ws", read(os.path.join(self.project, ".oro-ai/local-env/rendered/nginx-test.conf")))
 
     def test_existing_poc_bundle_is_not_overwritten(self):
         bundle = os.path.join(self.project, "src/Aaxis/Bundle/AppBundle/AaxisAppBundle.php")

@@ -20,6 +20,7 @@ import _common as c  # noqa: E402
 import _decorates  # noqa: E402
 from atlas import cli, index, miniyaml  # noqa: E402
 from atlas.common import atlas_dir  # noqa: E402
+from atlas.common import ensure_ignored as c_ensure  # noqa: E402
 from oroversion import resolve  # noqa: E402
 from oroversion.detect import detect  # noqa: E402
 
@@ -208,6 +209,7 @@ def log_detail(root, lines):
     path = None
     try:
         d = os.path.join(root, ".oro-ai", "review", "logs")
+        c_ensure(os.path.join(root, ".oro-ai", "review"))
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, "check-%s.log" % time.strftime("%Y%m%d-%H%M%S"))
         with open(path, "w", encoding="utf-8") as fh:

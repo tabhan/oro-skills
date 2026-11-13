@@ -12,6 +12,7 @@ import tarfile
 import time
 
 from . import notesindex
+from .common import ensure_ignored
 
 INDEX = "MEMORY.md"
 _LINK = re.compile(r"\]\(([^)\s]+\.md)\)")
@@ -166,6 +167,8 @@ def apply_plan(root, mdir, plan, build=True):
     """Execute a confirmed plan; returns (summary lines, exit code). Items: file, action note|delete|global, +note fields."""
     errors, written, deleted, marked, suggestions = [], 0, [], 0, []
     nd = notesindex.notes_dir(root)
+    touched = [os.path.basename(str(i.get("file", ""))) for i in plan.get("items", []) if i.get("action") in ("global", "delete", "note")]
+    backup = _backup(mdir, [n for n in touched if os.path.isfile(os.path.join(mdir, n))]) if any(os.path.isfile(os.path.join(mdir, n)) for n in touched) else None
     for item in plan.get("items", []):
         name = os.path.basename(str(item.get("file", "")))
         src = os.path.join(mdir, name)
@@ -187,7 +190,6 @@ def apply_plan(root, mdir, plan, build=True):
                 deleted.append(name)
         else:
             errors.append("%s: unknown action %r" % (name, action))
-    backup = _backup(mdir, deleted) if deleted else None
     for n in deleted:
         os.remove(os.path.join(mdir, n))
     dropped = _rewrite_index(mdir)
@@ -214,7 +216,7 @@ def _write_note(nd, item):
         if os.path.exists(path) and _read(path) != text:
             err = "note %s already exists with different content" % slug
         elif not os.path.exists(path):
-            os.makedirs(nd, exist_ok=True)
+            ensure_ignored(nd)
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(text)
     except (notesindex.NoteError, KeyError) as exc:

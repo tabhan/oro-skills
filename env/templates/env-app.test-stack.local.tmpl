@@ -5,6 +5,9 @@ ORO_ENV=behat_test
 ORO_DEBUG=0
 ORO_MQ_DSN=amqp://{{rabbit_user}}:{{rabbit_pass}}@127.0.0.1:5672/{{local_test.mq_vhost}}
 ORO_SESSION_DSN={{redis_url}}/{{session_db}}
+ORO_WEBSOCKET_SERVER_DSN=//0.0.0.0:{{ws_port}}
+ORO_WEBSOCKET_FRONTEND_DSN=//*:{{ws_port}}/ws
+ORO_WEBSOCKET_BACKEND_DSN=tcp://127.0.0.1:{{ws_port}}
 {{/if}}
 ORO_DB_URL=postgres://{{pg_user}}:{{pg_password}}@127.0.0.1:5432/{{local_test.db}}?sslmode=disable&charset=utf8&serverVersion={{pg_server_version}}
 ORO_DB_DSN=postgres://{{pg_user}}:{{pg_password}}@127.0.0.1:5432/{{local_test.db}}?sslmode=disable&charset=utf8&serverVersion={{pg_server_version}}
@@ -13,7 +16,6 @@ ORO_WEBSITE_SEARCH_ENGINE_DSN={{search_url}}?prefix={{local_test.es_prefix}}webs
 ORO_MONGODB_DSN_PUBLIC=mongodb://127.0.0.1:{{services.mongo.port}}/{{local_test.mongo_public}}
 ORO_MONGODB_DSN_PRIVATE=mongodb://127.0.0.1:{{services.mongo.port}}/{{local_test.mongo_private}}
 E2E_WORKERS={{workers}}
-E2E_CONSOLE_ENV=test
 {{#if test}}
 ORO_ADMIN_USERNAME=admin
 ORO_ADMIN_PASSWORD=admin

@@ -19,6 +19,7 @@ NOTE_LINES_PER_QUERY = 5
 
 _SECRET = re.compile(
     r"(?i)(?:\b(?:password|passwd|secret|token|cookie|api[_-]?key|session(?:id)?)\w*\s*=\s*\S+"
+    r"|\b(?:password|passwd|secret|token|api[_-]?key)s?\s+(?:is|was)\s+\S+"
     r"|\b(?:password|passwd|secret|token|api[_-]?key)\w*\s*:\s*[A-Za-z0-9+/_\-.]{16,}\s*$"
     r"|\bbearer\s+[A-Za-z0-9._\-]{20,}|PHPSESSID=\S+)", re.M)
 _SLASHES = re.compile(r"\\+")

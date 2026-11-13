@@ -188,6 +188,19 @@ class MigrateTest(Base):
         self.assertTrue(os.path.isfile(os.path.join(self.mdir, "s.md")))
         self.assertFalse(os.path.exists(os.path.join(self.root, ".oro-ai", "notes", "s.md")))
 
+    def test_prose_secret_skipped_and_global_rewrite_backed_up(self):
+        self.memory("s.md", "---\nname: s\n---\nthe admin password is hunter2\n")
+        self.memory("g.md", "---\nname: g\n---\nprefers x\n")
+        plan = self.plan([{"file": "s.md", "action": "note", "slug": "s", "title": "S", "kind": "gotcha", "surface": "always",
+                           "body": "the admin password is hunter2"}, {"file": "g.md", "action": "global"}])
+        code, out = self.cli("apply", "--plan", plan, "--no-build")
+        self.assertEqual(code, 1)
+        self.assertTrue(os.path.isfile(os.path.join(self.mdir, "s.md")))
+        backups = os.listdir(os.path.join(self.home, ".claude", "backups"))
+        import tarfile
+        with tarfile.open(os.path.join(self.home, ".claude", "backups", backups[0])) as tar:
+            self.assertIn("g.md", tar.getnames())
+
     def test_apply_builds_shard(self):
         self.memory("a.md", "---\nname: a\n---\nfact\n")
         plan = self.plan([{"file": "a.md", "action": "note", "slug": "fact-a", "title": "Fact A", "kind": "gotcha",

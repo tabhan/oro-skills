@@ -109,7 +109,7 @@ case $ACTION in
         [ -f "$out.c" ] && grep -E '^(OK \(|Tests:|FAILURES!|ERRORS!|WARNINGS!|No tests executed)' "$out.c" | tail -4; rm -f "$out.c"
         [ $ran = 0 ] && { echo "FAIL no tests executed (checked: ${suites[*]:-all}); check --filter/path"; rc=1; } ;;
     e2e)
-        MQ_PID=""; PIDF="$PROJECT/.oro-ai/local-env/mq-consumer.pid"; mkdir -p "$(dirname "$PIDF")"
+        MQ_PID=""; PIDF="$PROJECT/.oro-ai/local-env/mq-consumer.pid"; mkdir -p "$(dirname "$PIDF")"; [ -e "$(dirname "$PIDF")/.gitignore" ] || printf '*\n' > "$(dirname "$PIDF")/.gitignore"
         stop_consumer() { [ -n "$MQ_PID" ] && kill -- -"$MQ_PID" 2>/dev/null; MQ_PID=""; rm -f "$PIDF"; }
         trap stop_consumer EXIT; trap 'exit 130' INT TERM
         # A stale pid file from a killed wrapper run is ours to clean; a consumer already attached to the vhost is reused.

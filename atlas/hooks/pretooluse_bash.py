@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import shlex
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
@@ -34,13 +36,51 @@ def attempts_override(cmd):
 GIT_COMMIT = re.compile(r"(?:^|[;&|(]\s*)git\b(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+commit\b")
 
 
+HOOK_MAX_FILES = 300
+
+
+def commit_message(cmd, cwd):
+    """Message text of the `git commit` in cmd (-m/--message values and -F/--file contents), never the rest of the command line."""
+    m = GIT_COMMIT.search(cmd)
+    try:
+        args = shlex.split(cmd[m.end():]) if m else []
+    except ValueError:
+        args = []
+    parts, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if re.fullmatch(r"-[A-Za-z]*m|--message|-[A-Za-z]*F|--file", a) and i + 1 < len(args):
+            val = args[i + 1]
+            i += 1
+            if a.endswith("F") or a == "--file":
+                try:
+                    with open(os.path.join(cwd, val), encoding="utf-8", errors="ignore") as fh:
+                        val = fh.read()
+                except OSError:
+                    val = ""
+            parts.append(val)
+        elif a.startswith("--message=") or a.startswith("-m") and len(a) > 2 and not a.startswith("--"):
+            parts.append(a.split("=", 1)[1] if a.startswith("--") else a[2:])
+        i += 1
+    return "\n".join(parts)
+
+
+def staged_count(root):
+    p = subprocess.run(["git", "-C", root, "diff", "--cached", "--name-only", "--diff-filter=ACMR"], capture_output=True, text=True, errors="ignore")
+    return len([x for x in p.stdout.splitlines() if x])
+
+
 def commit_review(payload, cmd):
     """(output, verdict) from the deterministic review checks on the staged diff; deny only on a deny finding."""
     root = c.project_root(payload.get("cwd") or os.getcwd())
     out, verdict = None, "skip"
-    if root:
+    n_staged = staged_count(root) if root else 0
+    if root and n_staged > HOOK_MAX_FILES:
+        text = "review check skipped (%d files); run: aaxis-oro review check --staged" % n_staged
+        out, verdict = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "[review] " + text}}, "skip-large"
+    elif root:
         from atlas import review
-        found, notes, n = review.run(root, "staged", message=cmd)
+        found, notes, n = review.run(root, "staged", message=commit_message(cmd, payload.get("cwd") or os.getcwd()))
         lines = review.render(root, found or [], notes, n, limit=6, clip=200)
         hso = {"hookEventName": "PreToolUse"}
         if any(f.severity == "deny" for f in found or []):

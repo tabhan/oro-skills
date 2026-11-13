@@ -124,6 +124,41 @@ class HookTest(ReviewBase):
         self.assertNotIn("permissionDecision", out["hookSpecificOutput"])
         self.assertIn("review-direct-io", out["hookSpecificOutput"]["additionalContext"])
 
+    def test_appbundle_only_in_commit_message_not_rest_of_command(self):
+        self.write("src/Foo/A.php", "<?php\nclass A {}\n")
+        self.git("add", "src")
+        self.assertIsNone(self.commit_hook("ls src/Aaxis/Bundle/AppBundle/ && git commit -m ok"))
+        self.assertIsNone(self.commit_hook("git commit -m ok && echo AppBundle/"))
+        out = self.commit_hook("git commit -m 'touch AppBundle/ stuff'")
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.write("msg.txt", "touch AppBundle/ stuff\n")
+        out = self.commit_hook("git commit -F msg.txt")
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_large_diff_skips_checks_with_one_line(self):
+        for i in range(301):
+            self.write("src/Foo/F%d.php" % i, "<?php\n")
+        self.write("src/Aaxis/Bundle/AppBundle/X.php", "<?php\n")
+        self.git("add", "-f", "src")
+        out = self.commit_hook()
+        text = out["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn("permissionDecision", out["hookSpecificOutput"])
+        self.assertIn("review check skipped (302 files); run: aaxis-oro review check --staged", text)
+        self.assertEqual(self.check().returncode, 1)
+
+    def test_log_dir_is_self_ignoring_when_oro_ai_is_tracked(self):
+        self.write(".oro-ai/task/T-1/plan.md", "plan\n")
+        self.write("src/Foo/B.php", "<?php\n" + "unlink('/data/x');\n" * 20)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "track")
+        self.write("src/Foo/C.php", "\n".join("<?php unlink('/x%d');" % i for i in range(30)))
+        self.git("add", "src")
+        p = self.check()
+        self.assertTrue(os.path.isdir(os.path.join(self.root, ".oro-ai", "review", "logs")), p.stdout)
+        self.assertEqual(open(os.path.join(self.root, ".oro-ai", "review", ".gitignore")).read(), "*\n")
+        status = subprocess.run(["git", "-C", self.root, "status", "--porcelain", "--", ".oro-ai/review"], capture_output=True, text=True).stdout
+        self.assertEqual(status, "")
+
     def test_non_commit_commands_skip(self):
         self.write("src/Aaxis/Bundle/AppBundle/X.php", "<?php\n")
         self.git("add", "-f", "src")

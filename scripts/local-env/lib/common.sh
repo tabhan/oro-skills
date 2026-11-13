@@ -33,6 +33,8 @@ le_init() {
     LE_NAME=$1; shift
     le_parse "$@"
     LOGDIR=$PROJECT/.oro-ai/local-env/logs
+    mkdir -p "$PROJECT/.oro-ai/local-env"
+    [ -e "$PROJECT/.oro-ai/local-env/.gitignore" ] || printf '*\n' > "$PROJECT/.oro-ai/local-env/.gitignore"
     mkdir -p "$LOGDIR"
     LOG=$LOGDIR/$LE_NAME-$(date +%Y%m%d-%H%M%S).log
     : > "$LOG"

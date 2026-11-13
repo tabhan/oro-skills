@@ -52,7 +52,7 @@ env.yml (or the template, in oro-skills) and rerun. `check` detects drift by ren
 - Redis holds sessions only (local db 0, test db 7); app caches stay on disk. No Redis cache DSNs in test dotenv files.
 - The test web kernel is `behat_test` (nginx `fastcgi_param ORO_ENV behat_test`); children (fixtures, actions, PHPUnit)
   use `test`. Run the MQ consumer only during a run: `c oro:message-queue:consume --env=behat_test` in the background,
-  or `sc start mc_test`. No websocket server for the test stack.
+  or `sc start mc_test`. No websocket server for the test stack by default (its dotenv points at `local_test.websocket_port`, default 8081, and nginx keeps a `/ws` location there).
 - Reuse the team aliases (`sc`, `rs`, `cstart`, `cstop`, `d`, `c`, `/oroapp`, `oro-project`); never rename them.
 - Gotchas: pipeline PHPUnit has no ext-intl (`\Locale::*` throws; run with `php -n`); pre-commit schema-drift checks
   hit a nonexistent `oro` DB during an install: export `ORO_DB_URL` first.

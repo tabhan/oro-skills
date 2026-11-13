@@ -83,7 +83,7 @@ def context(project, data, target):
     pg_version = re.search(r"serverVersion=([\d.]+)", de.get("ORO_DB_URL", ""))
     search = de.get("ORO_SEARCH_URL", "")
     flat = {
-        "target": target, "workers": t.get("workers") or workers_auto(), "user": getpass.getuser(), "project_dir": project, "session_db": str(session),
+        "target": target, "workers": t.get("workers") or workers_auto(), "user": getpass.getuser(), "project_dir": project, "session_db": str(session), "ws_port": str(t.get("websocket_port") or 8081),
         "pg_user": de.get("POSTGRES_USER", "postgres"), "pg_password": de.get("POSTGRES_PASSWORD", "postgres"),
         "pg_server_version": pg_version.group(1) if pg_version else "17",
         "rabbit_user": de.get("RABBITMQ_DEFAULT_USER", "guest"), "rabbit_pass": de.get("RABBITMQ_DEFAULT_PASS", "guest"),
@@ -249,6 +249,7 @@ def write(project, steps):
             continue
         if s["old"] is not None and s["dest"].startswith(project) and not s["dest"].startswith(os.path.join(project, STAGE)):
             backup(project, s["dest"])
+        env.ensure_area(project)
         os.makedirs(os.path.dirname(s["dest"]), exist_ok=True)
         tmp = s["dest"] + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:

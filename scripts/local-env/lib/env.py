@@ -34,7 +34,7 @@ DEFAULTS = {
     "local": {"db": "oro"},
     "local_test": {
         "db": "oro_test", "db_baseline": "oro_test_baseline", "es_prefix": "oro_test_", "mq_vhost": "oro_test",
-        "redis_dbs": [4, 5, 6, 7], "mongo_public": "oro_test_public", "mongo_private": "oro_test_private",
+        "redis_dbs": [4, 5, 6, 7], "websocket_port": 8081, "mongo_public": "oro_test_public", "mongo_private": "oro_test_private",
         "mongo_private_baseline": "oro_test_private_baseline", "workers_source": "auto",
         "admin": {"first": "John", "last": "Doe", "language": "en_US"},
     },
@@ -169,8 +169,19 @@ def dump(data, indent=0):
     return "\n".join(lines)
 
 
+def ensure_area(project):
+    """Self-ignoring area dir: `*` keeps env.yml, logs and staged renders out of git even when .oro-ai/ is tracked."""
+    area = os.path.join(os.path.abspath(project), ".oro-ai", "local-env")
+    os.makedirs(area, exist_ok=True)
+    ignore = os.path.join(area, ".gitignore")
+    if not os.path.exists(ignore):
+        with open(ignore, "w", encoding="utf-8") as fh:
+            fh.write("*\n")
+
+
 def save(path, data):
     text = HEADER + dump(data) + "\n"
+    ensure_area(os.path.dirname(os.path.dirname(os.path.dirname(path))))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
