@@ -66,6 +66,31 @@ not) is downgraded to `warn` (never block on unknown). An unclosed, nested or st
 warning (the lint will fail on it). Skill descriptions load globally and stay version-neutral; a skill body
 points at `oro-applies --list-active <skill>` and reads only what it lists.
 
+## Authoring a version-specific variant
+
+1. Give the existing guidance a `topic:` id (frontmatter, section marker, `# topic:` header or `Topic` column) if it has none.
+2. Add the new variant as a new file or section with the same `topic:` and its own `oro:` range.
+3. Narrow the old variant's range so the two adjoin, e.g. `<7.0.5` and `>=7.0.5`; the lint rejects overlaps and gaps inside a topic, and a non-default `oro:` without a `topic:`.
+4. Run `bin/oro-skills-lint` (pre-commit and CI run it) and `oro-version diff --from <old> --to <new>` to see what flips.
+
+A hook check follows the same rule: give it `oro:` and `topic:` in `oro-atlas/hooks/checks.yml`. Notes and templates accept `oro:` in frontmatter like any file.
+
+## Lint
+
+```bash
+bin/oro-skills-lint [--root DIR] [PATH...]    # exit 0 clean, 1 violations, 64 usage
+git config core.hooksPath .githooks          # once per clone: runs it before every commit
+```
+
+It checks that every `oro:` parses, that section markers are well formed, balanced and not nested (unclosed or nested markers fail),
+that ranges sharing a `topic:` adjoin at patch granularity, and that skill/agent descriptions carry no version numbers. `docs/` and test fixtures are not scanned.
+
+## Upgrade diff
+
+`oro-version diff --from 7.0.5 --to 8.0.0 [--json] [--root DIR]` lists the units (file, section, row, hook check) that activate or deactivate, with topic, title and path.
+The SessionStart hook (`oro-atlas/hooks/sessionstart_version.py`) prints the same table once when the detected version differs from the last announced one
+(kept in `.oro-ai/version-announced.json`; the first run only records it). Not yet built: a skill that compares Oro changelogs with the stamped content.
+
 ## Library
 
 `lib/oroversion` (`constraint.py`, `detect.py`) is stdlib-only Python 3; `Constraint(text).matches(version)`
@@ -75,4 +100,5 @@ and `detect(project)` are what the resolver, lint and hooks build on.
 
 ```bash
 python3 -m unittest discover -s tests/oroversion
+python3 -m unittest discover -s oro-atlas/tests
 ```

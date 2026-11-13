@@ -1,7 +1,8 @@
 {
   "hooks": {
     "SessionStart": [
-      {"matcher": "startup|resume", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_legacy.py\"", "timeout": 10}]}
+      {"matcher": "startup|resume", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_legacy.py\"", "timeout": 10},
+        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_version.py\"", "timeout": 10}]}
     ],
     "PreToolUse": [
       {"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/pretooluse_edit.py\"", "timeout": 10}]}

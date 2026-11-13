@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Print the Oro version of a project (from composer.lock). Exit 0 known, 4 unknown, 64 usage."""
+"""Print the Oro version of a project (from composer.lock). Exit 0 known, 4 unknown, 64 usage.
+
+`oro-version diff --from 7.0.5 --to 8.0.0` lists guidance units that activate/deactivate between two versions.
+"""
 import argparse
 import json
 import os
@@ -7,10 +10,33 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"))
 
-from oroversion import detect  # noqa: E402
+from oroversion import ConstraintError, detect, parse_version  # noqa: E402
+from oroversion import diff as D  # noqa: E402
+
+ROOT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
+
+
+def diff_main(argv):
+    ap = argparse.ArgumentParser(prog="oro-version diff", description="List guidance units that activate or deactivate between two Oro versions.")
+    ap.add_argument("--from", dest="v_from", required=True)
+    ap.add_argument("--to", dest="v_to", required=True)
+    ap.add_argument("--root", default=ROOT, help="tree to scan (default: the plugin)")
+    ap.add_argument("--json", action="store_true")
+    try:
+        a = ap.parse_args(argv)
+        rows = D.diff(os.path.abspath(a.root), parse_version(a.v_from), parse_version(a.v_to))
+    except SystemExit as exc:
+        return 64 if exc.code else 0
+    except ConstraintError as exc:
+        sys.stderr.write("oro-version diff: %s\n" % exc)
+        return 64
+    print(json.dumps(rows, indent=2) if a.json else D.format_table(rows))
+    return 0
 
 
 def main(argv):
+    if argv[:1] == ["diff"]:
+        return diff_main(argv[1:])
     ap = argparse.ArgumentParser(prog="oro-version", description=__doc__)
     ap.add_argument("--project", default=os.getcwd())
     ap.add_argument("--json", action="store_true")
