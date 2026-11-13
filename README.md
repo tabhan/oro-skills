@@ -27,12 +27,12 @@ First use in a project: run `/aaxis-oro:setup`.
 atlas   <entity|event|service|tag|unsafe|grid|workflow|operation|mq|config|layout|js|search|notes|status> <term> | build | setup
 memory  inventory|apply              project auto-memory -> .oro-ai/notes
 env     setup|render|check|repair|reset|baseline|import-attachments|restore|workers|switch
-test    [--project P] <local|local-test> <phpunit|e2e|console|verify>
+test    [--project P] [--no-refresh-check] <local|local-test> <phpunit|e2e|console|verify>
 review  check [--staged|--range A..B|--files F...]
 version [diff|applies]               detected Oro version and which guidance applies
 spec    coverage|report              spec AC traceability
 setup   status|sync|rules|apply-rules
-dev     lint                         lint this plugin
+dev     lint | refresh [--all]       lint this plugin | refresh derived state after switch/pull
 ```
 
 ## Skills, agent, commands

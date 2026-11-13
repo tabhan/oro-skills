@@ -28,3 +28,8 @@ OroCommerce projects.
    listeners, or commands. See `service-overrides.md`.
 6. **Atlas first, even for investigation.** Before reading `vendor/` to see how Oro wires
    something, run `aaxis-oro atlas <event|tag|service|grid|...> <term>` (see the atlas skill).
+
+## After switching branch or pulling
+
+Run `aaxis-oro dev refresh` (`--dry-run` to preview): it maps the changed files to composer, cache, migration, entity,
+translation, routes-dump and asset steps for both stacks and `aaxis-oro test` refuses a stale tree. See `env/README.md`.

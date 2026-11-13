@@ -421,7 +421,7 @@ class Params(Base):
 
 class Syntax(unittest.TestCase):
     def test_bash_scripts_parse(self):
-        names = [n for n in os.listdir(SCRIPTS) if n.endswith(".sh") or n in ("test.sh", "switch.sh", "oro-project")]
+        names = [n for n in os.listdir(SCRIPTS) if n.endswith(".sh") or n in ("test.sh", "switch.sh", "oro-project", "refresh.sh")]
         names += ["lib/" + n for n in os.listdir(os.path.join(SCRIPTS, "lib")) if n.endswith(".sh")]
         for n in names:
             p = subprocess.run(["bash", "-n", os.path.join(SCRIPTS, n)], capture_output=True, text=True)

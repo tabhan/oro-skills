@@ -35,6 +35,25 @@ python3 -m unittest discover -s tests/local_env
 
 `migrate` is idempotent; it exits 2 and changes nothing when both files exist and differ.
 
+## Refresh steps
+
+Categories come from `lib/refresh.py` (Tests/ dirs ignored). Steps run in this order; `local` steps use the prod kernel
+(plus dev when `var/cache/dev` exists), `local-test` steps the test and behat_test kernels, always through
+`aaxis-oro test <target> console`, shared steps once (vendor, `public/`).
+
+| Changed | Step |
+|---|---|
+| `composer.lock` | `composer install` (scripts on; `--no-dev` only if vendor was installed without dev), caches, routes dump |
+| `config/**`, `Resources/config/**`, `*.php` / `*.twig` under `src` | delete `var/cache/<env>` and `cache:warmup`: local, then test + behat_test |
+| any `Migrations/` | local `oro:migration:load --force`; local-test only reports `baseline-stale` (nothing rebuilds it automatically: run `aaxis-oro env baseline`) |
+| `entity_extend.yml`, `config/oro/entity*.yml`, `entity_configs.yml` | local `oro:entity-config:update` + `oro:entity-extend:update` |
+| `translations/*.yml` | local `oro:translation:load --rebuild-cache` + `oro:translation:dump` |
+| `routing*.yml`, `*Controller.php` | `fos:js-routing:dump` once (Oro writes `*_routes.json` through the public media filesystem) |
+| `Resources/public/**`, theme/assets/jsmodules yml, package files, `*.scss/js/ts/css` under `src` | `oro:assets:install` (`--symlink` when `public/bundles` holds symlinks; it also builds, once) |
+
+`aaxis-oro test` runs `refresh.py gate` first: exit 3 and `tree not refreshed since <sha>; run: aaxis-oro dev refresh` when a
+step applicable to the target is due (git index + worktree hashes, well under 1s; skipped outside a git work tree).
+
 ## Scripts
 
 All live in `scripts/local-env/`, read `<project>/.oro-ai/local-env/env.yml` and accept `--project P`, `--dry-run`,
@@ -55,6 +74,7 @@ Exit codes: 0 ok, 1 failure, 2 drift (`check.sh`), 3 guard abort, 10 sudo needed
 | `es-drop-prefix.sh`, `pg-drop.sh`, `mongo-drop.sh`, `mq-vhost-drop.sh` | single-resource drops behind the guard |
 | `import-attachments.sh`, `restore-local.sh --yes` | qa attachments into GridFS through `FileManager`; qa dump into the local data db |
 | `workers.sh [--write]` | `max(1, min(floor(cpus/4), floor((ram_gb-4)/3)))`, RAM from MemTotal |
+| `dev refresh [--all]` (`refresh.sh`, `lib/refresh.py`) | derived-state refresh for both stacks; records HEAD + per-category input hashes in `refresh.json`; no record = `--all`; stops on first failure and leaves the record untouched; one line per step, detail in `logs/refresh-<ts>.log` |
 | `aaxis-oro test <local\|local-test> <phpunit\|e2e\|console\|verify>` | explicit-target runner, no default (`scripts/local-env/test.sh`) |
 | `supervisor.sh`, `switch.sh` | print the sudo command for process control / host switch (`aaxis-oro env switch`); the team `oro-project` script delegates to it (`oro-project --install` links it into `/usr/local/bin`) |
 

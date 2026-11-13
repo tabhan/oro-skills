@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "composer $*" >> "$STUB_LOG"
+exit "${STUB_COMPOSER_RC:-0}"

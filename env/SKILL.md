@@ -25,6 +25,7 @@ env.yml (or the template, in oro-skills) and rerun. `check` detects drift by ren
 | Baseline missing or `baseline_key` changed (composer.lock, migrations, fixtures) | `aaxis-oro env baseline [--refresh]` (about 8 minutes, no-op when current) |
 | Need qa attachments / qa dump locally | `aaxis-oro env import-attachments`, `aaxis-oro env restore --yes` |
 | Worker count for e2e | `aaxis-oro env workers [--write]` (setup writes it; `workers_source: user` pins it) |
+| After switching branch or pulling | `aaxis-oro dev refresh [--dry-run] [--all]` (runs only the steps the changed files need; `aaxis-oro test` refuses a stale tree, human escape: `--no-refresh-check`) |
 | Run a test or console command | `aaxis-oro test <local\|local-test> <phpunit\|e2e\|console\|verify>` (explicit target, verified first) |
 | Move the host to another project | `aaxis-oro env switch <project>` (user-run, sudo) |
 

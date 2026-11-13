@@ -6,10 +6,18 @@
 #   local-test  phpunit (ORO_ENV=test), e2e (aaxis:test:e2e on behat_test), console (default --env=behat_test)
 #   local       console only (default --env=prod); tests never run against the local data stack
 #   verify      only print the verification line
+#   --no-refresh-check (before the target) skips the freshness gate: otherwise a tree whose inputs changed since the
+#   last `aaxis-oro dev refresh` is refused with exit 3 before anything runs.
 # Exit: command's own code; 3 target mismatch or refused combination; 64 usage.
 source "$(dirname "$0")/lib/common.sh"; source "$LE_LIB/stack.sh"
-src_project=$PWD
-if [ "${1:-}" = "--project" ]; then [ -d "${2:-}" ] || { echo "usage: --project needs a directory" >&2; exit 64; }; src_project=$(cd "$2" && pwd); shift 2; fi
+src_project=$PWD; NO_REFRESH_CHECK=0
+while true; do
+    case ${1:-} in
+        --project) [ -d "${2:-}" ] || { echo "usage: --project needs a directory" >&2; exit 64; }; src_project=$(cd "$2" && pwd); shift 2 ;;
+        --no-refresh-check) NO_REFRESH_CHECK=1; shift ;;
+        *) break ;;
+    esac
+done
 TARGET=${1:-}; ACTION=${2:-}
 case $TARGET in local|local-test) ;; *) echo "usage: aaxis-oro test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args...]" >&2; exit 64 ;; esac
 case $ACTION in phpunit|e2e|console|verify) ;; *) echo "usage: aaxis-oro test <local|local-test> <phpunit|e2e|console|verify> [args...]" >&2; exit 64 ;; esac
@@ -38,6 +46,9 @@ check_env_overrides() {
     done
 }
 check_env_overrides "$@"
+if [ "$NO_REFRESH_CHECK" = 0 ]; then
+    msg=$(python3 "$LE_LIB/refresh.py" gate --project "$PROJECT" --target "$TARGET") || { say "$msg"; exit 3; }
+fi
 if [ ${#MISMATCH[@]} -gt 0 ]; then
     say "guard: $TARGET refuses env overrides; nothing was run"; printf '  %s\n' "${MISMATCH[@]:0:5}"; exit 3
 fi

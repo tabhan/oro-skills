@@ -15,12 +15,12 @@ HELP = """usage: aaxis-oro <group> [args]
            <term> | build | setup | precommit | migrate    extension-point index (atlas --help)
   memory   <inventory|apply>                                   migrate project auto-memory to .oro-ai/notes
   env      setup|render|check|repair|reset|baseline|import-attachments|restore|workers|switch   local environment
-  test     [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]   explicit-target runner
+  test     [--project P] [--no-refresh-check] <local|local-test> <phpunit|e2e|console|verify> [args]   explicit-target runner
   review   check [--staged|--range A..B|--files F...] [--plan FILE]   deterministic review checks (exit 0/1/3/64)
   version  [diff|applies]                                      Oro version and which guidance applies
   spec     coverage|report                                     spec AC traceability: static coverage, run verification
   setup    <status|sync|rules|apply-rules>                     project setup parts of /aaxis-oro:setup
-  dev      lint                                                lint the plugin's version-scoped guidance
+  dev      lint | refresh [--all] [--dry-run]                  lint the plugin's guidance | refresh derived state after switch/pull
 """
 
 ENV_SCRIPTS = {
@@ -36,15 +36,16 @@ ENV_HELP = """usage: aaxis-oro env <command> [--project P] [--dry-run] [--verbos
   import-attachments        qa attachments into GridFS            restore --yes          qa dump into the local db
   workers [--write]         e2e worker count                      switch <project>       host switch (sudo, user-run)
 """
-TEST_HELP = """usage: aaxis-oro test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args...]
+TEST_HELP = """usage: aaxis-oro test [--project P] [--no-refresh-check] <local|local-test> <phpunit|e2e|console|verify> [args...]
 
   local-test  phpunit (ORO_ENV=test), e2e (aaxis:test:e2e on behat_test), console (default --env=behat_test)
   local       console only (default --env=prod)
   verify      print the target verification line only
-Exit: the command's own code; 3 target mismatch or refused combination; 64 usage.
+Refused (exit 3) while inputs changed since the last `aaxis-oro dev refresh`; --no-refresh-check skips that gate.
+Exit: the command's own code; 3 target mismatch, stale tree or refused combination; 64 usage.
 """
 REVIEW_HELP = "usage: aaxis-oro review check [--project P] [--staged|--range A..B|--files F...] [--plan FILE] [--message TEXT] [--json] [--verbose]\nExit: 0 pass, 1 deny finding, 3 diff unreadable, 64 usage.\n"
-DEV_HELP = "usage: aaxis-oro dev lint [--root DIR] [PATH...]\n"
+DEV_HELP = "usage: aaxis-oro dev lint [--root DIR] [PATH...]\n       aaxis-oro dev refresh [--project DIR] [--dry-run] [--all]\n"
 HELPS = {"-h", "--help", "help"}
 
 
@@ -102,6 +103,8 @@ def main(argv):
     elif group == "dev" and rest[:1] == ["lint"]:
         from oroversion import cli
         code = cli.lint_main(rest[1:])
+    elif group == "dev" and rest[:1] == ["refresh"]:
+        run_script("refresh.sh", rest[1:])
     elif group == "dev":
         sys.stdout.write(DEV_HELP) if not rest or rest[0] in HELPS else sys.stderr.write(DEV_HELP)
         code = 0 if not rest or rest[0] in HELPS else 64
