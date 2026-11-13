@@ -25,9 +25,11 @@ def main(argv):
     if missing:
         sys.stderr.write("oro-skills-lint: no such path %s\n" % ", ".join(missing))
         return 64
-    problems = lint.lint(root, [os.path.abspath(p) for p in a.paths] or None)
+    problems, warns = lint.lint_all(root, [os.path.abspath(p) for p in a.paths] or None)
+    for w in warns:
+        sys.stderr.write("warning: %s\n" % w)
     for p in problems:
-        print(os.path.relpath(p.split(":", 1)[0], root) + ":" + p.split(":", 1)[1] if os.path.isabs(p) else p)
+        print(p)
     if problems:
         sys.stderr.write("oro-skills-lint: %d violation(s)\n" % len(problems))
     return 1 if problems else 0

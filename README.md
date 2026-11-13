@@ -31,7 +31,9 @@ claude plugin list                      # oro-skills@oro-skills enabled
 
 Local development without installing: `claude --plugin-dir /opt/projects/oro-skills`. Validate manifests with `claude plugin validate /opt/projects/oro-skills`. Updates: `claude plugin marketplace update oro-skills`, then `claude plugin update oro-skills@oro-skills`.
 
-Pre-commit lint (once per clone): `git config core.hooksPath .githooks`; it runs `bin/oro-skills-lint`, which CI runs too (`.github/workflows/lint.yml`). See docs/VERSIONING.md.
+Lint: `install.sh` sets `core.hooksPath .githooks` for this checkout (idempotent) so `bin/oro-skills-lint` runs before each commit; CI (`.github/workflows/lint.yml`) is the authoritative gate. See docs/VERSIONING.md.
+
+Project requirement: every Oro project needs `.oro-ai/.gitignore` containing `*`, `!.gitignore`, `!config.json` (`.oro-ai/` is the local data root: version cache, announce marker, atlas). Hooks never create project files; they write into `.oro-ai/` only when it already exists. Setup (`atlas-setup`/local-env) is responsible for creating that file.
 
 Release rule: every push to `main` bumps `version` in `.claude-plugin/plugin.json`; without a bump installed copies never update.
 

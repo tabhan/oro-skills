@@ -79,17 +79,17 @@ A hook check follows the same rule: give it `oro:` and `topic:` in `oro-atlas/ho
 
 ```bash
 bin/oro-skills-lint [--root DIR] [PATH...]    # exit 0 clean, 1 violations, 64 usage
-git config core.hooksPath .githooks          # once per clone: runs it before every commit
+# install.sh sets core.hooksPath .githooks for the checkout; CI is the authoritative gate
 ```
 
 It checks that every `oro:` parses, that section markers are well formed, balanced and not nested (unclosed or nested markers fail),
-that ranges sharing a `topic:` adjoin at patch granularity, and that skill/agent descriptions carry no version numbers. `docs/` and test fixtures are not scanned.
+that ranges sharing a `topic:` adjoin at patch granularity, and that skill/agent descriptions carry no version numbers. A real pre-release lower bound (`>=8.0.0-rc1`) counts as starting before its release, so it overlaps `<8.0.0`. A topic with one member that has an upper bound only warns (stderr, exit 0): the content disappears with no successor. Paths are repo-relative; `docs/` and test fixtures are not scanned.
 
 ## Upgrade diff
 
 `oro-version diff --from 7.0.5 --to 8.0.0 [--json] [--root DIR]` lists the units (file, section, row, hook check) that activate or deactivate, with topic, title and path.
 The SessionStart hook (`oro-atlas/hooks/sessionstart_version.py`) prints the same table once when the detected version differs from the last announced one
-(kept in `.oro-ai/version-announced.json`; the first run only records it). Not yet built: a skill that compares Oro changelogs with the stamped content.
+(kept in `.oro-ai/version-announced.json`, written only after the diff succeeded and only if `.oro-ai/` exists; the first run only records it; a leading `v` is accepted by `diff`). Not yet built: a skill that compares Oro changelogs with the stamped content.
 
 ## Library
 

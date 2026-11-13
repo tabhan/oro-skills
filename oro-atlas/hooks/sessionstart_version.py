@@ -15,9 +15,19 @@ from oroversion import diff as D  # noqa: E402
 MARKER = os.path.join(".oro-ai", "version-announced.json")
 
 
+def record(marker, version):
+    # Only an existing .oro-ai/ is written to; hooks never create project files.
+    try:
+        if os.path.isdir(os.path.dirname(marker)):
+            with open(marker, "w", encoding="utf-8") as fh:
+                json.dump({"version": str(version)}, fh)
+    except OSError:
+        pass
+
+
 def decide(payload, root=ROOT):
     project = os.path.abspath(payload.get("cwd") or os.getcwd())
-    res = detect(project)
+    res = detect(project, write_cache=False)
     if not res.known:
         return None
     marker = os.path.join(project, MARKER)
@@ -29,16 +39,11 @@ def decide(payload, root=ROOT):
         pass
     out = None
     if previous != str(res.version):
-        try:
-            os.makedirs(os.path.dirname(marker), exist_ok=True)
-            with open(marker, "w", encoding="utf-8") as fh:
-                json.dump({"version": str(res.version)}, fh)
-        except OSError:
-            return None
         if previous:
             rows = D.diff(root, parse_version(previous), res.version)
             text = "[oro-skills] Oro version changed %s -> %s. Guidance now (de)activated:\n%s" % (previous, res.version, D.format_table(rows))
             out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
+        record(marker, res.version)
     return out
 
 

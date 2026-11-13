@@ -20,6 +20,7 @@ def diff(*args):
 
 def lock(version):
     d = tempfile.mkdtemp()
+    os.makedirs(os.path.join(d, ".oro-ai"))
     write_lock(d, version)
     return d
 
@@ -61,6 +62,9 @@ class DiffTest(unittest.TestCase):
         self.assertIn("references/v8/workflow.md", out)
         self.assertIn("topic", out.splitlines()[0])
 
+    def test_leading_v_accepted(self):
+        self.assertEqual(self.rows("v7.0.5", "v8.0.0"), self.rows("7.0.5", "8.0.0"))
+
     def test_bad_version_is_usage_error(self):
         self.assertEqual(diff("--from", "x", "--to", "8.0.0").returncode, 64)
 
@@ -74,6 +78,22 @@ class SessionStartVersionTest(unittest.TestCase):
         out = hook(d)
         self.assertIn("7.0.5 -> 8.0.0", out["hookSpecificOutput"]["additionalContext"])
         self.assertIsNone(hook(d))
+
+    def test_marker_not_written_when_project_has_no_oro_ai_dir(self):
+        d = tempfile.mkdtemp()
+        write_lock(d, "7.0.5")
+        hook(d)
+        self.assertFalse(os.path.exists(os.path.join(d, ".oro-ai")))
+
+    def test_marker_kept_when_diff_fails(self):
+        d = lock("7.0.5")
+        hook(d)
+        with open(os.path.join(d, ".oro-ai", "version-announced.json"), "w") as fh:
+            json.dump({"version": "garbage"}, fh)
+        write_lock(d, "8.0.0")
+        hook(d)
+        with open(os.path.join(d, ".oro-ai", "version-announced.json")) as fh:
+            self.assertEqual(json.load(fh)["version"], "garbage")
 
 
 if __name__ == "__main__":

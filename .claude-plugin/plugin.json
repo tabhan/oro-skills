@@ -1,6 +1,6 @@
 {
   "name": "oro-skills",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "OroCommerce team skills, atlas extension-point index and hooks",
   "skills": [
     "./oro-atlas",

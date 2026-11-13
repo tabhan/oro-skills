@@ -67,6 +67,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Lint pre-commit for contributors; CI stays the authoritative gate. Skipped when not a git checkout.
+if [ -d "$SCRIPT_DIR/.git" ] && [ "$(git -C "$SCRIPT_DIR" config --get core.hooksPath || true)" != ".githooks" ]; then
+  git -C "$SCRIPT_DIR" config core.hooksPath .githooks
+fi
+
 if [ "$UNINSTALL" -eq 1 ]; then
   echo "Removing oro-skills symlinks from $SKILLS_DEST"
   for skill in "$SCRIPT_DIR"/oro-*/; do
