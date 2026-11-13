@@ -16,3 +16,4 @@ jobs:
       - run: python3 -m unittest discover -s tests/local_env
       - run: python3 -m unittest discover -s tests/aaxis
       - run: python3 -m unittest discover -s tests/install
+      - run: python3 -m unittest discover -s tests/projsetup

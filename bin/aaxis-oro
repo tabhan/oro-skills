@@ -19,6 +19,7 @@ HELP = """usage: aaxis-oro <group> [args]
   review   check [--staged|--range A..B|--files F...] [--plan FILE]   deterministic review checks (exit 0/1/3/64)
   version  [diff|applies]                                      Oro version and which guidance applies
   spec     coverage|report                                     spec AC traceability: static coverage, run verification
+  setup    <status|sync|rules|apply-rules>                     project setup parts of /aaxis-oro:setup
   dev      lint                                                lint the plugin's version-scoped guidance
 """
 
@@ -95,6 +96,9 @@ def main(argv):
     elif group == "spec":
         from spectrace import cli as spec_cli
         code = spec_cli.main(rest)
+    elif group == "setup":
+        from projsetup import cli as setup_cli
+        code = setup_cli.main(rest)
     elif group == "dev" and rest[:1] == ["lint"]:
         from oroversion import cli
         code = cli.lint_main(rest[1:])
