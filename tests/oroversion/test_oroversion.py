@@ -53,7 +53,22 @@ class ConstraintTest(unittest.TestCase):
 
     def test_prerelease_below_release(self):
         self.check(">=8.0.0", yes=["8.0.0"], no=["8.0.0-beta1"])
-        self.check("<8.0.0", yes=["8.0.0-beta1"])
+
+    def test_prerelease_belongs_to_its_major(self):
+        self.check("^8.0", yes=["8.0.0-beta1", "8.0.0-rc2", "8.1.0"], no=["9.0.0-beta1", "7.9.0"])
+        self.check("^7.0", yes=["7.0.5"], no=["8.0.0-beta1"])
+        self.check(">=7.0.0 <8.0.0", no=["8.0.0-beta1"])
+        self.check("<8.0.0", no=["8.0.0-beta1"], yes=["7.9.9"])
+        self.check("8.0.*", yes=["8.0.0-beta1"])
+
+    def test_prerelease_in_constraints(self):
+        self.check(">=8.0.0-beta", yes=["8.0.0-beta1", "8.0.0", "8.0.0-rc1"], no=["8.0.0-alpha1"])
+        self.check(">=8.0.0-beta1 <8.0.0-rc1", yes=["8.0.0-beta2"], no=["8.0.0-rc1"])
+        with self.assertRaises(ConstraintError):
+            Constraint("^8.0.0-beta")
+
+    def test_or_keyword(self):
+        self.check("^7.0 or ^8.0", yes=["7.1.0", "8.0.0-beta1"], no=["6.1.0", "9.0.0"])
 
     def test_unparsable(self):
         for bad in ("abc", ">=", "^", "7.0.5 ||", ">=7.0.5 <<"):
@@ -104,6 +119,13 @@ class DetectTest(unittest.TestCase):
         with open(cache) as fh:
             data = json.load(fh)
         self.assertEqual(data["lock_sha256"], r.lock_sha256)
+        self.assertEqual(sorted(data), ["lock_sha256", "source_pkg", "version", "warnings"])
+        with open(cache) as fh:
+            before = fh.read()
+        os.utime(os.path.join(d, "composer.lock"))
+        detect(d, use_cache=False)
+        with open(cache) as fh:
+            self.assertEqual(fh.read(), before)
         self.assertTrue(detect(d).cached)
         with open(os.path.join(d, "composer.lock"), "w") as fh:
             fh.write('{"packages":[{"name":"oro/platform","version":"7.0.6"}]}')

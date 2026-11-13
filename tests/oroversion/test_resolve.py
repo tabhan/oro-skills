@@ -77,13 +77,55 @@ class CheckGateTest(unittest.TestCase):
 
     def test_unknown_downgrades_deny(self):
         d = R.check_decision(self.reg, "always-deny", None)
-        self.assertEqual((d["run"], d["severity"]), (True, "deny"))  # default-range rule: unaffected
+        self.assertEqual((d["run"], d["severity"]), (True, "warn"))
         d = R.check_decision(self.reg, "eight-only", None)
         self.assertEqual((d["run"], d["severity"]), (True, "warn"))
         self.assertFalse(R.check_decision(self.reg, "seven-only", None)["run"])
 
+    def test_unknown_downgrades_every_deny_annotated_or_not(self):
+        reg = R.load_registry(REGISTRY)
+        reg["bare"] = {"id": "bare", "severity": "deny"}
+        for cid in ("bare", "always-deny", "eight-only"):
+            d = R.check_decision(reg, cid, None)
+            self.assertEqual((d["run"], d["severity"]), (True, "warn"), cid)
+        self.assertEqual(R.check_decision(reg, "unregistered", None)["severity"], "warn")
+        self.assertEqual(R.check_decision(reg, "always-deny", parse_version("7.0.5"))["severity"], "deny")
+
     def test_unregistered_check_runs_by_default(self):
         self.assertTrue(R.check_decision(self.reg, "nope", parse_version("7.0.5"))["run"])
+
+
+class TableAndMarkerTest(unittest.TestCase):
+    def write(self, text):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "t.md")
+        with open(path, "w") as fh:
+            fh.write(text)
+        return path
+
+    def test_or_in_table_rows(self):
+        path = self.write("| Rule | Oro |\n|---|---|\n| a | ^6.1 or ^8.0 |\n| b | ^6.1 \\|\\| ^8.0 |\n| c | >=7.0 |\n")
+        for v, expect in (("7.0.5", ["inactive", "inactive", "active"]), ("8.0.0", ["active", "active", "active"])):
+            rows = [s for u, s in R.resolve(path, parse_version(v)) if u.kind == "row"]
+            self.assertEqual(rows, expect, v)
+
+    def test_marker_warnings(self):
+        cases = {
+            "unclosed": ("a\n<!-- oro: \">=8.0\" -->\nx\n", "unclosed"),
+            "nested": ("<!-- oro: \">=8.0\" -->\n<!-- oro: \">=9.0\" -->\nx\n<!-- /oro -->\n", "nested"),
+            "stray": ("x\n<!-- /oro -->\n", "without an opening"),
+        }
+        for name, (text, needle) in cases.items():
+            w = []
+            R.resolve(self.write(text), parse_version("7.0.5"), warnings=w)
+            self.assertTrue(any(needle in x for x in w), name)
+        w = []
+        R.resolve(self.write("<!-- oro: \">=8.0\" -->\nx\n<!-- /oro -->\n"), parse_version("7.0.5"), warnings=w)
+        self.assertEqual(w, [])
+
+    def test_cli_prints_marker_warning(self):
+        p = cli(project("7.0.5"), self.write("<!-- oro: \">=8.0\" -->\nx\n"))
+        self.assertIn("unclosed", p.stderr)
 
 
 class CliTest(unittest.TestCase):
@@ -124,7 +166,7 @@ class CliTest(unittest.TestCase):
         p = cli(project("7.0.5"), "--check", "eight-only", "--registry", REGISTRY)
         self.assertEqual((p.returncode, p.stdout.split()[0]), (1, "skip"))
         p = cli(project(None), "--check", "always-deny", "--registry", REGISTRY)
-        self.assertEqual(p.returncode, 4)
+        self.assertEqual((p.returncode, p.stdout.split()[0]), (4, "warn"))
 
     def test_list_inactive(self):
         p = cli(project("7.0.5"), "--list-inactive", SKILL)

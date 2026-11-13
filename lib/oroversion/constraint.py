@@ -1,6 +1,6 @@
 """Composer-style version constraints at full major.minor.patch granularity.
 
-Grammar: alternatives joined by `||`; each alternative is comparators joined by whitespace or commas.
+Grammar: alternatives joined by `||` or ` or `; each alternative is comparators joined by whitespace or commas.
 Comparators: `>=` `>` `<=` `<` `=` `==` `!=`, `^X.Y[.Z]`, `~X.Y[.Z]`, wildcard `X.Y.*` / `X.*`, bare `X.Y.Z`.
 A missing constraint means DEFAULT_RANGE.
 """
@@ -66,21 +66,26 @@ def parse_version(text):
 
 
 def _parts(text):
-    """Return (major, minor|None, patch|None) for partially specified versions such as `7.0`."""
+    """Return (major, minor|None, patch|None, pre|None, pre_n) for partially specified versions such as `7.0`."""
     m = _VERSION.match(text.strip())
-    if not m or m.group(4):
+    if not m or m.group(4) in ("patch", "pl", "p"):
         raise ConstraintError("unparsable version %r" % (text,))
     nums = [None if g is None or g in ("x", "X", "*") else int(g) for g in m.groups()[:3]]
-    return nums[0], nums[1], nums[2]
+    return nums[0], nums[1], nums[2], m.group(4), int(m.group(5) or 0)
 
 
 def _bump(major, minor, patch, level):
-    """Exclusive upper bound that increments the component at `level` (0=major, 1=minor, 2=patch)."""
+    """Exclusive upper bound incrementing the component at `level`; `-dev` keeps pre-releases of the bound out."""
     if level == 0:
-        return Version(major + 1, 0, 0)
+        return Version(major + 1, 0, 0, "dev")
     if level == 1:
-        return Version(major, minor + 1, 0)
-    return Version(major, minor, patch + 1)
+        return Version(major, minor + 1, 0, "dev")
+    return Version(major, minor, patch + 1, "dev")
+
+
+def _lower(major, minor, patch):
+    """Inclusive lower bound of ^/~/wildcard ranges; an N.M.0 range admits that release's pre-releases."""
+    return Version(major, minor, patch, "dev" if patch == 0 else None)
 
 
 def _comparator(token):
@@ -89,9 +94,11 @@ def _comparator(token):
     if not m:
         raise ConstraintError("unparsable constraint %r" % (token,))
     op, rest = m.group(1) or "=", m.group(2)
-    major, minor, patch = _parts(rest)
+    major, minor, patch, pre, pre_n = _parts(rest)
+    if pre and (op in ("^", "~") or minor is None or patch is None):
+        raise ConstraintError("pre-release needs a full version with a plain comparator: %r" % (token,))
     if op in ("^", "~"):
-        lower = Version(major, minor or 0, patch or 0)
+        lower = _lower(major, minor or 0, patch or 0)
         if op == "~":
             level = 1 if patch is not None else 0
             if minor is None:
@@ -107,15 +114,13 @@ def _comparator(token):
         return [(">=", lower), ("<", upper)]
     if op in ("=", "==") and (minor is None or patch is None):
         level = 0 if minor is None else 1
-        return [(">=", Version(major, minor or 0, 0)), ("<", _bump(major, minor or 0, 0, level))]
+        return [(">=", _lower(major, minor or 0, 0)), ("<", _bump(major, minor or 0, 0, level))]
     if op == "!=" and (minor is None or patch is None):
         raise ConstraintError("!= needs a full version: %r" % (token,))
-    return [("==" if op == "=" else op, Version(major, minor or 0, patch or 0, *_pre_of(rest)))]
-
-
-def _pre_of(text):
-    m = _VERSION.match(text.strip())
-    return (m.group(4), int(m.group(5) or 0)) if m and m.group(4) else (None, 0)
+    bound = Version(major, minor or 0, patch or 0, pre, pre_n)
+    if op == "<" and not pre:
+        bound = Version(bound.major, bound.minor, bound.patch, "dev")  # `<8.0.0` excludes 8.0.0-beta
+    return [("==" if op == "=" else op, bound)]
 
 
 _OPS = {
@@ -133,7 +138,7 @@ class Constraint:
 
     def __init__(self, text=None):
         self.text = (text or DEFAULT_RANGE).strip() or DEFAULT_RANGE
-        self.alternatives = [self._group(g) for g in self.text.split("||")]
+        self.alternatives = [self._group(g) for g in re.split(r"\|\||\s+or\s+", self.text)]
 
     @staticmethod
     def _group(group):

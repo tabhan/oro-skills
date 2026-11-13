@@ -5,6 +5,7 @@ import glob
 import hashlib
 import json
 import os
+import sys
 import time
 
 from . import __version__, extractors
@@ -105,6 +106,19 @@ def current_stamps(root, names):
     return result
 
 
+def detected_version(root):
+    """Normalised Oro version via the shared detector (lib/oroversion); falls back to the raw platform version."""
+    lib = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "lib")
+    try:
+        if lib not in sys.path:
+            sys.path.insert(0, lib)
+        from oroversion import detect
+        found = detect(root, use_cache=False, write_cache=False).version
+    except Exception:  # noqa: BLE001 - index build must not depend on the optional detector
+        found = None
+    return str(found) if found else platform_version(root)
+
+
 def platform_version(root):
     """Version of oro/platform from composer.lock, or None."""
     with open(os.path.join(root, "composer.lock"), encoding="utf-8") as fh:
@@ -147,7 +161,7 @@ def update_index(root, out_dir, built, durations=None, pre=None):
         atlas_version=__version__,
         composer_lock_sha256=sha,
         platform_version=platform_version(root),
-        oro_version=platform_version(root),
+        oro_version=detected_version(root),
         generated_at=stamp,
     )
     idx.pop("src_fingerprint", None)

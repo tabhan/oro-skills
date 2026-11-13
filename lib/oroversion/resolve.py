@@ -89,8 +89,9 @@ def _file_range(path, text):
     return rng, topic
 
 
-def scan_file(path):
-    """All units in one file: the file itself first, then sections and table rows."""
+def scan_file(path, warnings=None):
+    """All units in one file: the file itself first, then sections and table rows; marker problems go to `warnings`."""
+    warnings = warnings if warnings is not None else []
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
@@ -106,9 +107,15 @@ def scan_file(path):
     for i, line in enumerate(lines, 1):
         m = _OPEN.search(line)
         if m:
+            if open_at:
+                warnings.append("%s:%d: nested oro section (opened at line %d); sections cannot nest" % (path, i, open_at[0]))
+                units.append(Unit(path, "section", open_at[0], i - 1, open_at[1], open_at[2]))
             open_at = (i, m.group(1) if m.group(1) is not None else m.group(2), m.group(3))
-        elif _CLOSE.search(line) and open_at:
-            units.append(Unit(path, "section", open_at[0], i, open_at[1], open_at[2]))
+        elif _CLOSE.search(line):
+            if open_at:
+                units.append(Unit(path, "section", open_at[0], i, open_at[1], open_at[2]))
+            else:
+                warnings.append("%s:%d: <!-- /oro --> without an opening marker" % (path, i))
             open_at = None
         if line.lstrip().startswith("|"):
             cells = _split_row(line)
@@ -118,10 +125,11 @@ def scan_file(path):
             elif col is not None and not re.match(r"^\|?[\s:|-]+\|?$", line.strip()):
                 value = cells[col] if col < len(cells) else ""
                 tv = cells[tcol] if tcol is not None and tcol < len(cells) else None
-                units.append(Unit(path, "row", i, i, _unquote(value.strip("`")) or None, tv or None))
+                units.append(Unit(path, "row", i, i, _unquote(value.strip("`")).replace("\\|", "|") or None, tv or None))
         else:
             col = tcol = None
     if open_at:
+        warnings.append("%s:%d: unclosed oro section; it runs to end of file" % (path, open_at[0]))
         units.append(Unit(path, "section", open_at[0], len(lines), open_at[1], open_at[2]))
     return units
 
@@ -134,13 +142,13 @@ def walk(root, exts=_TEXT_EXT, skip_tests=False):
                 yield os.path.join(base, name)
 
 
-def resolve(target, version, skip_tests=False):
+def resolve(target, version, skip_tests=False, warnings=None):
     """[(Unit, status)] for a file or a directory tree. A unit inside an inactive file is inactive."""
     paths = [target] if os.path.isfile(target) else list(walk(target, skip_tests=skip_tests))
     out = []
     for p in paths:
         file_status = ACTIVE
-        for u in scan_file(p):
+        for u in scan_file(p, warnings):
             try:
                 s = status(u.range_text, version)
             except ConstraintError as exc:
@@ -157,10 +165,10 @@ def find_topic(topic, root, version):
     return [(u, s) for u, s in resolve(root, version, skip_tests=True) if u.topic == topic]
 
 
-def active_files(target, version):
+def active_files(target, version, warnings=None):
     """File paths that apply, each with the line spans of its inactive sections/rows to skip."""
     files = {}
-    for u, s in resolve(target, version):
+    for u, s in resolve(target, version, warnings=warnings):
         if u.kind == "file":
             if s != INACTIVE:
                 files[u.path] = []
@@ -198,12 +206,13 @@ def load_registry(path):
 def check_decision(registry, check_id, version, default_severity="deny"):
     """Decide whether a hook check runs and at what severity. Never blocks on unknown versions."""
     entry = registry.get(check_id, {})
+    unknown = version is None
     severity = entry.get("severity", default_severity)
     s = status(entry.get("oro"), version)
     reason = "check %s: oro %s, project %s" % (check_id, Constraint(entry.get("oro")).text, version or "unknown")
     run = s != INACTIVE
     if not run:
         reason += " -> skipped (out of range)"
-    elif s == ADVISORY and severity == "deny":
+    elif unknown and severity == "deny":
         severity, reason = "warn", reason + " -> deny downgraded to warn (version unknown)"
-    return {"run": run, "severity": severity if run else None, "advisory": s == ADVISORY, "reason": reason}
+    return {"run": run, "severity": severity if run else None, "advisory": unknown or s == ADVISORY, "reason": reason}

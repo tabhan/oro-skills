@@ -45,6 +45,7 @@ def main(argv):
     unknown = version is None
     if unknown:
         sys.stderr.write("oro-applies: %s (%s)\n" % (ADVISORY_LINE, det.reason))
+    warnings = []
     try:
         if a.check:
             d = R.check_decision(R.load_registry(a.registry), a.check, version)
@@ -57,19 +58,21 @@ def main(argv):
                 sys.stderr.write("oro-applies: no such path %s\n" % target)
                 return 64
             if a.list_active:
-                files = R.active_files(target, version)
+                files = R.active_files(target, version, warnings)
                 if a.json:
                     print(json.dumps({"version": str(version) if version else None, "files": {k: v for k, v in files.items()}}))
                 for path, skips in ([] if a.json else files.items()):
                     print(path + ("  [skip lines: %s]" % ", ".join("%d-%d" % s for s in skips) if skips else ""))
             else:
-                rows = [(u, s) for u, s in R.resolve(target, version) if s == R.INACTIVE]
+                rows = [(u, s) for u, s in R.resolve(target, version, warnings=warnings) if s == R.INACTIVE]
                 print(json.dumps([u.as_dict(s) for u, s in rows]) if a.json else "\n".join("%s  oro %s" % (u.ref(), u.effective_range) for u, s in rows))
+            for w in warnings:
+                sys.stderr.write("oro-applies: warning: %s\n" % w)
             return 4 if unknown else 0
         collected = []
         for t in a.targets:
             if os.path.exists(t):
-                collected += R.resolve(t, version)
+                collected += R.resolve(t, version, warnings=warnings)
             else:
                 found = R.find_topic(t, a.root, version)
                 if not found:
@@ -79,6 +82,8 @@ def main(argv):
     except ConstraintError as exc:
         sys.stderr.write("oro-applies: bad oro range: %s\n" % exc)
         return 64
+    for w in warnings:
+        sys.stderr.write("oro-applies: warning: %s\n" % w)
     out_of_range = [(u, s) for u, s in collected if s == R.INACTIVE]
     if a.json:
         print(json.dumps([u.as_dict(s) for u, s in collected]))

@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import re
-import time
 
 from .constraint import ConstraintError, Version, parse_version
 
@@ -103,7 +102,7 @@ def detect(project, use_cache=True, write_cache=True):
             os.makedirs(os.path.dirname(cache), exist_ok=True)
             with open(cache, "w", encoding="utf-8") as fh:
                 json.dump({"version": str(result.version), "source_pkg": result.source_pkg, "lock_sha256": sha,
-                           "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "warnings": result.warnings}, fh, indent=2)
+                           "warnings": result.warnings}, fh, indent=2)
                 fh.write("\n")
         except OSError:
             result.warnings.append("could not write %s" % cache)
