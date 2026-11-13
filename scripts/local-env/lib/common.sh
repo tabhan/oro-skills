@@ -82,8 +82,8 @@ dotenv_get() {
     return 0
 }
 
-nvm_version() { # resolves .nvmrc through nvm; prints vX.Y.Z or N/A
-    local want; want=$(tr -d ' \n' < "$PROJECT/.nvmrc" 2>/dev/null) || return
+nvm_version() { # resolves env.yml node_pin, else .nvmrc, through nvm; prints vX.Y.Z or N/A
+    local want=${NODE_PIN:-}; [ -n "$want" ] || want=$(tr -d ' \n' < "$PROJECT/.nvmrc" 2>/dev/null) || return
     # shellcheck disable=SC1091
     (export NVM_DIR=${NVM_DIR:-$HOME/.nvm}; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm version "$want" 2>/dev/null)
 }

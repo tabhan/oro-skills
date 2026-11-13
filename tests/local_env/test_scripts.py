@@ -10,14 +10,15 @@ SCRIPTS = os.path.join(ROOT, "scripts", "local-env")
 STUBS = os.path.join(os.path.dirname(__file__), "stubs")
 FIX = os.path.join(ROOT, "tests", "fixtures")
 
-DOTENV = {
-    "ORO_DB_DSN": "postgres://u:p@127.0.0.1:5432/%(db)s?sslmode=disable",
-    "ORO_SEARCH_ENGINE_DSN": "elastic-search://127.0.0.1:9200?prefix=oro_test_search",
-    "ORO_WEBSITE_SEARCH_ENGINE_DSN": "elastic-search://127.0.0.1:9200?prefix=oro_test_website_search",
-    "ORO_MQ_DSN": "amqp://u:p@127.0.0.1:5672/oro_test",
-    "ORO_MONGODB_DSN_PUBLIC": "mongodb://127.0.0.1:27017/oro_test_public",
-    "ORO_MONGODB_DSN_PRIVATE": "mongodb://127.0.0.1:27017/oro_test_private",
-    "ORO_SESSION_DSN": "redis://127.0.0.1:6379/7",
+LIVE = {
+    "current_database": "%(db)s",
+    "database_dsn": "postgres://u:p@127.0.0.1:5432/%(db)s?sslmode=disable",
+    "search_engine_dsn": "elastic-search://127.0.0.1:9200?prefix=oro_test_search",
+    "website_search_engine_dsn": "elastic-search://127.0.0.1:9200?prefix=oro_test_website_search",
+    "message_queue_transport_dsn": "amqp://u:p@127.0.0.1:5672/oro_test",
+    "gaufrette_adapter.public": "gridfs:mongodb://127.0.0.1:27017/oro_test_public",
+    "gaufrette_adapter.private": "gridfs:mongodb://127.0.0.1:27017/oro_test_private",
+    "session_handler_dsn": "redis://127.0.0.1:6379/7",
 }
 
 
@@ -48,15 +49,16 @@ class Base(unittest.TestCase):
                         STUB_PG_DBS="oro:oro_test:oro_test_baseline", STUB_MONGO_DBS="oro_test_private_baseline:oro_test_private",
                         STUB_ES="oro_test_search_1:oro_test_website_search_1", STUB_VHOSTS="/:oro_test", STUB_QUEUES="q1:q2")
         self.env.pop("CLAUDECODE", None)
-        self.write_dotenv("test", db="oro_test")
-        self.write_dotenv("behat_test", db="oro_test")
-        self.write_dotenv("prod", db="oro")
+        self.write_live("test", db="oro_test")
+        self.write_live("behat_test", db="oro_test")
+        self.write_live("prod", db="oro", search_engine_dsn="elastic-search://h:9200?prefix=oro_search",
+                        **{"gaufrette_adapter.private": "gridfs:mongodb://h/private"})
 
-    def write_dotenv(self, env, **over):
-        vals = dict(DOTENV)
-        with open(os.path.join(self.stubdir, "dotenv-%s.txt" % env), "w") as fh:
+    def write_live(self, env, db, **over):
+        vals = dict(LIVE, **over)
+        with open(os.path.join(self.stubdir, "live-%s.txt" % env), "w") as fh:
             for k, v in vals.items():
-                fh.write("  %-30s %s   x\n" % (k, v % over if "%(db)s" in v else v))
+                fh.write("%s=%s\n" % (k, v % {"db": db} if "%(db)s" in v else v))
 
     def run_script(self, name, *args, **env):
         p = subprocess.run([os.path.join(SCRIPTS, name), "--project", self.project, *args], capture_output=True, text=True,
@@ -243,24 +245,47 @@ class OroTest(Base):
         self.assertIn("verified", p.stdout)
 
     def test_phpunit_pointed_at_local_db_refused(self):
-        self.write_dotenv("test", db="oro")
+        self.write_live("test", db="oro")
         p = self.run_ot("local-test", "phpunit")
         self.assertEqual(p.returncode, 3, p.stdout)
         self.assertNotIn("phpunit", self.calls())
         self.assertLessEqual(self.lines(p), 8)
 
-    def test_live_db_mismatch_refused(self):
-        p = self.run_ot("local-test", "verify", STUB_LIVE_DB="oro")
-        self.assertEqual(p.returncode, 3)
-
-    def test_wrong_es_prefix_and_session_refused(self):
-        self.write_dotenv("behat_test", db="oro_test")
-        f = os.path.join(self.stubdir, "dotenv-behat_test.txt")
-        write(f, read(f).replace("prefix=oro_test_search", "prefix=oro_search").replace("/7  ", "/0  "))
+    def test_behat_test_live_db_mismatch_refused(self):
+        self.write_live("behat_test", db="oro")
         p = self.run_ot("local-test", "verify")
         self.assertEqual(p.returncode, 3)
-        self.assertIn("ORO_SEARCH_ENGINE_DSN", p.stdout)
-        self.assertIn("ORO_SESSION_DSN", p.stdout)
+        self.assertIn("behat_test", p.stdout)
+
+    def test_wrong_live_values_refused(self):
+        self.write_live("behat_test", db="oro_test", search_engine_dsn="elastic-search://h?prefix=oro_search",
+                        message_queue_transport_dsn="amqp://u@h/%2f", session_handler_dsn="redis://h:6379/0",
+                        **{"gaufrette_adapter.private": "gridfs:mongodb://h/private"})
+        p = self.run_ot("local-test", "verify")
+        self.assertEqual(p.returncode, 3)
+        for word in ("search_engine_dsn", "message_queue_transport_dsn", "session_handler_dsn", "gaufrette.private"):
+            self.assertIn(word, p.stdout)
+
+    def test_env_overrides_refused_before_anything_runs(self):
+        for args in (("console", "doctrine:schema:drop", "--force", "--env=prod"),
+                     ("console", "x", "--env", "prod"), ("console", "x", "-e", "prod"), ("console", "x", "-eprod"),
+                     ("console", "x", "-e=dev"), ("phpunit", "--env=prod"), ("e2e", "--env=prod")):
+            p = self.run_ot("local-test", *args)
+            self.assertEqual(p.returncode, 3, args)
+        self.assertEqual(self.calls(), "")
+        self.assertEqual(self.run_ot("local-test", "verify", ORO_ENV="prod").returncode, 3)
+        self.assertEqual(self.run_ot("local-test", "verify", APP_ENV="dev").returncode, 3)
+        self.assertEqual(self.calls(), "")
+        self.assertEqual(self.run_ot("local-test", "verify", ORO_ENV="behat_test").returncode, 0)
+
+    def test_local_refuses_test_envs(self):
+        self.assertEqual(self.run_ot("local", "console", "x", "--env=behat_test").returncode, 3)
+        self.assertEqual(self.run_ot("local", "verify", ORO_ENV="test").returncode, 3)
+
+    def test_verify_is_one_line_with_timing(self):
+        p = self.run_ot("local-test", "verify")
+        self.assertEqual(self.lines(p), 1)
+        self.assertRegex(p.stdout, r" in \d+\.\ds")
 
     def test_local_target_never_runs_tests(self):
         p = self.run_ot("local", "phpunit")
@@ -310,6 +335,11 @@ class Restore(Base):
     def test_requires_yes(self):
         self.assertEqual(self.run_script("restore-local.sh").returncode, 64)
 
+    def test_yes_is_only_a_standalone_flag(self):
+        p = self.run_script("restore-local.sh", "--dump", "--yes")
+        self.assertEqual(p.returncode, 64)
+        self.assertNotIn("DROP DATABASE", self.calls())
+
     def test_refuses_test_named_local_db(self):
         env_file = os.path.join(self.project, ".oro-ai", "local-env", "env.yml")
         write(env_file, read(env_file).replace("    db: oro\n", "    db: oro_test_x\n", 1))
@@ -338,6 +368,55 @@ class Check(Base):
         j = self.run_script("check.sh", "--json")
         data = json.loads(j.stdout)
         self.assertIn("items", data)
+
+
+class Params(Base):
+    def setUp(self):
+        super().setUp()
+        os.makedirs(os.path.join(self.project, "config"))
+        self.params = os.path.join(self.project, "config", "parameters.yml")
+        write(self.params, "parameters:\n    web: /x\n    oro_asset.nodejs_path: /old/v1.0.0/bin/node\n    gaufrette_adapter.public: 'local'\n")
+        write(os.path.join(self.project, ".nvmrc"), "24\n")
+        write(os.path.join(self.project, "composer.json"), '{"require": {"php": "~8.5.0"}}')
+        nvm = os.path.join(self.tmp, "nvm")
+        os.makedirs(nvm)
+        write(os.path.join(nvm, "nvm.sh"), 'nvm() { case "$1" in version) echo "v24.21.0";; install) echo "$2" >> "$STUB_LOG";; esac; }\n')
+        self.env["NVM_DIR"] = nvm
+        write(os.path.join(self.project, ".env-app.test.local"), "ORO_DB_URL=x\nORO_REDIS_CACHE_DSN=redis://h/4\nORO_SESSION_DSN=redis://h/7\n")
+
+    def test_check_reports_managed_drift(self):
+        p = self.run_script("check.sh")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("DRIFT node", p.stdout)
+        self.assertIn("DRIFT gaufrette-public", p.stdout)
+        self.assertIn("DRIFT gaufrette-private", p.stdout)
+        self.assertIn("DRIFT redis-cache", p.stdout)
+
+    def test_repair_params_rewrites_without_backup_and_is_idempotent(self):
+        p = self.run_script("repair.sh", "--only", "params")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        text = read(self.params)
+        self.assertIn("oro_asset.nodejs_path: " + os.path.join(self.tmp, "nvm", "versions", "node", "v24.21.0", "bin", "node"), text)
+        self.assertIn("oro_asset.pnpm_path:", text)
+        self.assertIn("gaufrette_adapter.public: 'gridfs:%env(ORO_MONGODB_DSN_PUBLIC)%'", text)
+        self.assertIn("gaufrette_adapter.private: 'gridfs:%env(ORO_MONGODB_DSN_PRIVATE)%'", text)
+        self.assertIn("    web: /x", text)
+        self.assertNotIn("ORO_REDIS_CACHE_DSN", read(os.path.join(self.project, ".env-app.test.local")))
+        self.assertIn("ORO_SESSION_DSN", read(os.path.join(self.project, ".env-app.test.local")))
+        backups = os.path.join(self.project, "var", "backups", "oro-local-env")
+        self.assertFalse([n for n in os.listdir(backups) if n.startswith("parameters")] if os.path.isdir(backups) else [])
+        self.assertFalse([n for n in os.listdir(os.path.dirname(self.params)) if n != "parameters.yml"])
+        again = self.run_script("repair.sh", "--only", "node")
+        self.assertEqual(again.returncode, 0)
+        self.assertEqual(text, read(self.params))
+        c = self.run_script("check.sh")
+        self.assertNotIn("gaufrette", c.stdout)
+        self.assertNotIn("redis-cache", c.stdout)
+
+    def test_node_pin_wins_over_nvmrc(self):
+        subprocess.run(["python3", os.path.join(SCRIPTS, "lib", "envsh.py"), "set", "--project", self.project, "node_pin", "22.1.0"], check=True)
+        self.run_script("repair.sh", "--only", "params", "--dry-run")
+        self.assertEqual(self.run_script("repair.sh", "--only", "bogus").returncode, 64)
 
 
 class Syntax(unittest.TestCase):

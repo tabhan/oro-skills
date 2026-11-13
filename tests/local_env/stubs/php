@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 echo "php $*" >> "$STUB_LOG"
+case "$1" in */live-target.php) cat "$STUB_DIR/live-$3.txt" 2>/dev/null; exit "${STUB_PHP_RC:-0}" ;; esac
 [ -f "$1" ] && [ "$1" != "-r" ] && exec bash "$@"
 case "$*" in
     *debug:dotenv*) env=$(sed -E 's/.*--env=([a-z_]+).*/\1/' <<< "$*"); cat "$STUB_DIR/dotenv-$env.txt" 2>/dev/null ;;

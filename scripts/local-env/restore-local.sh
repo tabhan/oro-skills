@@ -6,12 +6,16 @@
 # Exit: 0 ok, 1 failure, 3 guard abort, 64 usage or --yes missing. Download options via LE_CURL_OPTS.
 source "$(dirname "$0")/lib/common.sh"
 le_init restore-local "$@"
+LE_USAGE="restore-local.sh --yes [--dump F] [--attachments F] [--skip-attachments]"
 YES=0; DUMP=$QA_DUMP; ATT=$QA_ATT; SKIPATT=0
-for i in "${!ARGS[@]}"; do
+i=0
+while [ $i -lt ${#ARGS[@]} ]; do
     case ${ARGS[$i]} in
         --yes) YES=1 ;; --skip-attachments) SKIPATT=1 ;;
-        --dump) DUMP=${ARGS[$((i + 1))]:-} ;; --attachments) ATT=${ARGS[$((i + 1))]:-} ;;
+        --dump) i=$((i + 1)); DUMP=${ARGS[$i]:-} ;; --attachments) i=$((i + 1)); ATT=${ARGS[$i]:-} ;;
+        *) usage_exit ;;
     esac
+    i=$((i + 1))
 done
 le_ident "$LOCAL_DB"
 case $LOCAL_DB in oro_test*) guard_abort "refusing to restore into '$LOCAL_DB': it is a test name" ;; esac

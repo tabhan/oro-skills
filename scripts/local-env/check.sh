@@ -12,7 +12,7 @@ ok() { item ok "$1" "${2:-}"; }
 bad() { item drift "$1" "$2"; }
 
 # node
-if [ -f "$PROJECT/.nvmrc" ]; then
+if [ -f "$PROJECT/.nvmrc" ] || [ -n "$NODE_PIN" ]; then
     want=$(nvm_version); [ -n "$want" ] || want="N/A"
     if [ "$want" = "N/A" ]; then bad node ".nvmrc $(cat "$PROJECT/.nvmrc") not installed in nvm"
     else
@@ -25,6 +25,14 @@ if [ -f "$PROJECT/.nvmrc" ]; then
         else ok node "$want"; fi
     fi
 else bad node ".nvmrc missing"; fi
+
+# parameters.yml is generated: GridFS adapters per topology, and no Redis app-cache DSNs in the test stack's dotenv
+for k in public private; do
+    got=$(python3 "$LE_LIB/nodephp.py" get-param "$PROJECT/config/parameters.yml" "gaufrette_adapter.$k" 2>/dev/null)
+    if [ "$got" = "gridfs:%env(ORO_MONGODB_DSN_${k^^})%" ]; then ok "gaufrette-$k"; else bad "gaufrette-$k" "parameters.yml gaufrette_adapter.$k is '${got:-unset}', expected the GridFS adapter (repair.sh --only params)"; fi
+done
+redis=$(grep -lE '^ORO_REDIS_(CACHE|DOCTRINE|LAYOUT)_DSN=' "$PROJECT"/.env-app.test.local "$PROJECT"/.env-app.behat_test.local 2>/dev/null | xargs -r -n1 basename | tr '\n' ' ')
+if [ -n "$redis" ]; then bad redis-cache "Redis cache DSNs set in ${redis% }; caches stay on disk (repair.sh --only params)"; else ok redis-cache; fi
 
 # php
 req=$(python3 "$LE_LIB/nodephp.py" php-require "$PROJECT" 2>/dev/null); phpv=$(php -r 'echo PHP_VERSION;' 2>/dev/null)

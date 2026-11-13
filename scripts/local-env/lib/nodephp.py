@@ -6,6 +6,8 @@
   nodephp.py php-ok <constraint> <version>     exit 0 when the version satisfies the composer constraint
   nodephp.py node-paths <parameters.yml>       print the oro_asset.{nodejs,npm,pnpm}_path values, one per line
   nodephp.py set-node <parameters.yml> <bin>   point the three paths at <bin>/{node,npm,pnpm} (adds missing keys)
+  nodephp.py get-param <parameters.yml> <key>  print the raw value of one parameter (quotes stripped)
+  nodephp.py set-param <parameters.yml> <key> <raw value>   replace or add one parameter line
 """
 import json
 import os
@@ -18,6 +20,19 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "lib"))
 from oroversion import constraint  # noqa: E402
 
 KEYS = (("nodejs_path", "node"), ("npm_path", "npm"), ("pnpm_path", "pnpm"))
+
+
+def set_param(path, key, value):
+    text = open(path, encoding="utf-8").read()
+    line = "%s: %s" % (key, value)
+    if re.search(r"^\s*%s:" % re.escape(key), text, re.M):
+        text = re.sub(r"^(\s*)%s:.*$" % re.escape(key), lambda m: m.group(1) + line, text, flags=re.M)
+    else:
+        text = re.sub(r"^(parameters:\s*\n)", lambda m: m.group(1) + "    " + line + "\n", text, count=1, flags=re.M)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
 
 
 def main(argv):
@@ -35,18 +50,15 @@ def main(argv):
             print(m.group(1) if m else "")
         return 0
     if cmd == "set-node" and len(rest) == 2:
-        path, bindir = rest
-        text = open(path, encoding="utf-8").read()
         for key, binary in KEYS:
-            line = "oro_asset.%s: %s/%s" % (key, bindir.rstrip("/"), binary)
-            if re.search(r"^\s*oro_asset\.%s:" % key, text, re.M):
-                text = re.sub(r"^(\s*)oro_asset\.%s:.*$" % key, lambda m: m.group(1) + line, text, flags=re.M)
-            else:
-                text = re.sub(r"^(parameters:\s*\n)", lambda m: m.group(1) + "    " + line + "\n", text, count=1, flags=re.M)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
+            set_param(rest[0], "oro_asset." + key, "%s/%s" % (rest[1].rstrip("/"), binary))
+        return 0
+    if cmd == "get-param" and len(rest) == 2:
+        m = re.search(r"^\s*%s:\s*(.*?)\s*$" % re.escape(rest[1]), open(rest[0], encoding="utf-8").read(), re.M)
+        print(m.group(1).strip("'\"") if m else "")
+        return 0
+    if cmd == "set-param" and len(rest) == 3:
+        set_param(rest[0], rest[1], rest[2])
         return 0
     sys.stderr.write(__doc__)
     return 64

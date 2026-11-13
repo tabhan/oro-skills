@@ -16,6 +16,16 @@ def run(*args):
     return subprocess.run([sys.executable, ENV_PY, *args], capture_output=True, text=True)
 
 
+class PrefixTest(unittest.TestCase):
+    def test_underscore_required_where_a_prefix_is_meant(self):
+        data = env.load(os.path.join(FIX, "env-ok.yml"))
+        data["local_test"]["es_prefix"] = "oro_test"
+        data["local_test"]["db_baseline"] = "oro_test"
+        errs = "\n".join(env.guard_errors(data))
+        self.assertIn("es_prefix: prefix must start with oro_test_", errs)
+        self.assertIn("db_baseline: prefix must start with oro_test_", errs)
+
+
 class ValidateTest(unittest.TestCase):
     def test_ok(self):
         p = run("validate", os.path.join(FIX, "env-ok.yml"))

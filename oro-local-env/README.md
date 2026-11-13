@@ -20,7 +20,7 @@ Machine-readable schema: `schema/env.schema.json`. Every script loads the file t
 | `local_test` | test stack: `domain`, `tls_cert`, `tls_key`, `db` (`oro_test`), `db_baseline`, `es_prefix`, `mq_vhost`, `redis_dbs`, `mongo_public`, `mongo_private`, `mongo_private_baseline`, `baseline_key`, `workers`, `workers_source` (`auto`/`user`), `admin` |
 | `services.mongo` | `port` (27017), `cache_gb` (0.5), `mem_limit` (2g) |
 
-Rules enforced by `validate`: the test db, baseline, ES prefix and RabbitMQ vhost must start with `oro_test`,
+Rules enforced by `validate`: the test db and RabbitMQ vhost must start with `oro_test`, the baseline db and ES prefix with `oro_test_`,
 Mongo test names with `oro_test_` (the destructive scripts rely on this guard), and `local_test.db` differs from `local.db`.
 Domains, certificates and `project_namespace` are never defaulted; `validate` prints them as `ask:` lines and setup asks.
 
@@ -47,7 +47,7 @@ Exit codes: 0 ok, 1 failure, 2 drift (`check.sh`), 3 guard abort, 10 sudo needed
 | Script | Purpose |
 |---|---|
 | `check.sh [--json]` | read-only drift report: Node (`.nvmrc` vs `parameters.yml` vs shell), PHP vs `composer.json`, Mongo port and cache flag, nginx/fpm, `/etc/hosts`, test DBs, vhost, baseline key |
-| `repair.sh [--only node\|vhost\|hosts\|templates]` | fixes what check reports; backs up edited files to `var/backups/oro-local-env/` |
+| `repair.sh [--only params\|vhost\|hosts\|templates]` | fixes what check reports: `parameters.yml` keys, test vhost, sudo steps for `/etc/hosts`; dotenv files it edits are backed up to `var/backups/oro-local-env/` |
 | `baseline.sh [--refresh]` | `oro:install --env=behat_test` into `db`, then PG template + Mongo private baseline; no-op while `baseline_key` matches |
 | `reset.sh [--skip-reindex]` | PG clone from template, Mongo restore, ES indices by name, test session Redis db, `behat_test.log`, MQ queues, reindex |
 | `es-drop-prefix.sh`, `pg-drop.sh`, `mongo-drop.sh`, `mq-vhost-drop.sh` | single-resource drops behind the guard |
@@ -56,14 +56,22 @@ Exit codes: 0 ok, 1 failure, 2 drift (`check.sh`), 3 guard abort, 10 sudo needed
 | `oro-test <local\|local-test> <phpunit\|e2e\|console\|verify>` | explicit-target runner, no default; also on PATH as `bin/oro-test` |
 | `supervisor.sh`, `oro-project` | print the sudo command for process control / host switch (`oro-project --install` links the tool into `/usr/local/bin`) |
 
+`config/parameters.yml` is generated and fully managed by these scripts: `oro_asset.nodejs_path/npm_path/pnpm_path`
+come from nvm's resolution of `node_pin` (env.yml, optional) or else `.nvmrc`, and `gaufrette_adapter.public/private`
+are the GridFS adapters. `check.sh` reports any difference and `repair.sh --only params` rewrites the file in place
+without a backup (do not hand-edit it). The test stack dotenv files must not define Redis cache DSNs
+(`ORO_REDIS_CACHE/DOCTRINE/LAYOUT_DSN`): app caches stay on disk and Redis only holds sessions.
+
 Guard (every destructive path): the names come from `env.yml`, must start with `oro_test` (Mongo `oro_test_`), are
 listed before deleting and deleted one by name (ES refuses wildcard deletes); any name outside the prefix aborts
 with exit 3 before anything is touched, and an empty list is a no-op. The Redis flush only targets the test session
 db (never 0). `session_redis_db` defaults to 7 (the last entry of `redis_dbs` when 7 is absent).
 
-`oro-test` verifies what the target resolves to before running: `ORO_DB_DSN`, search prefixes, Mongo dbs per env
-(`test` and `behat_test` for `local-test`), plus MQ vhost and session db for `behat_test`, plus a live
-`select current_database()`. Mismatch exits 3 and runs nothing. `phpunit` always sets `ORO_ENV=test`; `e2e` runs
+`oro-test` first refuses `--env`/`-e` values and `ORO_ENV`/`APP_ENV` outside the target's kernel envs (`local-test`:
+`test`, `behat_test`; `local`: anything but those), then boots each env's real kernel (`lib/live-target.php`, ~0.5 s
+per env) and compares the resolved values with env.yml: live `select current_database()`, search prefixes, GridFS
+db names, and for `behat_test` also the MQ vhost and session db. Mismatch exits 3 and runs nothing; success is one
+line with the elapsed time. `phpunit` always sets `ORO_ENV=test`; `e2e` runs
 `aaxis:test:e2e --env=behat_test`; both print a summary of at most ~15 lines and the log path.
 
 Tests: `python3 -m unittest discover -s tests/local_env` (guards run against stubbed docker/curl/php in

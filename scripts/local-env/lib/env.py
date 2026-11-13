@@ -115,7 +115,7 @@ def guard_errors(data):
     t = data.get("local_test")
     if not isinstance(t, dict):
         return []
-    rules = (("db", "oro_test"), ("db_baseline", "oro_test"), ("es_prefix", "oro_test"), ("mq_vhost", "oro_test"),
+    rules = (("db", "oro_test"), ("db_baseline", "oro_test_"), ("es_prefix", "oro_test_"), ("mq_vhost", "oro_test"),
              ("mongo_public", "oro_test_"), ("mongo_private", "oro_test_"), ("mongo_private_baseline", "oro_test_"))
     errors = ["local_test.%s: prefix must start with %s (got %r)" % (k, p, t[k])
               for k, p in rules if isinstance(t.get(k), str) and not t[k].startswith(p)]
