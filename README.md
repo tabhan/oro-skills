@@ -31,6 +31,8 @@ claude plugin list                      # oro-skills@oro-skills enabled
 
 Local development without installing: `claude --plugin-dir /opt/projects/oro-skills`. Validate manifests with `claude plugin validate /opt/projects/oro-skills`. Updates: `claude plugin marketplace update oro-skills`, then `claude plugin update oro-skills@oro-skills`.
 
+Pre-commit lint (once per clone): `git config core.hooksPath .githooks`; it runs `bin/oro-skills-lint`, which CI runs too (`.github/workflows/lint.yml`). See docs/VERSIONING.md.
+
 Release rule: every push to `main` bumps `version` in `.claude-plugin/plugin.json`; without a bump installed copies never update.
 
 The `atlas`, `atlas-build`, `atlas-setup` and `atlas-precommit` CLIs are also in the plugin's `bin/` (on the Bash tool's PATH while the plugin is enabled). For a normal shell, `install.sh` links them into `~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`).

@@ -1,0 +1,9 @@
+checks:
+  - id: a
+    severity: deny
+    oro: "<8.0.0"
+    topic: ck
+  - id: b
+    severity: deny
+    oro: ">=8.1.0"
+    topic: ck
