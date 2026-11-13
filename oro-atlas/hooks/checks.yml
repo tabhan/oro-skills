@@ -1,0 +1,7 @@
+# Hook-check registry read by `oro-applies --check <id>`; a missing `oro` means ">=7.0.0".
+checks:
+  # Deny edits that add `decorates:` on a service others typehint (pretooluse_edit.py)
+  - id: decorates-unsafe-target
+    severity: deny
+    oro: ">=7.0.0"
+    topic: decorates-unsafe-target
