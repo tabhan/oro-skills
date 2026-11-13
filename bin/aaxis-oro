@@ -13,6 +13,7 @@ HELP = """usage: aaxis-oro <group> [args]
 
   atlas    <entity|event|service|tag|unsafe|grid|workflow|operation|mq|config|layout|js|search|notes|status>
            <term> | build | setup | precommit | migrate    extension-point index (atlas --help)
+  memory   <inventory|apply>                                   migrate project auto-memory to .oro-ai/notes
   env      check|repair|reset|baseline|import-attachments|restore|workers|switch   local environment
   test     [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]   explicit-target runner
   version  [diff|applies]                                      Oro version and which guidance applies
@@ -65,6 +66,9 @@ def main(argv):
     elif group == "atlas":
         from atlas import cli
         code = cli.main(rest)
+    elif group == "memory":
+        from atlas import notesmigrate
+        code = notesmigrate.main(rest)
     elif group == "env":
         if rest[:1] and rest[0] in ENV_SCRIPTS:
             run_script(ENV_SCRIPTS[rest[0]], rest[1:])

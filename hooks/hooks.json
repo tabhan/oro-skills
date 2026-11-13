@@ -28,6 +28,11 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_atlas.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_notes.py\"",
+            "timeout": 10
           }
         ]
       }
@@ -49,6 +54,26 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/pretooluse_bash.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/pretooluse_memory.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/pretooluse_notes.py\"",
             "timeout": 10
           }
         ]

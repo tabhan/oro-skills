@@ -53,6 +53,15 @@ other settings are kept), installs the git refresh hooks, then runs `aaxis-oro a
   every subagent of an indexed Oro project (Claude Code delivers `additionalContext` from
   `SubagentStart` to the subagent). Silent without an index; never blocks.
 - `pretooluse_edit.py` / `posttooluse_bash.py`: deny unsafe `decorates:` and add context at edit time.
+- `sessionstart_notes.py`: injects the always-tier notes (one line each, cap 40), a one-line build command when notes
+  exist but the shard is missing (never auto-builds), and `run /aaxis-oro:notes-migrate` while project auto-memory
+  files without `scope: global` remain.
+- `pretooluse_notes.py` (Read|Edit|Write): titles of anchored notes covering the file (max 5, once per file per session).
+- `pretooluse_memory.py` (Write|Edit): in an Oro project, denies writes to the project's own auto-memory dir
+  (`~/.claude/projects/<slugified path>/memory/`) unless the content has `scope: global`; project knowledge goes to
+  `.oro-ai/notes/`. All three swallow errors and stay silent when unsure.
+- `/aaxis-oro:notes-migrate` (`commands/`) + `aaxis-oro memory inventory|apply --plan F`: classify, confirm, write
+  notes, back up and delete migrated memories, rewrite `MEMORY.md`, rebuild the notes shard. Idempotent.
 
 ### Enforcement
 
