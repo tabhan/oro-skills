@@ -1,0 +1,36 @@
+project: demo
+app_root: /oroapp
+project_namespace: Demo
+qa_server:
+    url: https://qa.example.test
+    db_dump: https://qa.example.test/oro.sql.tgz
+    attachments: https://qa.example.test/attachments.tgz
+local:
+    domain: local.example.test
+    tls_cert: /etc/ssl/example.crt
+    tls_key: /etc/ssl/example.key
+    db: oro
+local_test:
+    domain: e2e.example.test
+    tls_cert: /etc/ssl/example.crt
+    tls_key: /etc/ssl/example.key
+    db: oro_test
+    db_baseline: oro_test_baseline
+    es_prefix: oro_test_
+    mq_vhost: oro_test
+    redis_dbs: [4, 5, 6, 7]
+    mongo_public: oro_test_public
+    mongo_private: oro_test_private
+    mongo_private_baseline: oro_test_private_baseline
+    baseline_key: null
+    workers: 2
+    workers_source: auto
+    admin:
+        first: John
+        last: Doe
+        language: en_US
+services:
+    mongo:
+        port: 27017
+        cache_gb: 0.5
+        mem_limit: 2g

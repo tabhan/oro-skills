@@ -1,0 +1,12 @@
+# legacy layout
+project: demo
+qa_server:
+  url: https://qa.example.test
+  db_dump: https://qa.example.test/oro.sql.tgz
+local:
+  domain: local.example.test
+  tls_cert: /etc/ssl/example.crt
+  tls_key: /etc/ssl/example.key
+local_test:
+  domain: e2e.example.test
+  baseline_key: abc123  # hash

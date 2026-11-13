@@ -13,3 +13,4 @@ jobs:
       - run: python3 bin/oro-skills-lint
       - run: python3 -m unittest discover -s tests/oroversion
       - run: python3 -m unittest discover -s oro-atlas/tests
+      - run: python3 -m unittest discover -s tests/local_env
