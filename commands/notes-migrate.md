@@ -5,7 +5,7 @@ allowed-tools: Bash, Read
 
 Migrate the project auto-memory to atlas notes. Mechanics: `atlas/NOTES.md` (format) and `aaxis-oro memory --help`.
 
-1. Run `aaxis-oro memory inventory`. It prints `nothing to migrate` when done: say so and stop.
+1. Run `aaxis-oro memory inventory`. It prints `nothing to migrate` when done (say so and stop), else a short summary and the path of `inventory.md` (full table). Read that table in chunks as you classify.
 2. Classify every row (read a file only when the line is not enough):
    - `global`: cross-project personal preference or habit (applies in any project). Kept in place, marked `scope: global`.
    - `always`: project fact with no code anchor (env, servers, ops habit): note with `surface: always`.

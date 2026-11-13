@@ -4,12 +4,17 @@ unless the content is `scope: global`; project knowledge belongs in .oro-ai/note
 """
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 import _common as c  # noqa: E402
 from atlas import notesmigrate as nm  # noqa: E402
+
+
+def slug_for(path):
+    return re.sub(r"[^a-z0-9]+", "-", os.path.splitext(os.path.basename(path))[0].lower()).strip("-") or "<slug>"
 
 
 def denied(payload):
@@ -31,9 +36,10 @@ def denied(payload):
 def main():
     out = None
     try:
-        if denied(json.load(sys.stdin)):
+        payload = json.load(sys.stdin)
+        if denied(payload):
             out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                          "permissionDecisionReason": nm.DENY % "<slug>"}}
+                                          "permissionDecisionReason": nm.DENY % slug_for(payload["tool_input"]["file_path"])}}
     except Exception:  # noqa: BLE001 - a broken hook must not block writes
         pass
     if out:

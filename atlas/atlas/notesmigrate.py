@@ -108,6 +108,26 @@ def inventory(mdir):
     return rows
 
 
+def write_inventory(root, mdir, rows):
+    """Full table to .oro-ai/notes/migrate/inventory.{json,md} (self-ignored); returns the short summary lines."""
+    out = os.path.join(notesindex.notes_dir(root), "migrate")
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, ".gitignore"), "w") as fh:
+        fh.write("*\n")
+    with open(os.path.join(out, "inventory.json"), "w", encoding="utf-8") as fh:
+        json.dump(rows, fh, ensure_ascii=False, indent=1)
+    md = ["| file | name | type | description | bytes |", "|---|---|---|---|---|"]
+    md += ["| %s | %s | %s | %s | %d |" % (r["file"], r["name"], r["type"], r["description"].replace("|", "/"), r["bytes"]) for r in rows]
+    with open(os.path.join(out, "inventory.md"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(md) + "\n")
+    types = {}
+    for r in rows:
+        types[r["type"] or "untyped"] = types.get(r["type"] or "untyped", 0) + 1
+    return ["memory dir: %s" % mdir, "%d to classify; by type: %s" % (len(rows), ", ".join("%s %d" % kv for kv in sorted(types.items()))),
+            "table: %s" % os.path.join(out, "inventory.md"), "json:  %s" % os.path.join(out, "inventory.json"),
+            "read the table in chunks (sed -n 'A,Bp'); open a memory file only when its line is not enough"]
+
+
 # -- apply -------------------------------------------------------------------------------------------------------
 
 def note_text(item):
@@ -137,8 +157,15 @@ def _mark_global(path):
 def _backup(mdir, names):
     dest = os.path.join(os.path.expanduser("~"), ".claude", "backups")
     os.makedirs(dest, exist_ok=True)
-    path = os.path.join(dest, "memory-%s.tgz" % time.strftime("%Y%m%d-%H%M%S"))
-    with tarfile.open(path, "w:gz") as tar:
+    stamp, seq = "%s-%d" % (time.strftime("%Y%m%d-%H%M%S"), os.getpid()), 0
+    while True:  # exclusive create: a backup is never overwritten, even by a rerun in the same second
+        path = os.path.join(dest, "memory-%s%s.tgz" % (stamp, "-%d" % seq if seq else ""))
+        try:
+            raw = open(path, "xb")
+            break
+        except FileExistsError:
+            seq += 1
+    with raw, tarfile.open(fileobj=raw, mode="w:gz") as tar:
         for n in names + [INDEX]:
             if os.path.exists(os.path.join(mdir, n)):
                 tar.add(os.path.join(mdir, n), arcname=n)
@@ -167,8 +194,12 @@ def apply_plan(root, mdir, plan, build=True):
     """Execute a confirmed plan; returns (summary lines, exit code). Items: file, action note|delete|global, +note fields."""
     errors, written, deleted, marked, suggestions = [], 0, [], 0, []
     nd = notesindex.notes_dir(root)
-    touched = [os.path.basename(str(i.get("file", ""))) for i in plan.get("items", []) if i.get("action") in ("global", "delete", "note")]
-    backup = _backup(mdir, [n for n in touched if os.path.isfile(os.path.join(mdir, n))]) if any(os.path.isfile(os.path.join(mdir, n)) for n in touched) else None
+    def changes(i):
+        f = os.path.join(mdir, os.path.basename(str(i.get("file", ""))))
+        a = i.get("action")
+        return os.path.isfile(f) and (a in ("delete", "note") or (a == "global" and not is_global_text(_read(f))))
+    touched = [os.path.basename(str(i["file"])) for i in plan.get("items", []) if changes(i)]
+    backup = _backup(mdir, touched) if touched else None
     for item in plan.get("items", []):
         name = os.path.basename(str(item.get("file", "")))
         src = os.path.join(mdir, name)
@@ -255,9 +286,7 @@ def main(argv):
         elif not rows:
             print("nothing to migrate")
         else:
-            print("memory dir: %s (%d to classify)" % (mdir, len(rows)))
-            for r in rows:
-                print("%s | %s | %s | %s | %dB" % (r["file"], r["name"], r["type"], r["description"], r["bytes"]))
+            print("\n".join(write_inventory(root, mdir, rows)))
     else:
         if not a.plan:
             ap.error("apply needs --plan FILE")

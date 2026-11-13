@@ -123,6 +123,10 @@ class MemoryBlockTest(Base):
         self.assertTrue(self.denied(out))
         self.assertIn(".oro-ai/notes/", out["hookSpecificOutput"]["permissionDecisionReason"])
 
+    def test_deny_message_names_slug_from_filename(self):
+        out = self.write("Feedback_Foo_Bar.md", content="---\nname: x\n---\nfact")
+        self.assertIn(".oro-ai/notes/feedback-foo-bar.md", out["hookSpecificOutput"]["permissionDecisionReason"])
+
     def test_allows_global_and_other_paths(self):
         self.assertFalse(self.denied(self.write("g.md", content="---\nname: g\nscope: global\n---\nx")))
         self.assertFalse(self.denied(self.write("n.md", file_path=os.path.join(self.root, "src", "n.md"), content="x")))
@@ -161,7 +165,10 @@ class MigrateTest(Base):
         self.memory("c.md", "---\nname: c\n---\nprefers x\n")
         self.memory("MEMORY.md", "# idx\n- [a](a.md) - a\n- [b](b.md) - b\n- [c](c.md) - c\n")
         code, out = self.cli("inventory")
-        self.assertEqual(out.count(".md |"), 3)
+        self.assertLessEqual(len(out.splitlines()), 10)
+        table = open(os.path.join(self.root, ".oro-ai", "notes", "migrate", "inventory.md")).read()
+        self.assertEqual(table.count(".md |"), 3)
+        self.assertEqual(open(os.path.join(self.root, ".oro-ai", "notes", "migrate", ".gitignore")).read(), "*\n")
         plan = self.plan([
             {"file": "a.md", "action": "note", "slug": "fact-a", "title": "Fact A", "kind": "gotcha", "surface": "anchored",
              "anchors": ["path:src/**"], "body": "fact a", "suggest": "generalize"},
@@ -177,6 +184,15 @@ class MigrateTest(Base):
         self.assertEqual(self.cli("inventory")[1].strip(), "nothing to migrate")
         code, out = self.cli("apply", "--plan", plan, "--no-build")
         self.assertEqual((code, "notes written 0, memories deleted 0, marked global 0" in out), (0, True))
+
+    def test_backups_never_overwritten_and_skipped_when_idle(self):
+        bdir = os.path.join(self.home, ".claude", "backups")
+        for n in ("a", "b"):
+            self.memory(n + ".md", "---\nname: %s\n---\nx\n" % n)
+            self.cli("apply", "--plan", self.plan([{"file": n + ".md", "action": "delete"}]), "--no-build")
+        self.assertEqual(len(os.listdir(bdir)), 2)
+        self.cli("apply", "--plan", self.plan([{"file": "a.md", "action": "delete"}]), "--no-build")
+        self.assertEqual(len(os.listdir(bdir)), 2)
 
     def test_secret_note_skipped_memory_kept(self):
         self.memory("s.md", "---\nname: s\n---\npassword=hunter2\n")
