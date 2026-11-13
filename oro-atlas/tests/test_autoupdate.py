@@ -35,21 +35,9 @@ def project(shards):
 
 
 class LocationTest(unittest.TestCase):
-    def test_legacy_index_is_moved(self):
+    def test_index_lives_under_oro_ai(self):
         root = make_project()
-        legacy = os.path.join(root, "var", "atlas")
-        store.write_shard(legacy, "grids", [{"id": "g"}])
-        out = atlas_dir(root)
-        self.assertEqual(out, os.path.join(root, ".claude", "atlas"))
-        self.assertTrue(os.path.isfile(os.path.join(out, "grids.jsonl")))
-        self.assertFalse(os.path.exists(legacy))
-
-    def test_existing_new_location_wins(self):
-        root = make_project()
-        store.write_shard(os.path.join(root, ".claude", "atlas"), "grids", [])
-        os.makedirs(os.path.join(root, "var", "atlas"))
-        self.assertEqual(atlas_dir(root), os.path.join(root, ".claude", "atlas"))
-        self.assertTrue(os.path.isdir(os.path.join(root, "var", "atlas")))
+        self.assertEqual(atlas_dir(root), os.path.join(root, ".oro-ai", "atlas"))
 
 
 class PerShardStalenessTest(unittest.TestCase):

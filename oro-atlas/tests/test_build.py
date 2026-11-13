@@ -46,7 +46,7 @@ def touch_later(path, text):
 class StalenessTest(unittest.TestCase):
     def setUp(self):
         self.root = make_project()
-        self.out = os.path.join(self.root, ".claude", "atlas")
+        self.out = os.path.join(self.root, ".oro-ai", "atlas")
         index.update_index(self.root, self.out, {"events": 1})
 
     def test_fresh(self):
@@ -114,7 +114,7 @@ class AtomicBuildTest(unittest.TestCase):
         self.assertEqual(open(os.path.join(self.ctx.out_dir, ".gitignore")).read(), "*\n")
         self.assertFalse(os.path.exists(os.path.join(self.root, "var")))
         self.assertFalse([f for f in os.listdir(self.ctx.out_dir) if f.endswith(".tmp")])
-        self.assertEqual(self.ctx.out_dir, os.path.join(self.root, ".claude", "atlas"))
+        self.assertEqual(self.ctx.out_dir, os.path.join(self.root, ".oro-ai", "atlas"))
         self.assertEqual(sorted(index.read_index(self.ctx.out_dir)["shards"]), ["js", "services", "unsafe"])
 
     def test_only_keeps_other_shards_and_failure_keeps_old_index(self):
@@ -147,7 +147,7 @@ class AtomicBuildTest(unittest.TestCase):
         with mock.patch.object(extractors, "load_all", return_value=fake_mods()):
             build.build(self.ctx, out=io.StringIO())
         visible = []
-        probe = lambda: visible.append(index.read_index(os.path.join(self.root, ".claude", "atlas")) is not None)
+        probe = lambda: visible.append(index.read_index(os.path.join(self.root, ".oro-ai", "atlas")) is not None)
         with mock.patch.object(extractors, "load_all", return_value=fake_mods(barrier=probe)):
             build.build(Context(self.root), out=io.StringIO())
         self.assertTrue(visible and all(visible))

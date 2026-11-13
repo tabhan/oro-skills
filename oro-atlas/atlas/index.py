@@ -26,7 +26,8 @@ def _walk_sources(root):
     """(relpath, mtime_ns, size) of every file under src/ and config/."""
     found = []
     for top in ("src", "config"):
-        for d, _, files in os.walk(os.path.join(root, top)):
+        for d, dirs, files in os.walk(os.path.join(root, top)):
+            dirs[:] = [x for x in dirs if x != "Tests"]  # tests are no extension points; editing them must not stale a shard
             for f in files:
                 path = os.path.join(d, f)
                 try:

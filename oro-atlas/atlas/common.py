@@ -5,20 +5,13 @@ import os
 import re
 import subprocess
 
-OUT_SUBDIR = os.path.join(".claude", "atlas")
-LEGACY_SUBDIR = os.path.join("var", "atlas")  # indexes built before the move; migrated on first use
+OUT_SUBDIR = os.path.join(".oro-ai", "atlas")
+# Index locations of earlier versions; atlas/migrate.py rebuilds into OUT_SUBDIR and then removes them.
+LEGACY_SUBDIRS = (os.path.join(".claude", "atlas"), os.path.join("var", "atlas"))
 
 
 def atlas_dir(root):
-    """The index directory; an index at the legacy location is moved there once (read in place if it cannot be)."""
-    new, old = os.path.join(root, OUT_SUBDIR), os.path.join(root, LEGACY_SUBDIR)
-    if not os.path.isdir(new) and os.path.isdir(old):
-        try:
-            os.makedirs(os.path.dirname(new), exist_ok=True)
-            os.rename(old, new)
-        except OSError:
-            new = old if os.path.isdir(old) else new
-    return new
+    return os.path.join(root, OUT_SUBDIR)
 
 
 def ensure_ignored(out_dir):

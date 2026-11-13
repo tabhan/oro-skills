@@ -40,7 +40,7 @@ class Base(unittest.TestCase):
         self.tmp.cleanup()
 
     def build_index(self):
-        out = os.path.join(self.root, ".claude", "atlas")
+        out = os.path.join(self.root, ".oro-ai", "atlas")
         os.makedirs(out)
         for name, rec in (("unsafe", UNSAFE), ("tags", TAG)):
             with open(os.path.join(out, name + ".jsonl"), "w") as fh:
@@ -68,7 +68,7 @@ class HookTest(Base):
     def test_deny_final_target_uses_final_advice(self):
         self.build_index()
         rec = dict(UNSAFE, id="Foo\\Fin", keys=["Fin", "foo.fin"], services=["foo.fin"], kind="final class")
-        with open(os.path.join(self.root, ".claude", "atlas", "unsafe.jsonl"), "a") as fh:
+        with open(os.path.join(self.root, ".oro-ai", "atlas", "unsafe.jsonl"), "a") as fh:
             fh.write(json.dumps(rec) + "\n")
         _, out = self.edit("services:\n  x:\n    decorates: foo.fin\n")
         reason = out["hookSpecificOutput"]["permissionDecisionReason"]
@@ -148,7 +148,7 @@ class HookTest(Base):
 
     def test_alias_resolved_via_services_shard(self):
         self.build_index()
-        with open(os.path.join(self.root, ".claude", "atlas", "services.jsonl"), "w") as fh:
+        with open(os.path.join(self.root, ".oro-ai", "atlas", "services.jsonl"), "w") as fh:
             fh.write(json.dumps({"id": "foo.mgr", "class": "Foo\\Mgr", "aliases": ["foo.mgr.alias"]}) + "\n")
         _, out = self.edit("decorates: foo.mgr.alias")
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")

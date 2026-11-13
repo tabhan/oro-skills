@@ -11,10 +11,15 @@ oro-atlas/bin/atlas-build --project /path/to/oro-project --only events,tags
 
 Reads `vendor/oro*`, `vendor/oroinc`, `vendor/aaxisdigital`, `node_modules/@oroinc` and `src/`, plus
 `php bin/console debug:container` / `debug:event-dispatcher` (`--env=prod`, JSON, cached once per
-build in `.claude/atlas/raw/`). Output goes to `<project>/.claude/atlas/`: one `<category>.jsonl` shard per
+build in `.oro-ai/atlas/raw/`). Output goes to `<project>/.oro-ai/atlas/`: one `<category>.jsonl` shard per
 extractor and `index.json` (composer.lock sha256, oro/platform version, timestamp, counts).
 The directory carries its own `.gitignore` (`*`), so nothing needs ignoring in the project; an index
-left at the old `var/atlas/` is moved on first use.
+left at the older `.claude/atlas/` or `var/atlas/` is migrated automatically: the SessionStart hook
+(`hooks/sessionstart_migrate.py`, also `atlas migrate`) rebuilds into `.oro-ai/atlas/` in the background (about a
+minute on a large project), then deletes the old directory, rewrites old index paths in hook commands of
+`.claude/settings.local.json`, and creates `.oro-ai/.gitignore` (`*`, `!.gitignore`, `!config.json`) when that
+file is missing and `.oro-ai/` has no tracked content. A failed build keeps the old index and retries next session.
+Test directories (`**/Tests/**`) are not part of the staleness hash.
 
 ## Staying fresh (no daemon, no token cost)
 - Staleness is per shard: a shard is STALE only when an input it ingests changed (composer.lock/vendor
@@ -27,7 +32,7 @@ left at the old `var/atlas/` is moved on first use.
   the old index. `--no-rebuild` / `ATLAS_NO_AUTOBUILD=1` disables it.
 - `atlas-setup` also registers a silent PostToolUse hook (Edit/Write/MultiEdit on src/config) and
   post-checkout/post-merge/post-rewrite git hooks (never overwriting a foreign hook); they run
-  `atlas-build --incremental --background`, which skips when a build holds `.claude/atlas/.lock`.
+  `atlas-build --incremental --background`, which skips when a build holds `.oro-ai/atlas/.lock`.
 
 ## Setup (once per project)
 

@@ -8,7 +8,7 @@ import io
 import os
 import subprocess
 
-from . import build, extractors, index, rollup, store
+from . import build, extractors, index, migrate, rollup, store
 from .common import AtlasError, Context, MissingShard, atlas_dir, find_project_root
 
 # subcommand -> shard filename stem
@@ -177,6 +177,7 @@ def build_parser():
         p.add_argument("--limit", type=int, default=5)
     st = sub.add_parser("status", help="show per-shard freshness (exit 2 when any shard is STALE/MISSING)", parents=[late])
     st.add_argument("--quiet", action="store_true", help="no output, exit status only")
+    sub.add_parser("migrate", help="rebuild the index under .oro-ai/atlas and remove the legacy directory", parents=[late])
     return ap
 
 
@@ -283,6 +284,12 @@ def main(argv=None, out=None):
     try:
         root = find_project_root(args.project)
         out_dir = atlas_dir(root)
+        if args.cmd == "migrate":
+            return migrate.run(root, out)
+        if migrate.pending(root):
+            if not migrate.running(root):
+                migrate.spawn(root)
+            sys.stderr.write("atlas: the index is moving to .oro-ai/atlas (rebuild running in the background, about a minute)\n")
         if args.cmd == "status":
             code = run_status(root, out_dir, out, args.json, args.quiet)
         else:
