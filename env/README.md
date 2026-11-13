@@ -43,7 +43,7 @@ Categories come from `lib/refresh.py` (Tests/ dirs ignored). Steps run in this o
 
 | Changed | Step |
 |---|---|
-| `composer.lock` | `composer install` (scripts on; `--no-dev` only if vendor was installed without dev), caches, routes dump |
+| `composer.lock` | `composer install --no-interaction --no-scripts` (Oro's script handlers run pnpm/assets, which `assets` covers; `--no-dev` only if vendor was installed without dev; one `--ignore-platform-req` per entry of env.yml `composer_ignore_platform_reqs`), caches, routes dump |
 | `config/**`, `Resources/config/**`, `*.php` / `*.twig` under `src` | delete `var/cache/<env>` and `cache:warmup`: local, then test + behat_test |
 | any `Migrations/` | local `oro:migration:load --force`; local-test only reports `baseline-stale` (nothing rebuilds it automatically: run `aaxis-oro env baseline`) |
 | `entity_extend.yml`, `config/oro/entity*.yml`, `entity_configs.yml` | local `oro:entity-config:update` + `oro:entity-extend:update` |

@@ -3,7 +3,7 @@ import os
 import subprocess
 import unittest
 
-from test_scripts import ROOT, Base, write
+from test_scripts import ROOT, Base, read, write
 
 REFRESH = os.path.join(ROOT, "scripts", "local-env", "lib", "refresh.py")
 
@@ -195,6 +195,39 @@ class Refresh(Base):
         t = time.time()
         self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).stdout.strip(), first)
         self.assertLess(time.time() - t, 1.0)
+
+    def test_test_cache_warms_behat_test_only(self):
+        os.makedirs(os.path.join(self.project, "var", "cache", "test"))
+        self.refresh()
+        self.assertIn("cache:warmup --env=behat_test", self.calls())
+        self.assertNotIn("cache:warmup --env=test", self.calls())
+        self.assertFalse(os.path.exists(os.path.join(self.project, "var", "cache", "test")))
+
+    def test_composer_without_scripts_and_configured_platform_ignores(self):
+        path = os.path.join(self.project, ".oro-ai", "local-env", "env.yml")
+        write(path, read(path) + "composer_ignore_platform_reqs: [ext-mongodb, ext-foo]\n")
+        self.refresh()
+        self.assertIn("composer install --no-interaction --no-scripts --ignore-platform-req=ext-mongodb --ignore-platform-req=ext-foo", self.calls())
+
+    def test_no_ignore_flag_without_config(self):
+        self.refresh()
+        self.assertIn("composer install --no-interaction --no-scripts", self.calls())
+        self.assertNotIn("ignore-platform-req", self.calls())
+
+    def test_newly_modified_tracked_files_are_warned_not_reverted(self):
+        target = os.path.join(self.project, "src", "B", "Foo.php")
+        p = self.refresh(STUB_COMPOSER_TOUCH=target)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertRegex(p.stdout, r"WARN tracked file modified: \s*M src/B/Foo.php")
+        self.assertIn("touched", read(target))
+
+    def test_routing_warns_when_disk_files_shadow_gridfs(self):
+        os.makedirs(os.path.join(self.project, "config"))
+        write(os.path.join(self.project, "config", "parameters.yml"), "parameters:\n    gaufrette_adapter.public: 'gridfs:x'\n")
+        os.makedirs(os.path.join(self.project, "public", "media", "js"))
+        write(os.path.join(self.project, "public", "media", "js", "frontend_routes.json"), "{}")
+        p = self.refresh()
+        self.assertIn("WARN stale public/media/js files shadow", p.stdout)
 
     def test_non_git_project_is_not_gated(self):
         import shutil

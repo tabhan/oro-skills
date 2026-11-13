@@ -4,14 +4,14 @@
 # without backup: Node paths from env.yml node_pin or .nvmrc via nvm, GridFS adapters; also strips Redis cache
 # DSNs from the test stack dotenv files, which are backed up to var/backups/oro-local-env/), vhost (create the
 # test RabbitMQ vhost), hosts (prints the sudo command), templates (re-render once render.sh exists).
-# Usage: repair.sh [--only params|node|vhost|hosts|templates] [--project P] [--dry-run] [--verbose]   (node = params)
+# Usage: repair.sh [--only params|node|vhost|hosts|templates|media] [--project P] [--dry-run] [--verbose]   (node = params)
 # Exit: 0 repaired, 1 failure, 10 sudo steps printed, 64 usage.
 source "$(dirname "$0")/lib/common.sh"; source "$LE_LIB/stack.sh"
 le_init repair "$@"
 ONLY=""
 for i in "${!ARGS[@]}"; do [ "${ARGS[$i]}" = "--only" ] && ONLY=${ARGS[$((i + 1))]:-}; done
 [ "$ONLY" = node ] && ONLY=params
-case $ONLY in ""|params|vhost|hosts|templates) ;; *) LE_USAGE="repair.sh [--only params|vhost|hosts|templates]"; usage_exit ;; esac
+case $ONLY in ""|params|vhost|hosts|templates|media) ;; *) LE_USAGE="repair.sh [--only params|vhost|hosts|templates|media]"; usage_exit ;; esac
 want_item() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 backup() { local dst=$PROJECT/var/backups/oro-local-env; mut "backup $1" bash -c 'mkdir -p "$1" && cp -p "$2" "$1/$(basename "$2").$(date +%Y%m%d-%H%M%S)"' _ "$dst" "$1"; }
 
@@ -39,6 +39,17 @@ if want_item params; then
             [ "$DRY" = 1 ] || say "params: removed Redis cache DSNs from $f"
         fi
     done
+fi
+if want_item media; then
+    # Moved, never deleted: the files were written by an older dump and may be the only copy of what nginx served.
+    dst=$PROJECT/.oro-ai/local-env/moved-aside/$(date +%Y%m%d-%H%M%S); n=0
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        rel=${f#"$PROJECT"/}
+        mut "move aside $rel" bash -c 'mkdir -p "$(dirname "$2/$3")" && mv "$1" "$2/$3"' _ "$f" "$dst" "$rel" || fail "move $rel"
+        n=$((n + 1))
+    done < <(media_shadow_files)
+    [ "$n" -gt 0 ] && say "media: moved $n shadowing file(s) to ${dst#"$PROJECT"/}"
 fi
 if want_item vhost; then
     if vhost_exists "$MQ_VHOST"; then say "vhost: $MQ_VHOST present"

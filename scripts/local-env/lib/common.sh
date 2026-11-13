@@ -84,6 +84,14 @@ dotenv_get() {
     return 0
 }
 
+# Files in public/media/js that nginx serves from disk and so shadow the dump Oro writes through the public gaufrette
+# adapter; empty unless that adapter is not the local filesystem.
+public_adapter_remote() { local a; a=$(python3 "$LE_LIB/nodephp.py" get-param "$PROJECT/config/parameters.yml" gaufrette_adapter.public 2>/dev/null); [ -n "$a" ] && [[ $a != local* ]]; }
+media_shadow_files() {
+    public_adapter_remote || return 0
+    ls -1 "$PROJECT"/public/media/js/*_routes.json "$PROJECT"/public/media/js/translation/*.json 2>/dev/null
+}
+
 nvm_version() { # resolves env.yml node_pin, else .nvmrc, through nvm; prints vX.Y.Z or N/A
     local want=${NODE_PIN:-}; [ -n "$want" ] || want=$(tr -d ' \n' < "$PROJECT/.nvmrc" 2>/dev/null) || return
     # shellcheck disable=SC1091

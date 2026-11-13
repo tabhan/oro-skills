@@ -31,6 +31,8 @@ for k in public private; do
     got=$(python3 "$LE_LIB/nodephp.py" get-param "$PROJECT/config/parameters.yml" "gaufrette_adapter.$k" 2>/dev/null)
     if [ "$got" = "gridfs:%env(ORO_MONGODB_DSN_${k^^})%" ]; then ok "gaufrette-$k"; else bad "gaufrette-$k" "parameters.yml gaufrette_adapter.$k is '${got:-unset}', expected the GridFS adapter (repair.sh --only params)"; fi
 done
+shadow=$(media_shadow_files | wc -l)
+if [ "$shadow" -gt 0 ]; then bad media-shadow "$shadow stale file(s) in public/media/js shadow the gridfs-served routes/translation dump (repair.sh --only media)"; else ok media-shadow; fi
 redis=$(grep -lE '^ORO_REDIS_(CACHE|DOCTRINE|LAYOUT)_DSN=' "$PROJECT"/.env-app.test.local "$PROJECT"/.env-app.behat_test.local 2>/dev/null | xargs -r -n1 basename | tr '\n' ' ')
 if [ -n "$redis" ]; then bad redis-cache "Redis cache DSNs set in ${redis% }; caches stay on disk (repair.sh --only params)"; else ok redis-cache; fi
 

@@ -413,6 +413,35 @@ class Params(Base):
         self.assertNotIn("gaufrette", c.stdout)
         self.assertNotIn("redis-cache", c.stdout)
 
+    def shadow(self, adapter="'gridfs:%env(ORO_MONGODB_DSN_PUBLIC)%'"):
+        write(self.params, read(self.params).replace("'local'", adapter))
+        js = os.path.join(self.project, "public", "media", "js")
+        os.makedirs(os.path.join(js, "translation"))
+        write(os.path.join(js, "frontend_routes.json"), "{}")
+        write(os.path.join(js, "translation", "en_US.json"), "{}")
+        return js
+
+    def test_check_flags_disk_dump_shadowing_gridfs_and_repair_moves_it_aside(self):
+        js = self.shadow()
+        self.assertIn("DRIFT media-shadow", self.run_script("check.sh").stdout)
+        self.run_script("repair.sh", "--only", "media", "--dry-run")
+        self.assertTrue(os.path.exists(os.path.join(js, "frontend_routes.json")))
+        r = self.run_script("repair.sh", "--only", "media")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(js, "frontend_routes.json")))
+        self.assertFalse(os.path.exists(os.path.join(js, "translation", "en_US.json")))
+        aside = os.path.join(self.project, ".oro-ai", "local-env", "moved-aside")
+        ts = os.listdir(aside)
+        self.assertEqual(len(ts), 1)
+        self.assertTrue(os.path.exists(os.path.join(aside, ts[0], "public", "media", "js", "frontend_routes.json")))
+        self.assertNotIn("media-shadow", self.run_script("check.sh").stdout)
+
+    def test_local_filesystem_adapter_is_not_shadowing(self):
+        js = self.shadow("'local:/var/media'")
+        self.assertNotIn("media-shadow", self.run_script("check.sh").stdout)
+        self.run_script("repair.sh", "--only", "media")
+        self.assertTrue(os.path.exists(os.path.join(js, "frontend_routes.json")))
+
     def test_node_pin_wins_over_nvmrc(self):
         subprocess.run(["python3", os.path.join(SCRIPTS, "lib", "envsh.py"), "set", "--project", self.project, "node_pin", "22.1.0"], check=True)
         self.run_script("repair.sh", "--only", "params", "--dry-run")

@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 echo "composer $*" >> "$STUB_LOG"
+[ -n "${STUB_COMPOSER_TOUCH:-}" ] && echo touched >> "$STUB_COMPOSER_TOUCH"
 exit "${STUB_COMPOSER_RC:-0}"
