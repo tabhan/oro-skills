@@ -1,50 +1,67 @@
-# Oro Skills for Claude Code
+# aaxis-oro
 
-Reusable [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills for OroCommerce development. Each skill is a self-contained knowledge base that Claude Code consults automatically when working on relevant tasks.
+Claude Code plugin for OroCommerce teams: task-indexed solution knowledge, the atlas extension-point index, e2e and
+local-environment tooling, and enforcement hooks. One CLI, `aaxis-oro`, fronts all tooling.
 
-**Why so little content:** this repo used to carry a near-complete mirror of generic Oro/OroCommerce documentation. As of 2026-09-10 that generic material was removed — it duplicated the official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugin suite's own reference docs, which `install.sh` installs alongside this plugin (see Installation). What's left here is only content tied to a real incident/gotcha hit on this project, that the official plugin doesn't cover.
+**Why little generic content:** generic Oro documentation is covered by the official
+[`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugins, which `install.sh` installs alongside
+this plugin. A skill here records project decisions and real incidents, and points at Oro's docs for mechanics.
+A skill holds judgment; mechanics that mirror code (flags, config keys, setup steps) stay in the README beside that
+code, and deterministic work lives in scripts, not prose.
 
-**Adding a skill:** a skill earns its place only once there is a concrete incident to record (symptom → root cause → fix). An empty placeholder skill is worse than no skill: its description is resident in every session and routes work to a body that has nothing to say. There is deliberately no frontend skill here for that reason — until a real frontend incident lands that the official plugin doesn't cover, the plugin is the answer.
+## Skills
 
-**Skill vs. repo README:** a skill holds the *judgment* calls (what to tag, what never to truncate). Mechanics that mirror code — CLI flags, config keys, setup steps — stay in the README that ships beside that code, and the skill points at it. A copy here cannot be updated by whoever changes that code, and a stale copy loaded into context is worse than no copy.
+| Skill | Use |
+|-------|-----|
+| [atlas](atlas/) | Generated index of Oro extension points (events, tags, services, grids, workflows, MQ, config, layouts, JS) plus `unsafe <Class>` for decorator safety. Run first, before reading `vendor/`. |
+| [solutions](solutions/) | Task-indexed solution knowledge: dialog/content-widget forms, core service overrides (interceptor), entity schema/config, enums, datagrids, migrations, dev loop, Aaxis bundles catalogue, POC standard. |
+| [e2e](e2e/) | Playwright-BDD authoring rules and decision list (fixtures, grid filters, purge, parallel lanes). |
+| [env](env/) | Local and local-test environment: check, repair, reset, baseline, workers, host switch. |
 
-## Available Skills
+Agent: `oro-architect-gate` (read-only plan/diff gate against the atlas index and the Aaxis rules).
 
-| Skill | Description |
-|-------|-------------|
-| [oro-backend-docs](oro-backend-docs/) | Buckman-specific backend gotchas (entity-extend schema drift, serialized enum-extend storage) not covered by the official plugin |
-| [oro-e2e-testing](oro-e2e-testing/) | Playwright-BDD e2e authoring rules for OroCommerce/OroPlatform (Alice fixtures, grid filters, purge/re-runnability, shared-DB safety) |
-| [oro-dialog-forms](oro-dialog-forms/) | Building frontend dialog/drawer forms that also work as landing-page content widgets (controller → handler → layout → Twig → JS trigger → locale URLs) |
-| [oro-workflow](oro-workflow/) | Dev-loop conventions specific to this project: shell aliases, cache invalidation, service overrides, system-config groups |
-| [oro-atlas](oro-atlas/) | Generated, queryable index of Oro extension points (events, tags, services, grids, workflows, MQ, config, layouts, JS) plus `atlas unsafe <Class>` for decorator safety; the plugin ships `atlas` on PATH |
-| [oro-conventions](oro-conventions/) | Buckman-specific Oro conventions & gotchas: aspect-interceptor overrides, storefront localization traps, entity-config seeding, PHPUnit entity stubs, datagrid pitfalls, jsonb migrations, workflow-data encoding, asset versioning |
+## CLI
+
+```
+aaxis-oro atlas <sub> <term> | build | setup | precommit | status | notes | migrate
+aaxis-oro env check|repair|reset|baseline|import-attachments|restore|workers|switch
+aaxis-oro test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]
+aaxis-oro version [diff|applies]
+aaxis-oro dev lint
+```
+
+The plugin's `bin/` is on the Bash tool PATH while the plugin is enabled; `install.sh` links `aaxis-oro` into
+`~/.local/bin` for normal shells (override with `ORO_ATLAS_BIN_DIR`). The team `oro-project` script
+(`scripts/local-env/oro-project`) delegates to `aaxis-oro env switch`.
 
 ## Installation
 
-oro-skills is a self-hosted Claude Code plugin: skills, the `oro-architect-gate` agent and the atlas hooks (`hooks/hooks.json`, commands use `${CLAUDE_PLUGIN_ROOT}`) all come from the plugin, never from per-project `settings.json`/`settings.local.json`. It is never published to a public or shared marketplace; the marketplace is this repo.
+Self-hosted plugin: skills, agent and hooks (`hooks/hooks.json`, commands use `${CLAUDE_PLUGIN_ROOT}`) come from the
+plugin, never from per-project settings. The marketplace is this repo.
 
 ```bash
 claude plugin marketplace add git@github.com:tabhan/oro-skills.git
-claude plugin install oro-skills@oro-skills
-claude plugin list                      # oro-skills@oro-skills enabled
+claude plugin install aaxis-oro@aaxis-oro
+claude plugin list                      # aaxis-oro@aaxis-oro enabled
 ```
 
-Local development without installing: `claude --plugin-dir /opt/projects/oro-skills`. Validate manifests with `claude plugin validate /opt/projects/oro-skills`. Updates: `claude plugin marketplace update oro-skills`, then `claude plugin update oro-skills@oro-skills`.
+Local development: `claude --plugin-dir /opt/projects/oro-skills`; validate with `claude plugin validate /opt/projects/oro-skills`.
+Updates: `claude plugin marketplace update aaxis-oro`, then `claude plugin update aaxis-oro@aaxis-oro`.
 
-Lint: `install.sh` sets `core.hooksPath .githooks` for this checkout (idempotent) so `bin/oro-skills-lint` runs before each commit; CI (`.github/workflows/lint.yml`) is the authoritative gate. See docs/VERSIONING.md.
+Lint: `install.sh` sets `core.hooksPath .githooks` so `aaxis-oro dev lint` runs before each commit; CI
+(`.github/workflows/lint.yml`) is the authoritative gate. See docs/VERSIONING.md.
 
-Project requirement: every Oro project needs `.oro-ai/.gitignore` containing `*`, `!.gitignore`, `!config.json` (`.oro-ai/` is the local data root: version cache, announce marker, atlas). Hooks never create project files; they write into `.oro-ai/` only when it already exists. Setup (`atlas-setup`/local-env) is responsible for creating that file.
+Project requirement: `.oro-ai/.gitignore` containing `*`, `!.gitignore`, `!config.json` (the local data root: version
+cache, announce marker, atlas). Hooks never create project files. Once per project: `aaxis-oro atlas setup <project>`
+removes legacy atlas entries from `.claude/settings.local.json` and builds the index; when `aaxis-oro atlas status`
+prints `STALE` (exit 2) refresh with `aaxis-oro atlas build --project <project> --incremental`.
 
-Release rule: every push to `main` bumps `version` in `.claude-plugin/plugin.json`; without a bump installed copies never update.
+Release rule: every push to `main` bumps `version` in `.claude-plugin/plugin.json`; without a bump installed copies
+never update.
 
-The `atlas`, `atlas-build`, `atlas-setup` and `atlas-precommit` CLIs are also in the plugin's `bin/` (on the Bash tool's PATH while the plugin is enabled). For a normal shell, `install.sh` links them into `~/.local/bin` (override with `ORO_ATLAS_BIN_DIR`).
+`install.sh` also removes the pre-plugin `~/.claude/skills/oro-*` symlinks, registers the marketplace, installs the
+plugin and the official plugins (`--no-official-plugins` skips them; `--no-plugin` skips the plugin; `ORO_SKILLS_OFFICIAL_PLUGINS`
+overrides the list; `ORO_SKILLS_MARKETPLACE` the marketplace source). `install.sh --uninstall` removes the CLI link.
 
-### Migrating from the symlink install
-
-`install.sh` is now a transition shim: it removes the old `~/.claude/skills/oro-*` and `~/.claude/agents/oro-architect-gate.md` symlinks (they would duplicate every skill next to the plugin's copy), keeps the CLIs on PATH, registers the marketplace and installs the plugin (`--no-plugin` skips that step; `ORO_SKILLS_MARKETPLACE` overrides the marketplace source). `install.sh --uninstall` removes the CLI links.
-
-Then, once per Oro project: run `atlas-setup <project>`. It no longer registers hooks; it removes the old atlas entries from `.claude/settings.local.json` (otherwise every hook fires twice), installs the git refresh hooks and builds the index. Re-run it in every new checkout or worktree. When `atlas status` prints `STALE` (exit 2), refresh with `atlas-build --project <project> --incremental`.
-
-The official [`oroinc/ai-dev-platform`](https://github.com/oroinc/ai-dev-platform) plugins (`orocommerce-development`, `-review`, `-testing`, `-maintenance`) are installed by `install.sh` as before; skip with `--no-official-plugins` or override with `ORO_SKILLS_OFFICIAL_PLUGINS`.
-
-Clone access: `git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills` (or `bootstrap.sh` with a read-only `ORO_SKILLS_TOKEN` from the repo owner).
+Clone access: `git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills` (or `bootstrap.sh` with a
+read-only `ORO_SKILLS_TOKEN` from the repo owner).

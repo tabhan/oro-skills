@@ -1,4 +1,4 @@
-"""Static checks for version-scoped guidance (run by bin/oro-skills-lint in pre-commit and CI).
+"""Static checks for version-scoped guidance (run by `aaxis-oro dev lint` in pre-commit and CI).
 
 Violations: unparsable `oro:` ranges, malformed or unbalanced section markers, a non-default variant without a
 `topic:`, overlapping ranges or gaps inside one topic, and version numbers in skill/agent descriptions.

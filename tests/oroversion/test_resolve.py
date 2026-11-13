@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 
 from oroversion import parse_version, resolve as R  # noqa: E402
 
-CLI = os.path.join(ROOT, "bin", "oro-applies")
+CLI = os.path.join(ROOT, "bin", "aaxis-oro")
 SKILL = os.path.join(HERE, "fixtures", "skill")
 REGISTRY = os.path.join(HERE, "fixtures", "checks.yml")
 
@@ -30,7 +30,7 @@ def rel(paths):
 
 
 def cli(proj, *args):
-    return subprocess.run([sys.executable, CLI, "--project", proj, *args], capture_output=True, text=True)
+    return subprocess.run([sys.executable, CLI, "version", "applies", "--project", proj, *args], capture_output=True, text=True)
 
 
 class ActiveSetTest(unittest.TestCase):

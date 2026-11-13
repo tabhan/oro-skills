@@ -6,17 +6,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_legacy.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_legacy.py\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_migrate.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_migrate.py\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_version.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_version.py\"",
             "timeout": 10
           }
         ]
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/sessionstart_atlas.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_atlas.py\"",
             "timeout": 10
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/pretooluse_edit.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/pretooluse_edit.py\"",
             "timeout": 10
           }
         ]
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/pretooluse_bash.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/pretooluse_bash.py\"",
             "timeout": 10
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/posttooluse_bash.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/posttooluse_bash.py\"",
             "timeout": 10
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/userpromptsubmit.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/userpromptsubmit.py\"",
             "timeout": 10
           }
         ]
@@ -82,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/subagentstart.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/subagentstart.py\"",
             "timeout": 10
           }
         ]
@@ -93,7 +93,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/oro-atlas/hooks/stop.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/stop.py\"",
             "timeout": 10
           }
         ]

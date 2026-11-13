@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 
 from oroversion import Constraint, ConstraintError, detect, parse_version  # noqa: E402
 
-CLI = os.path.join(ROOT, "bin", "oro-version")
+CLI = os.path.join(ROOT, "bin", "aaxis-oro")
 
 
 def project(fixture):
@@ -137,7 +137,7 @@ class DetectTest(unittest.TestCase):
 
 class CliTest(unittest.TestCase):
     def run_cli(self, d, *args):
-        return subprocess.run([sys.executable, CLI, "--project", d, *args], capture_output=True, text=True)
+        return subprocess.run([sys.executable, CLI, "version", "--project", d, *args], capture_output=True, text=True)
 
     def test_exit_codes(self):
         p = self.run_cli(project("lock-705"))

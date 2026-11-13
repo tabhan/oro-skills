@@ -5,12 +5,12 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-CLI = os.path.join(ROOT, "bin", "oro-skills-lint")
+CLI = os.path.join(ROOT, "bin", "aaxis-oro")
 LINT = os.path.join(HERE, "fixtures", "lint")
 
 
 def run(*args):
-    return subprocess.run([sys.executable, CLI, *args], capture_output=True, text=True)
+    return subprocess.run([sys.executable, CLI, "dev", "lint", *args], capture_output=True, text=True)
 
 
 def case(name):

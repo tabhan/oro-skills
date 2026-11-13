@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# oro: ">=7.0.0"
+# Switch the host to a project: /oroapp symlink, PHP (from composer.json require.php), Node (from .nvmrc, via nvm),
+# docker stack and the Node paths in config/parameters.yml. Same name and behaviour as the team tool, but Node and
+# PHP come from the project files instead of NODE_VERSION/PHP_VERSION in .env-app.local.
+# Usage: aaxis-oro env switch <project-dir-name>   switch (run by the user; uses sudo; team alias: oro-project)
+#        aaxis-oro env switch --install              print the sudo command that links this script as /usr/local/bin/oro-project
+# Claude Code sessions never run the switch: they print SUDO-NEEDED (exit 10) for the user to run.
+# Exit: 0 done, 1 failure, 10 sudo needed, 64 usage.
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+if [ "${1:-}" = "--install" ]; then
+    echo "SUDO-NEEDED: sudo ln -sf $HERE/oro-project /usr/local/bin/oro-project"; exit 10
+fi
+[ -n "${1:-}" ] || { echo "Error: Missing project name." >&2; exit 64; }
+TARGET_DIR=/opt/projects/$1
+[ -d "$TARGET_DIR" ] || { echo "Error: Folder $TARGET_DIR doesn't exist." >&2; exit 1; }
+if [ -n "${CLAUDECODE:-}" ]; then echo "SUDO-NEEDED: aaxis-oro env switch $1"; exit 10; fi
+
+NVMRC=$(tr -d ' \n' < "$TARGET_DIR/.nvmrc" 2>/dev/null)
+[ -n "$NVMRC" ] || { echo "Error: $TARGET_DIR/.nvmrc missing" >&2; exit 1; }
+REQ=$(python3 "$HERE/lib/nodephp.py" php-require "$TARGET_DIR") || exit 1
+PHP_VERSION=""
+for bin in /usr/bin/php[0-9]*.[0-9]*; do
+    v=${bin##*/php}
+    python3 "$HERE/lib/nodephp.py" php-ok "$REQ" "$v.0" && PHP_VERSION=$v
+done
+[ -n "$PHP_VERSION" ] || { echo "Error: no installed php satisfies $REQ" >&2; exit 1; }
+
+sudo supervisorctl stop mc: fpm nginx ws
+(cd /oroapp && docker --log-level ERROR compose --env-file .env-app.local down)
+sudo rm -rf /oroapp && sudo ln -s "$TARGET_DIR" /oroapp
+sudo rm -rf /usr/sbin/php-fpm
+sudo ln -s "/usr/sbin/php-fpm$PHP_VERSION" /usr/sbin/php-fpm
+sudo update-alternatives --set php "/usr/bin/php$PHP_VERSION"
+sudo sed -i "s|unix:/run/php/php[0-9]\.[0-9]-fpm.sock|unix:/run/php/php${PHP_VERSION}-fpm.sock|g" /etc/nginx/conf.d/php-fpm.conf
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+nvm install "$NVMRC" && nvm alias default "$NVMRC"
+NODE_FULL=$(nvm version "$NVMRC")
+python3 "$HERE/lib/nodephp.py" set-node /oroapp/config/parameters.yml "$NVM_DIR/versions/node/$NODE_FULL/bin"
+
+(cd /oroapp && docker --log-level ERROR compose --env-file .env-app.local up -d)
+sudo supervisorctl start fpm nginx

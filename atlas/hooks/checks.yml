@@ -1,0 +1,15 @@
+# Hook-check registry read by `aaxis-oro version applies --check <id>`; a missing `oro` means ">=7.0.0".
+checks:
+  # Deny edits that add `decorates:` on a service others typehint (pretooluse_edit.py)
+  - id: decorates-unsafe-target
+    severity: deny
+    oro: ">=7.0.0"
+    topic: decorates-unsafe-target
+  # Deny extension-file edits while the atlas index is stale/missing or its build failed (pretooluse_edit.py)
+  - id: atlas-index-fresh
+    severity: deny
+    oro: ">=7.0.0"
+  # Deny extension-file edits before any `atlas <sub>` query ran this session (pretooluse_edit.py)
+  - id: atlas-query-first
+    severity: deny
+    oro: ">=7.0.0"

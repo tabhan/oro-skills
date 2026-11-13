@@ -38,7 +38,7 @@ le_init() {
     : > "$LOG"
     # shellcheck disable=SC2012
     ls -1t "$LOGDIR/$LE_NAME"-*.log 2>/dev/null | tail -n +11 | xargs -r rm -f --
-    python3 "$LE_ROOT/bin/oro-applies" --project "$PROJECT" "$0" >/dev/null 2>&1
+    python3 "$LE_ROOT/bin/aaxis-oro" version applies --project "$PROJECT" "$0" >/dev/null 2>&1
     if [ $? -eq 1 ]; then echo "$LE_NAME: skipped, does not apply to this Oro version"; exit 0; fi
     local out rc
     out=$(python3 "$LE_LIB/envsh.py" shell --project "$PROJECT" 2>"$LOG.err"); rc=$?

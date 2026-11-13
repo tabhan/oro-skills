@@ -6,7 +6,7 @@
   env.py get [--project P] <a.b>    print one value (lists as comma-separated)
   env.py path [--project P]         print the env.yml path
 
-Exit 2 when migrate finds both files and they differ; 64 on usage errors. Stdlib only (miniyaml from oro-atlas).
+Exit 2 when migrate finds both files and they differ; 64 on usage errors. Stdlib only (miniyaml from atlas).
 Domains and certificates are never defaulted: validate lists them as asks for setup.
 """
 import json
@@ -17,14 +17,14 @@ import sys
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.realpath(os.path.join(HERE, "..", "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "oro-atlas"))
+sys.path.insert(0, os.path.join(ROOT, "atlas"))
 
 from atlas import miniyaml  # noqa: E402
 
-SCHEMA_PATH = os.path.join(ROOT, "oro-local-env", "schema", "env.schema.json")
+SCHEMA_PATH = os.path.join(ROOT, "env", "schema", "env.schema.json")
 NEW_REL = os.path.join(".oro-ai", "local-env", "env.yml")
 OLD_REL = os.path.join(".claude", "oro-local-env", "env.yml")
-HEADER = "# Per-clone local environment facts for the oro-skills local-env scripts. Never committed (.oro-ai/ is untracked).\n"
+HEADER = "# Per-clone local environment facts for the aaxis-oro env scripts. Never committed (.oro-ai/ is untracked).\n"
 
 # Non-environment-specific defaults only: no domains, certs or namespaces.
 DEFAULTS = {

@@ -179,7 +179,7 @@ def active_files(target, version, warnings=None):
     return files
 
 
-# --- hook-check registry (oro-atlas/hooks/checks.yml) -------------------------------------------------
+# --- hook-check registry (atlas/hooks/checks.yml) -------------------------------------------------
 
 def load_registry(path):
     """Parse the `checks:` list of flat maps (id, severity, oro, ...); minimal YAML, no external deps."""

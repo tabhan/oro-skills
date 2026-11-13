@@ -1,9 +1,9 @@
 {
-  "name": "oro-skills",
-  "owner": {"name": "oro-skills maintainers"},
+  "name": "aaxis-oro",
+  "owner": {"name": "aaxis-oro maintainers"},
   "plugins": [
     {
-      "name": "oro-skills",
+      "name": "aaxis-oro",
       "source": "./",
       "description": "OroCommerce team skills, atlas extension-point index and hooks"
     }

@@ -10,12 +10,12 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 SKILL = os.path.join(HERE, "fixtures", "skill")
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
-CLI = os.path.join(ROOT, "bin", "oro-version")
-HOOK = os.path.join(ROOT, "oro-atlas", "hooks", "sessionstart_version.py")
+CLI = os.path.join(ROOT, "bin", "aaxis-oro")
+HOOK = os.path.join(ROOT, "atlas", "hooks", "sessionstart_version.py")
 
 
 def diff(*args):
-    return subprocess.run([sys.executable, CLI, "diff", "--root", SKILL, *args], capture_output=True, text=True)
+    return subprocess.run([sys.executable, CLI, "version", "diff", "--root", SKILL, *args], capture_output=True, text=True)
 
 
 def lock(version):

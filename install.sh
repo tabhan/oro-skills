@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Transition shim. oro-skills is a Claude Code plugin (skills, agents and hooks come from
-# the plugin). This script: removes the legacy ~/.claude/skills/oro-* and agent symlinks,
-# keeps the atlas CLIs on PATH, then registers the self-hosted marketplace and installs the
-# plugin. Marketplace source: ORO_SKILLS_MARKETPLACE (default git@github.com:tabhan/oro-skills.git).
+# Transition shim. aaxis-oro is a Claude Code plugin (skills, agents and hooks come from
+# the plugin). This script: removes the legacy ~/.claude/skills/oro-* and agent symlinks and the old atlas CLI
+# links, keeps `aaxis-oro` on PATH, then registers the self-hosted marketplace and installs the plugin. Marketplace source: ORO_SKILLS_MARKETPLACE (default git@github.com:tabhan/oro-skills.git).
 #
 # Usage:
 #   ./install.sh                 # update this checkout (git pull), remove legacy symlinks, install the plugin, link CLIs
 #   ./install.sh --no-update     # skip git pull
 #   ./install.sh --project DIR   # project whose .claude/settings.local.json is cleaned of legacy atlas hooks (default: cwd)
-#   ./install.sh --uninstall     # remove the CLI symlinks this script created
+#   ./install.sh --uninstall     # remove the CLI symlink this script created
 #
 # First-time install with SSH access to the repo:
 #   git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills
@@ -40,6 +39,16 @@ SKILLS_DEST="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
 AGENTS_DEST="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 TOKEN="${ORO_SKILLS_TOKEN:-${GITHUB_TOKEN:-}}"
 OFFICIAL_PLUGINS="${ORO_SKILLS_OFFICIAL_PLUGINS:-orocommerce-development orocommerce-review orocommerce-testing orocommerce-maintenance}"
+
+# Symlinks in $1 named $2 that point into this checkout (even when the target no longer exists) are legacy.
+remove_legacy_links() {
+  local dir="$1" pattern="$2" link target
+  for link in "$dir"/$pattern; do
+    [ -L "$link" ] || continue
+    target="$(readlink -f "$link")"
+    case "$target" in "$SCRIPT_DIR"/*) rm "$link"; echo "  removed $link" ;; esac
+  done
+}
 
 git_auth_args=()
 if [ -n "$TOKEN" ]; then
@@ -73,30 +82,10 @@ if [ -d "$SCRIPT_DIR/.git" ] && [ "$(git -C "$SCRIPT_DIR" config --get core.hook
 fi
 
 if [ "$UNINSTALL" -eq 1 ]; then
-  echo "Removing oro-skills symlinks from $SKILLS_DEST"
-  for skill in "$SCRIPT_DIR"/oro-*/; do
-    name="$(basename "$skill")"
-    link="$SKILLS_DEST/$name"
-    if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$skill")" ]; then
-      rm "$link"
-      echo "  removed $link"
-    fi
-  done
-  for agent in "$SCRIPT_DIR"/oro-*/agents/*.md; do
-    [ -f "$agent" ] || continue
-    link="$AGENTS_DEST/$(basename "$agent")"
-    if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$agent")" ]; then
-      rm "$link"
-      echo "  removed $link"
-    fi
-  done
-  for b in atlas atlas-build atlas-setup atlas-precommit; do
-    link="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}/$b"
-    if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$SCRIPT_DIR/oro-atlas/bin/$b")" ]; then
-      rm "$link"
-      echo "  removed $link"
-    fi
-  done
+  echo "Removing aaxis-oro links"
+  remove_legacy_links "$SKILLS_DEST" 'oro-*'
+  remove_legacy_links "$AGENTS_DEST" 'oro-*.md'
+  remove_legacy_links "${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}" '*'
   exit 0
 fi
 
@@ -112,46 +101,30 @@ fi
 
 # Legacy symlinks would duplicate every skill and agent next to the plugin's copy.
 echo "Removing legacy symlinks from $SKILLS_DEST and $AGENTS_DEST"
-for skill in "$SCRIPT_DIR"/oro-*/; do
-  link="$SKILLS_DEST/$(basename "$skill")"
-  if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$skill")" ]; then
-    rm "$link"
-    echo "  removed $link"
-  fi
-done
-for agent in "$SCRIPT_DIR"/oro-*/agents/*.md; do
-  [ -f "$agent" ] || continue
-  link="$AGENTS_DEST/$(basename "$agent")"
-  if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$agent")" ]; then
-    rm "$link"
-    echo "  removed $link"
-  fi
-done
+remove_legacy_links "$SKILLS_DEST" 'oro-*'
+remove_legacy_links "$AGENTS_DEST" 'oro-*.md'
 
 if [ "$INSTALL_PLUGIN" -eq 1 ]; then
   if command -v claude >/dev/null 2>&1; then
-    echo "Registering oro-skills marketplace ($MARKETPLACE) and installing the plugin"
+    echo "Registering aaxis-oro marketplace ($MARKETPLACE) and installing the plugin"
     claude plugin marketplace add "$MARKETPLACE" || echo "  (marketplace add failed or already present)" >&2
-    claude plugin install oro-skills@oro-skills || FAILED+=("claude plugin install oro-skills@oro-skills")
+    claude plugin install aaxis-oro@aaxis-oro || FAILED+=("claude plugin install aaxis-oro@aaxis-oro")
   else
-    echo "  (claude CLI not found: run 'claude plugin marketplace add $MARKETPLACE' and 'claude plugin install oro-skills@oro-skills' later)" >&2
+    echo "  (claude CLI not found: run 'claude plugin marketplace add $MARKETPLACE' and 'claude plugin install aaxis-oro@aaxis-oro' later)" >&2
   fi
 fi
 
-# oro-atlas ships a CLI; link it so agents can call `atlas` without an absolute path.
-ATLAS_BIN_DIR="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}"
-if [ -x "$SCRIPT_DIR/oro-atlas/bin/atlas" ]; then
-  mkdir -p "$ATLAS_BIN_DIR"
-  for b in atlas atlas-build atlas-setup atlas-precommit; do
-    [ -x "$SCRIPT_DIR/oro-atlas/bin/$b" ] || continue
-    ln -sfn "$SCRIPT_DIR/oro-atlas/bin/$b" "$ATLAS_BIN_DIR/$b"
-    echo "  $ATLAS_BIN_DIR/$b -> $SCRIPT_DIR/oro-atlas/bin/$b"
-  done
-  case ":$PATH:" in
-    *":$ATLAS_BIN_DIR:"*) ;;
-    *) echo "  (add $ATLAS_BIN_DIR to PATH, or call $SCRIPT_DIR/oro-atlas/bin/atlas directly)" >&2 ;;
-  esac
-fi
+# One CLI: link it so agents and shells can call `aaxis-oro` without an absolute path.
+CLI_BIN_DIR="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}"
+mkdir -p "$CLI_BIN_DIR"
+remove_legacy_links "$CLI_BIN_DIR" 'atlas*'
+remove_legacy_links "$CLI_BIN_DIR" 'oro-*'
+ln -sfn "$SCRIPT_DIR/bin/aaxis-oro" "$CLI_BIN_DIR/aaxis-oro"
+echo "  $CLI_BIN_DIR/aaxis-oro -> $SCRIPT_DIR/bin/aaxis-oro"
+case ":$PATH:" in
+  *":$CLI_BIN_DIR:"*) ;;
+  *) echo "  (add $CLI_BIN_DIR to PATH, or call $SCRIPT_DIR/bin/aaxis-oro directly)" >&2 ;;
+esac
 
 if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
   if command -v claude >/dev/null 2>&1; then
@@ -168,11 +141,10 @@ if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
 fi
 
 # Pre-plugin atlas hooks in the project's settings.local.json would fire a second time next to the plugin's.
-if [ -f "$SCRIPT_DIR/oro-atlas/bin/atlas-setup" ] && [ -f "$PROJECT_DIR/.claude/settings.local.json" ] \
-   && grep -q "oro-atlas" "$PROJECT_DIR/.claude/settings.local.json"; then
+if [ -f "$PROJECT_DIR/.claude/settings.local.json" ] && grep -q "oro-atlas" "$PROJECT_DIR/.claude/settings.local.json"; then
   echo "Cleaning legacy atlas hooks from $PROJECT_DIR/.claude/settings.local.json"
-  python3 "$SCRIPT_DIR/oro-atlas/bin/atlas-setup" --cleanup-only "$PROJECT_DIR" \
-    || FAILED+=("python3 $SCRIPT_DIR/oro-atlas/bin/atlas-setup --cleanup-only $PROJECT_DIR")
+  python3 "$SCRIPT_DIR/bin/aaxis-oro" atlas setup --cleanup-only "$PROJECT_DIR" \
+    || FAILED+=("python3 $SCRIPT_DIR/bin/aaxis-oro atlas setup --cleanup-only $PROJECT_DIR")
 fi
 
 if [ "${#FAILED[@]}" -gt 0 ]; then

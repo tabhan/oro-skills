@@ -231,7 +231,7 @@ class Workers(Base):
 
 class OroTest(Base):
     def run_ot(self, *args, **env):
-        return subprocess.run([os.path.join(SCRIPTS, "oro-test"), "--project", self.project, *args], capture_output=True, text=True,
+        return subprocess.run([os.path.join(SCRIPTS, "..", "..", "bin", "aaxis-oro"), "test", "--project", self.project, *args], capture_output=True, text=True,
                               env=dict(self.env, **env), cwd=self.project)
 
     def test_no_target_is_usage_error(self):
@@ -421,7 +421,7 @@ class Params(Base):
 
 class Syntax(unittest.TestCase):
     def test_bash_scripts_parse(self):
-        names = [n for n in os.listdir(SCRIPTS) if n.endswith(".sh") or n in ("oro-test", "oro-project")]
+        names = [n for n in os.listdir(SCRIPTS) if n.endswith(".sh") or n in ("test.sh", "switch.sh", "oro-project")]
         names += ["lib/" + n for n in os.listdir(os.path.join(SCRIPTS, "lib")) if n.endswith(".sh")]
         for n in names:
             p = subprocess.run(["bash", "-n", os.path.join(SCRIPTS, n)], capture_output=True, text=True)

@@ -10,8 +10,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: python3 bin/oro-skills-lint
+      - run: python3 bin/aaxis-oro dev lint
       - run: python3 -m unittest discover -s tests/oroversion
-      - run: python3 -m unittest discover -s oro-atlas/tests
+      - run: python3 -m unittest discover -s atlas/tests
       - run: python3 -m unittest discover -s tests/local_env
       - run: python3 -m unittest discover -s tests/aaxis
