@@ -10,8 +10,22 @@ OUT_SUBDIR = os.path.join(".oro-ai", "atlas")
 LEGACY_SUBDIRS = (os.path.join(".claude", "atlas"), os.path.join("var", "atlas"))
 
 
-def atlas_dir(root):
+def new_atlas_dir(root):
+    """Where builds write; always the current location."""
     return os.path.join(root, OUT_SUBDIR)
+
+
+def atlas_dir(root):
+    """Where reads go: the new index once it covers every shard, else an intact legacy one (migration still running)."""
+    new = new_atlas_dir(root)
+    from . import extractors, index  # lazy: index imports this module
+    done = set((index.read_index(new) or {}).get("shards", {}))
+    if not done >= set(extractors.load_all()):
+        for rel in LEGACY_SUBDIRS:
+            old = os.path.join(root, rel)
+            if os.path.isfile(os.path.join(old, index.INDEX_NAME)):
+                return old
+    return new
 
 
 def ensure_ignored(out_dir):
@@ -224,7 +238,7 @@ class Context:
 
     def __init__(self, root, refresh_raw=False):
         self.root = root
-        self.out_dir = atlas_dir(root)
+        self.out_dir = new_atlas_dir(root)
         self.raw_dir = os.path.join(self.out_dir, "raw")
         self.refresh_raw = refresh_raw
         self._locator = None

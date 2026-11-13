@@ -1,17 +1,63 @@
 """Move the index from its legacy locations to <project>/.oro-ai/atlas/ (rebuild, then delete the old directory)."""
 import json
 import os
+import re
 import shutil
+import time
 import subprocess
 import sys
 
 from . import build, extractors, index, store
-from .common import LEGACY_SUBDIRS, AtlasError, Context, atlas_dir
+from .common import LEGACY_SUBDIRS, AtlasError, Context, new_atlas_dir
 
-LOCK_REL = os.path.join(".oro-ai", "atlas-migrate.lock")
+# Lock, log and failure marker live inside the index dir, whose own .gitignore (`*`) keeps them out of git.
+LOCK_NAME, LOG_NAME, FAIL_NAME = "migrate.lock", "migrate.log", "migrate-failed.json"
+RETRY_AFTER_SECONDS = 3600
+MAX_AUTO_FAILURES = 3
 OLD_PATHS = tuple(p.replace(os.sep, "/") for p in LEGACY_SUBDIRS)
 NEW_PATH = ".oro-ai/atlas"
 ROOT_IGNORE = "*\n!.gitignore\n!config.json\n"
+
+
+def _p(root, name):
+    return os.path.join(new_atlas_dir(root), name)
+
+
+def _fingerprint(root):
+    return [index.composer_lock_sha(root), index.source_fingerprint(root)]
+
+
+def failures(root):
+    try:
+        with open(_p(root, FAIL_NAME), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def record_failure(root, reason):
+    prev = failures(root) or {"count": 0}
+    os.makedirs(new_atlas_dir(root), exist_ok=True)
+    with open(_p(root, FAIL_NAME), "w", encoding="utf-8") as fh:
+        json.dump({"count": prev["count"] + 1, "ts": time.time(), "fingerprint": _fingerprint(root), "reason": reason}, fh)
+
+
+def gave_up(root):
+    return (failures(root) or {}).get("count", 0) >= MAX_AUTO_FAILURES
+
+
+def may_auto_spawn(root):
+    """No automatic retry for an hour after a failure unless composer.lock/src changed; none at all after three."""
+    f = failures(root)
+    if not f:
+        return True
+    if f["count"] >= MAX_AUTO_FAILURES:
+        return False
+    return time.time() - f["ts"] >= RETRY_AFTER_SECONDS or f.get("fingerprint") != _fingerprint(root)
+
+
+def manual_command(root):
+    return "%s --project %s migrate" % (os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "atlas"), root)
 
 
 def legacy_dirs(root):
@@ -29,7 +75,7 @@ def pending(root):
 
 
 def running(root):
-    return bool(build._lock_owner(os.path.join(root, LOCK_REL))) and build._pid_alive(build._lock_owner(os.path.join(root, LOCK_REL)))
+    return bool(build._lock_owner(_p(root, LOCK_NAME))) and build._pid_alive(build._lock_owner(_p(root, LOCK_NAME)))
 
 
 def rewrite_hook_paths(root):
@@ -48,7 +94,8 @@ def rewrite_hook_paths(root):
                 cmd = hook.get("command", "")
                 new = cmd
                 for old in OLD_PATHS:
-                    new = new.replace(old, NEW_PATH)
+                    # whole path segments only: `var/atlas-tools` and `myvar/atlas` stay as they are
+                    new = re.sub(r"(?<![^\s/\"'=:])" + re.escape(old) + r"(?![\w.-])", NEW_PATH, new)
                 if new != cmd:
                     hook["command"], changed = new, True
     if changed:
@@ -88,7 +135,7 @@ def run(root, out=sys.stdout):
     if not legacy:
         return 0
     try:
-        lock = build.acquire_lock(os.path.join(root, LOCK_REL))
+        lock = build.acquire_lock(_p(root, LOCK_NAME))
     except AtlasError:
         return 3
     try:
@@ -98,22 +145,25 @@ def run(root, out=sys.stdout):
             build.build(ctx, None, out)
         if not _complete(root, ctx.out_dir):
             raise AtlasError("new index incomplete; keeping %s" % ", ".join(legacy))
+        if os.path.exists(_p(root, FAIL_NAME)):
+            os.remove(_p(root, FAIL_NAME))
         for path in legacy:
             shutil.rmtree(path, ignore_errors=True)
         rewrite_hook_paths(root)
         out.write("atlas index moved to %s (removed %s)\n" % (NEW_PATH, ", ".join(os.path.relpath(p, root) for p in legacy)))
         return 0
-    except AtlasError as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure keeps the old index and is rate-limited
         sys.stderr.write("atlas migrate: %s\n" % exc)
+        record_failure(root, str(exc))
         return 1
     finally:
         build.release_lock(lock)
 
 
 def spawn(root):
-    """Detached migration (a rebuild outlasts a hook's timeout); output goes to .oro-ai/atlas-migrate.log."""
+    """Detached migration (a rebuild outlasts a hook's timeout); output goes to .oro-ai/atlas/migrate.log."""
     script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "atlas")
-    os.makedirs(os.path.join(root, ".oro-ai"), exist_ok=True)
-    with open(os.path.join(root, ".oro-ai", "atlas-migrate.log"), "ab") as log:
+    os.makedirs(new_atlas_dir(root), exist_ok=True)
+    with open(_p(root, LOG_NAME), "ab") as log:
         subprocess.Popen([sys.executable, script, "--project", root, "migrate"], stdout=log, stderr=log,
                          stdin=subprocess.DEVNULL, start_new_session=True)

@@ -78,11 +78,44 @@ class MigrateTest(unittest.TestCase):
         os.makedirs(os.path.join(root, ".claude"), exist_ok=True)
         cfg = os.path.join(root, ".claude", "settings.local.json")
         with open(cfg, "w") as fh:
-            json.dump({"permissions": {"allow": ["x"]}, "hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "chk .claude/atlas/index.json"}]}]}}, fh)
+            json.dump({"permissions": {"allow": ["x"]}, "hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "chk .claude/atlas/index.json /x/var/atlas-tools /x/myvar/atlas"}]}]}}, fh)
         migrate.run(root, io.StringIO())
         data = json.load(open(cfg))
-        self.assertEqual(data["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "chk .oro-ai/atlas/index.json")
+        self.assertEqual(data["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "chk .oro-ai/atlas/index.json /x/var/atlas-tools /x/myvar/atlas")
         self.assertEqual(data["permissions"], {"allow": ["x"]})
+
+    def test_nothing_written_at_data_root(self):
+        root, old = legacy_project()
+        migrate.run(root, io.StringIO())
+        self.assertEqual(sorted(os.listdir(os.path.join(root, ".oro-ai"))), [".gitignore", "atlas"])
+
+    def test_reads_fall_back_to_legacy_until_new_is_complete(self):
+        root, old = legacy_project()
+        self.assertEqual(atlas_dir(root), old)
+        migrate.run(root, io.StringIO())
+        self.assertEqual(atlas_dir(root), os.path.join(root, ".oro-ai", "atlas"))
+
+    def test_failure_backoff_and_give_up(self):
+        root, old = legacy_project()
+        self.assertTrue(migrate.may_auto_spawn(root))
+        with mock.patch.object(build, "build", side_effect=build.AtlasError("php down")), mock.patch.object(sys, "stderr", io.StringIO()):
+            migrate.run(root, io.StringIO())
+            self.assertEqual(migrate.failures(root)["count"], 1)
+            self.assertFalse(migrate.may_auto_spawn(root))
+            with mock.patch.object(migrate.time, "time", return_value=migrate.time.time() + 7200):
+                self.assertTrue(migrate.may_auto_spawn(root))
+            os.makedirs(os.path.join(root, "src", "Foo"), exist_ok=True)
+            with open(os.path.join(root, "src", "Foo", "New.php"), "w") as fh:
+                fh.write("<?php")
+            self.assertTrue(migrate.may_auto_spawn(root))
+            migrate.run(root, io.StringIO())
+            migrate.run(root, io.StringIO())
+        self.assertTrue(migrate.gave_up(root))
+        with mock.patch.object(migrate.time, "time", return_value=migrate.time.time() + 10**6):
+            self.assertFalse(migrate.may_auto_spawn(root))
+        self.assertEqual(migrate.run(root, io.StringIO()), 0)  # manual run succeeds and clears the marker
+        self.assertIsNone(migrate.failures(root))
+        self.assertTrue(os.path.isdir(old) is False)
 
     def test_data_root_gitignore_created_once_untracked_projects_only(self):
         root = make_project()

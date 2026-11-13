@@ -12,6 +12,7 @@ Domains and certificates are never defaulted: validate lists them as asks for se
 import json
 import os
 import re
+import shutil
 import sys
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -158,6 +159,8 @@ def dump(data, indent=0):
             lines.append("%s%s:" % (pad, key))
             lines.append(dump(value, indent + 1))
         elif isinstance(value, list):
+            if any(isinstance(v, (dict, list)) for v in value):
+                raise ValueError("%s: lists of mappings or lists are not supported in env.yml" % key)
             lines.append("%s%s: [%s]" % (pad, key, ", ".join(_scalar(v) for v in value)))
         else:
             lines.append("%s%s: %s" % (pad, key, _scalar(value) if not isinstance(value, dict) else "{}"))
@@ -165,31 +168,42 @@ def dump(data, indent=0):
 
 
 def save(path, data):
+    text = HEADER + dump(data) + "\n"
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(HEADER + dump(data) + "\n")
+        fh.write(text)
     os.replace(tmp, path)
 
 
 def migrate(project, out=sys.stdout):
-    """0 done or nothing to do, 2 conflict. Moves + converts the legacy file; never overwrites a different new file."""
+    """0 done or nothing to do, 2 refused. The legacy file is only removed after the converted data validated and
+    was written; a copy stays beside the new file as env.yml.legacy.bak."""
     old, new = old_path(project), new_path(project)
     if not os.path.exists(old):
         out.write("env.yml: nothing to migrate (%s)\n" % ("already at " + new if os.path.exists(new) else "no legacy file"))
         return 0
     converted = with_defaults(load(old))
+    errors = validate(converted)
+    if errors:
+        sys.stderr.write("".join("error: %s\n" % e for e in errors) + "env.yml: legacy file kept at %s; fix it and rerun\n" % old)
+        return 2
     if os.path.exists(new) and load(new) != converted:
         sys.stderr.write("env.yml: both %s and %s exist and differ; merge by hand and delete the old one\n" % (old, new))
         return 2
-    if not os.path.exists(new):
-        save(new, converted)
+    try:
+        if not os.path.exists(new):
+            save(new, converted)
+    except ValueError as exc:
+        sys.stderr.write("env.yml: cannot convert (%s); legacy file kept at %s\n" % (exc, old))
+        return 2
+    shutil.copy2(old, new + ".legacy.bak")
     os.remove(old)
     try:
         os.rmdir(os.path.dirname(old))
     except OSError:
         pass
-    out.write("env.yml: moved %s -> %s\n" % (old, new))
+    out.write("env.yml: moved %s -> %s (backup %s.legacy.bak)\n" % (old, new, new))
     return 0
 
 

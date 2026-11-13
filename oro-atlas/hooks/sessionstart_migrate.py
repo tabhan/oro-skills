@@ -18,10 +18,13 @@ def decide(payload):
     if migrate.pending(root):
         if os.environ.get("ORO_ATLAS_MIGRATE_SYNC"):
             migrate.run(root, sys.stderr)  # tests: no detached process
-        elif not migrate.running(root):
+        elif migrate.may_auto_spawn(root) and not migrate.running(root):
             migrate.spawn(root)
         text = ("[oro-atlas] The atlas index is moving to .oro-ai/atlas: rebuilding in the background (about a minute; "
-                "atlas queries answer once it finishes), then the old directory is deleted.")
+                "queries use the old index meanwhile), then the old directory is deleted.")
+        if migrate.gave_up(root):
+            text = ("[oro-atlas] The atlas index move to .oro-ai/atlas failed %d times; automatic retries stopped, queries use the old "
+                    "index. After fixing the cause run: %s" % (migrate.failures(root)["count"], migrate.manual_command(root)))
         out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
     return out
 

@@ -287,9 +287,11 @@ def main(argv=None, out=None):
         if args.cmd == "migrate":
             return migrate.run(root, out)
         if migrate.pending(root):
-            if not migrate.running(root):
+            if migrate.may_auto_spawn(root) and not migrate.running(root):
                 migrate.spawn(root)
-            sys.stderr.write("atlas: the index is moving to .oro-ai/atlas (rebuild running in the background, about a minute)\n")
+            sys.stderr.write("atlas: the index is moving to .oro-ai/atlas; answering from the old index%s\n" % (
+                " (migration failed %d times; run: %s)" % (migrate.failures(root)["count"], migrate.manual_command(root)) if migrate.gave_up(root) else ""))
+            args.no_rebuild = True
         if args.cmd == "status":
             code = run_status(root, out_dir, out, args.json, args.quiet)
         else:

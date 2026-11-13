@@ -83,6 +83,21 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(run("migrate", "--project", self.proj).returncode, 0)
         self.assertFalse(os.path.exists(env.old_path(self.proj)))
 
+    def test_invalid_legacy_is_kept(self):
+        with open(env.old_path(self.proj), "a") as fh:
+            fh.write("  es_prefix: oro_\n")
+        p = run("migrate", "--project", self.proj)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("prefix must start with oro_test", p.stderr)
+        self.assertTrue(os.path.exists(env.old_path(self.proj)))
+        self.assertFalse(os.path.exists(env.new_path(self.proj)))
+
+    def test_backup_kept_and_lists_of_mappings_rejected(self):
+        run("migrate", "--project", self.proj)
+        self.assertTrue(os.path.exists(env.new_path(self.proj) + ".legacy.bak"))
+        with self.assertRaises(ValueError):
+            env.dump({"x": [{"a": 1}]})
+
     def test_get(self):
         run("migrate", "--project", self.proj)
         p = run("get", "--project", self.proj, "local_test.redis_dbs")
