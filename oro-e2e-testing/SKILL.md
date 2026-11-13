@@ -14,8 +14,12 @@ description: >
 
 # Oro e2e testing rules
 
-Automated coverage is **Playwright-BDD** (`playwright-bdd`) — Behat is no longer used. The suite
-runs via the project's e2e harness command against the `--env=test` kernel.
+Automated coverage is **Playwright-BDD** (`playwright-bdd`). Behat is Oro's own e2e framework and is
+never run here; legacy Behat code is ignored. On a project with a local test stack the browser-facing
+web kernel is Oro's built-in `behat_test` env, while everything the harness spawns (fixture loading,
+`aaxis:test:action`, PHPUnit) runs in `test`; the stack is a separate DB, search prefix, queue vhost and
+session store from the dev stack. Always run through the project's e2e wrapper with an explicit target
+(never a default); acceptance tags for specs are covered by oro-spec-traceability.
 
 This skill covers authoring/running the **automated BDD suite** and its Buckman-specific gotchas
 only. For interactively driving a browser (manual verification, screenshots, ad-hoc debugging,
@@ -38,15 +42,15 @@ the code is the one that gets updated:
 
 Read the relevant section BEFORE changing harness configuration, adding a test-support action, or
 reasoning about why a lane behaves the way it does. Never restate a flag or config value from
-memory — quote it from the README.
+recall — quote it from the README.
 
 **This harness is bespoke.** Generic `playwright test` / playwright-cli references describe a
 different setup: they do not know `aaxis:test:e2e`, the fixture tags, or the lane structure. If the
 paths above do not exist in the current project, it uses a different harness — only the authoring
 rules below apply, and the harness mechanics must be re-derived from that project's own config.
 
-⚠️ **Know your DB topology first.** Many Oro projects point the `test` env at the **same database
-as dev/prod** (check `.env*.test*` for the DSN). When the e2e DB is **shared and non-isolated**
+⚠️ **Know your DB topology first.** A local test stack has its own database; CI and some projects point the
+`test` env at the **same database as dev/prod** (check `.env*.test*` for the DSN). When the e2e DB is **shared and non-isolated**
 (no per-scenario transaction rollback, one long-lived browser), test-data hygiene is mandatory and
 destructive purges are dangerous. The rules below assume that worst case; on a genuinely
 isolated/throwaway test DB the safety caveats relax but the structure still applies.
@@ -107,6 +111,34 @@ isolated/throwaway test DB the safety caveats relax but the structure still appl
    Change History must end with an **explicit, idempotent close step** that closes
    `.ui-dialog .ui-dialog-titlebar-close`. Applies to any new e2e that opens Change History.
 
+## More rules
+
+6. **Test through the real trigger.** When correctness rides an event plus flush ordering (a listener that
+   materializes denormalized data by re-reading a durable log, e.g. on a workflow transition), a test that
+   seeds the end state cannot catch the bug and stays falsely green. Write at least one scenario that
+   drives the REAL transition or action end to end, red before the fix and green after; unit tests on
+   complete inputs are necessary but not sufficient.
+7. **Empty by construction.** A "zero results" assertion must be true regardless of the rest of the data: first
+   narrow to the fixture's own rows with a keyword they own, then apply a facet or filter value those rows
+   provably do not carry. Ask "would this still pass with ten thousand more rows?". The inverse holds too:
+   assert that the fixture's rows came back, never a bare total.
+8. **No ambient data.** A feature runs on a freshly installed environment plus its own fixtures. If it needs
+   data its own fixture or action does not create, that is a defect in the feature, never to be fixed by
+   restoring a data dump or reinstalling dev.
+9. **Scoped operations only.** No unscoped `DELETE`, no full-catalog reindex, no whole cache-pool clear to reach a
+   known state: they hit every concurrent worker and are what keeps features on `@serial`. Reindex and
+   purge by explicit id or natural key; accept `@serial` only when the feature under test IS the shared
+   global state.
+10. **One console helper.** Steps never hard-code `--env=...`; every console or Oro command goes through the
+    single shared harness helper that picks the env and clears config caches when it writes global config.
+11. **Wide admin grids.** Pin the headless viewport at 1920 wide: at 1280 a wide grid collapses responsively
+    and hides its `<thead>`. When a grid is wider than the viewport, Oro's sticky-header plugin moves the live
+    header into a separate sticky table and leaves a hidden, handler-less clone, so `table.grid thead ...`
+    selectors hit the clone. Select rows with the row-checkbox hook, and exercise a mass action through
+    its endpoint rather than the header UI when the header is unreachable.
+12. **Test first.** Write the scenario, watch it fail for the right reason, implement until green. Never write the
+    e2e last to rubber-stamp finished code.
+
 ## Conventions (general Oro / playwright-bdd harness)
 
 - **Locate elements by stable structural hooks** — class / `data-*` attributes / column key
@@ -121,6 +153,11 @@ isolated/throwaway test DB the safety caveats relax but the structure still appl
   for the exact flag names). Debug mode runs a *reduced, stop-on-first-fail* set, so its concurrency
   mix differs from a real run and can hide a cross-feature parallel race. **Always finish with a full
   run with the debug flag OFF** — a feature is only fixed once it is green in the full parallel suite.
+- **Harness gotchas.** `--grep <tag>` does NOT limit the serial lane: running any `@serial` feature drags the
+  whole serial lane (use the parallel-only project selection for a single parallel feature). `cache:clear
+  --env=test` with warmup can crash on generated test entities that do not exist yet: use `--no-warmup`.
+  Alice fixtures reject a second top-level `ClassName:` key in one file ("Duplicate key"): add new objects
+  INTO the existing block. Never pipe the e2e command into `tail`/`head`: the pipe hides the real exit code.
 - **After adding/removing a test action (or any test service) or changing a service arg, `rm -rf
   var/cache/test`** — the test kernel caches a compiled container under a hash, and a stale one will
   throw on the changed service signature (and won't pick up a newly auto-discovered `actions.yml`).
@@ -173,7 +210,7 @@ passed."`, never that exception). Only when poison is detected does the `AfterAl
 queue depth is never a fail signal. There is **no purge-before guard** — a raw-depth purge before
 consuming would race concurrent workers on the shared broker. `prodQueueDepth()` is a
 manual-diagnostic helper only — the teardown no longer calls it. To clear a pre-existing backlog by
-hand before a run: `docker exec buckman-rabbitmq-1 rabbitmqctl purge_queue oro.default` (verify with
+hand before a run: `docker exec <rabbitmq-container> rabbitmqctl purge_queue oro.default` (verify with
 `rabbitmqctl list_queues name messages_ready` → 0).
 
 ## Parallelism & shared-state flakiness
@@ -289,3 +326,5 @@ first confirm the fixture is feature-exclusive.
 - [ ] Wait ceilings use a named const from `@e2e/timeouts` (`VISIBLE_TIMEOUT`, `SETTLE_TIMEOUT`, …), not a hardcoded `timeout: <ms>` literal.
 - [ ] Verified the filtered result set's actual rows (present/excluded), not just that the page loads.
 - [ ] Cleared `var/cache/test` after changing a test command/service arg.
+- [ ] Event/flush-ordering behaviour has a scenario driving the real transition (rule 6); empty-state scenarios are empty by construction (rule 7); no reliance on ambient data (rule 8); no global clear/reindex (rule 9).
+- [ ] Files are read and written only through the harness/Gaufrette storage, never by path on the host disk (oro-conventions section 13).

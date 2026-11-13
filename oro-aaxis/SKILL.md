@@ -12,7 +12,7 @@ description: >-
 
 Aaxis bundles (`src/Aaxis/Bundle/<X>Bundle`) are shared across projects. Before writing custom code for
 a need below, look at [catalogue.md](catalogue.md): it maps need to bundle. Bundle mechanics (config
-keys, classes, commands) live in each bundle's own `README.md`; read that, never restate it from memory.
+keys, classes, commands) live in each bundle's own `README.md`; read that, never restate it from recall.
 
 ## Presence check, then use or ask
 
