@@ -15,3 +15,4 @@ jobs:
       - run: python3 -m unittest discover -s atlas/tests
       - run: python3 -m unittest discover -s tests/local_env
       - run: python3 -m unittest discover -s tests/aaxis
+      - run: python3 -m unittest discover -s tests/install

@@ -45,9 +45,14 @@ remove_legacy_links() {
   local dir="$1" pattern="$2" link target
   for link in "$dir"/$pattern; do
     [ -L "$link" ] || continue
-    target="$(readlink -f "$link")"
-    case "$target" in "$SCRIPT_DIR"/*) rm "$link"; echo "  removed $link" ;; esac
+    # -m tolerates dangling links whose parent dirs are gone; -f would fail and abort under set -e.
+    target="$(readlink -m "$link" 2>/dev/null || true)"
+    case "$target" in
+      "$SCRIPT_DIR"/*)
+        if rm -f "$link"; then echo "  removed $link"; else FAILED+=("rm $link"); fi ;;
+    esac
   done
+  return 0
 }
 
 git_auth_args=()
