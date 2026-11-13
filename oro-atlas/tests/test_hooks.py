@@ -34,7 +34,7 @@ class Base(unittest.TestCase):
             json.dump({"packages": [{"name": "oro/platform", "version": "7.0.5"}]}, fh)
         self.home = os.path.join(self.tmp.name, "home")
         os.makedirs(self.home)
-        self.file = os.path.join(self.root, "src", "Foo", "services.yml")
+        self.file = os.path.join(self.root, "src", "Foo", "decor.yml")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -111,7 +111,7 @@ class HookTest(Base):
 
     def test_config_dir_and_xml_are_scanned(self):
         self.build_index()
-        _, out = self.edit("decorates: foo.mgr", path=os.path.join(self.root, "config", "services.yml"))
+        _, out = self.edit("decorates: foo.mgr", path=os.path.join(self.root, "config", "decor.yml"))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         _, out = self.edit('<service id="x" decorates="foo.mgr"/>', path=os.path.join(self.root, "src", "Foo", "s.xml"))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
@@ -208,7 +208,7 @@ class BashHookTest(Base):
             fh.write("  x:\n    decorates: foo.mgr\n")
         out = self.bash()
         self.assertEqual(out["decision"], "block")
-        self.assertIn("src/Foo/services.yml", out["reason"])
+        self.assertIn("src/Foo/decor.yml", out["reason"])
         self.assertIsNone(self.bash())
         with open(os.path.join(self.root, "src", "Foo", "new.xml"), "w") as fh:
             fh.write('<service id="y" decorates="Foo\\Mgr"/>')

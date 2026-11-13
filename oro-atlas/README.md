@@ -60,13 +60,23 @@ other settings are kept), installs the git refresh hooks, then runs `atlas-build
   or missing index `atlas index stale (<reason>); rebuild: <exact command>` without building. `posttooluse_bash.py`
   marks the session as "queried" on any `atlas <sub>` command and prints the same hint after `composer
   install|update|require|remove`. The marker is keyed by `session_id`, so subagents share the parent's.
-- `pretooluse_edit.py` denies edits to extension files (`Resources/config/**`, listeners, subscribers,
-  `*Extension.php`, `entity_extend.yml`, layouts, interceptors) when the index is stale/missing or no atlas
-  query ran this session. Each deny is gated by `oro-applies --check <id>` (`hooks/checks.yml`): out of range
-  skips, unknown Oro version downgrades to warn. Hook errors are swallowed; nothing blocks on a broken hook.
+- `pretooluse_edit.py` denies edits to extension files when no atlas query ran this session, or when the index is
+  missing or really out of date (composer.lock, vendor or index-format change; the deny names the exact rebuild
+  command). Staleness caused only by project src/config edits, container cache, notes or extractor code never
+  denies: one line per session, `atlas index behind your src edits (...); rebuild when convenient: <cmd>`.
+  Each deny is gated by `oro-applies --check <id>` (`hooks/checks.yml`): out of range skips, unknown Oro version
+  downgrades to warn. Hook errors are swallowed; nothing blocks on a broken hook.
+- Extension files (the only ones enforced): `services*.yml`, `services/*.yml`, `entity_extend.yml`, `datagrids.yml`,
+  `workflows.yml` and `workflows/*.yml`, `actions.yml`/`operations.yml`, `system_configuration.yml`, `jsmodules.yml`,
+  `message_queue.yml`, `oro/app.yml`, layout update ymls under `Resources/views/layouts/`, and PHP classes named
+  `*Listener|*Subscriber|*Interceptor|*Decorator|*Extension` (not under `Tests/` or `Twig/`). Routing, validation,
+  translations, `search.yml`, entities and templates are not. Classes that are only tag-registered under another
+  name are not detected (the atlas query-first habit covers them).
 - Escape hatch: `ORO_ATLAS_ENFORCE=0` in the process environment (the human's shell, before `claude`) turns every
   deny into a warning, logs `bypass` to `~/.claude/atlas-hook.log` and makes `stop.py` print a reminder.
-  `pretooluse_bash.py` and the edit hook deny any attempt by Claude to set it (commands, settings/rc/.env files).
+  `pretooluse_bash.py` and the edit hook deny any attempt by Claude to set it (commands, settings*.json/rc/.env files),
+  including quote-split or concatenated spellings when a settings/rc/.env file is involved. Residual risk: a script
+  that builds the name from encoded data, or a human-run command, is not caught; the hatch stays a trust boundary.
 
 ## Staleness and incremental builds
 

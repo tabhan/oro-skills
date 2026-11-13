@@ -81,6 +81,8 @@ def stale_reason(root, state):
 
 def build_hint(root, state):
     """One line naming the index state and the exact rebuild command; atlas never rebuilds on its own."""
+    if state == "stale" and staleness_kind(root) == "soft":
+        return "atlas index behind your src edits (%s); rebuild when convenient: %s" % (stale_reason(root, state), build_command(root, state))
     return "atlas index %s (%s); rebuild: %s" % (state, stale_reason(root, state), build_command(root, state))
 
 
@@ -127,12 +129,17 @@ def clip(text, limit=MAX_CONTEXT):
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 OVERRIDE_VAR = "ORO_ATLAS_ENFORCE"
 
+# Real extension points only (see README "Enforcement"); routing, validation, translations, search.yml and Twig extensions are not.
 EXTENSION_FILE = re.compile(
-    r"(?:/Resources/config/|/Resources/views/layouts/|/layouts/[^/]+/|"
-    r"/[^/]*(?:EventListener|Listener|Subscriber|Interceptor)[^/]*\.php$|/[^/]*Extension\.php$|/entity_extend\.ya?ml$)"
+    r"/(?:services[^/]*\.ya?ml|entity_extend\.ya?ml|datagrids\.ya?ml|workflows\.ya?ml|actions\.ya?ml|operations\.ya?ml|"
+    r"system_configuration\.ya?ml|jsmodules\.ya?ml|message_queue\.ya?ml|app\.ya?ml)$"
+    r"|/Resources/config/(?:[^/]+/)*services/[^/]+\.ya?ml$|/workflows/[^/]+\.ya?ml$|/Resources/views/layouts/.+\.ya?ml$"
+    r"|/[^/]*(?:Listener|Subscriber|Interceptor|Decorator|Extension)\.php$"
 )
+NOT_EXTENSION = re.compile(r"/(?:Tests|Twig)/")
 # Files through which a human-only switch could be flipped behind a Bash deny.
-ENV_FILE = re.compile(r"(?:/settings(?:\.local)?\.json|/\.claude/|/\.(?:zsh|bash)rc|/\.z?profile|/\.env[^/]*)$")
+ENV_FILE = re.compile(r"(?:/settings[^/]*\.json$|/\.claude/|/\.(?:zsh|bash)(?:rc|_profile)$|/\.z?profile$|/\.env[^/]*$)")
+ENV_TARGET_CMD = re.compile(r"settings[^\s/]*\.json|\.claude/|\.(?:zsh|bash)(?:rc|_profile)|\.z?profile|\.env\b")
 QUERY_CMD = re.compile(
     r"(?:^|[\s/;&|(])atlas(?:\.py)?\s+(?:--project\s+\S+\s+)?(?:entity|operation|grid|event|mq|service|config|tags?|layout|workflow|js|search|unsafe|notes)\b"
 )
@@ -144,7 +151,24 @@ def enforcement_off():
 
 
 def is_extension_file(path):
-    return bool(EXTENSION_FILE.search(path.replace("\\", "/")))
+    p = path.replace("\\", "/")
+    return bool(EXTENSION_FILE.search(p)) and not NOT_EXTENSION.search(p)
+
+
+# Index inputs whose change means the index is wrong, not merely behind Claude's own edits.
+HARD_REASONS = {"composer.lock", "vendor", "index format"}
+
+
+def staleness_kind(root):
+    """'hard' for lock/vendor/format changes, 'soft' when only src/config/cache/notes/extractor inputs moved."""
+    kind = "soft"
+    try:
+        reasons = index.stale_reasons(root, atlas_dir(root))
+        if any(r in HARD_REASONS for rs in reasons.values() for r in rs):
+            kind = "hard"
+    except Exception:  # noqa: BLE001
+        kind = "hard"
+    return kind
 
 
 def check_verdict(root, check_id):

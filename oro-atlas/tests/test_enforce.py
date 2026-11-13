@@ -85,6 +85,66 @@ class QueryFirstTest(EnforceBase):
             self.assertEqual(self.decision(out), "deny", name)
 
 
+class StalenessKindTest(EnforceBase):
+    def touch_src(self):
+        with open(os.path.join(self.root, "src", "Foo", "New.php"), "w") as fh:
+            fh.write("<?php")
+
+    def test_own_src_edits_never_deny_and_warn_once_per_session(self):
+        self.bash("atlas service x")
+        self.touch_src()
+        first = self.edit_ext()
+        self.assertNotEqual(self.decision(first), "deny")
+        self.assertIn("behind your src edits", first["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("--incremental", first["hookSpecificOutput"]["additionalContext"])
+        again = self.edit_ext()
+        self.assertNotIn("behind", json.dumps(again))
+
+    def test_composer_lock_change_still_denies_with_command(self):
+        self.bash("atlas service x")
+        self.make_stale()
+        self.touch_src()
+        out = self.edit_ext()
+        self.assertEqual(self.decision(out), "deny")
+        self.assertIn("rebuild:", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_extractor_change_is_soft(self):
+        self.bash("atlas service x")
+        idx = os.path.join(self.root, ".oro-ai", "atlas", "index.json")
+        data = json.load(open(idx))
+        for meta in data["shards"].values():
+            meta["inputs"]["extractor"] = "old"
+        json.dump(data, open(idx, "w"))
+        self.assertNotEqual(self.decision(self.edit_ext()), "deny")
+
+    def test_missing_index_still_denies(self):
+        self.bash("atlas service x")
+        os.remove(os.path.join(self.root, ".oro-ai", "atlas", "index.json"))
+        self.assertEqual(self.decision(self.edit_ext()), "deny")
+
+
+class ExtensionFileTest(EnforceBase):
+    def denied(self, rel):
+        path = os.path.join(self.root, rel)
+        ti = {"file_path": path, "new_string": "x", "old_string": ""}
+        _, out = run("pretooluse_edit.py", {"session_id": "m3", "tool_name": "Edit", "tool_input": ti}, self.home)
+        return self.decision(out) == "deny"
+
+    def test_real_extension_points_are_enforced(self):
+        for rel in ("src/A/Resources/config/services.yml", "src/A/Resources/config/services_test.yml", "src/A/Resources/config/oro/datagrids.yml",
+                    "src/A/Resources/config/oro/workflows.yml", "src/A/Resources/config/oro/actions.yml", "src/A/Resources/config/oro/system_configuration.yml",
+                    "src/A/Resources/config/oro/app.yml", "src/A/Resources/config/oro/jsmodules.yml", "src/A/Resources/config/oro/entity_extend.yml",
+                    "src/A/Resources/views/layouts/default/config/page.yml", "src/A/EventListener/XListener.php", "src/A/Grid/FooExtension.php",
+                    "src/A/Aspect/FooDecorator.php", "src/A/Resources/config/services/more.yml"):
+            self.assertTrue(self.denied(rel), rel)
+
+    def test_other_files_are_not(self):
+        for rel in ("src/A/Resources/config/oro/routing.yml", "src/A/Resources/config/validation.yml", "src/A/Resources/translations/messages.en.yml",
+                    "src/A/Resources/config/oro/search.yml", "src/A/Twig/FooExtension.php", "src/A/Entity/Foo.php", "src/A/Tests/Unit/FooListenerTest.php",
+                    "src/A/Resources/views/page/x.html.twig"):
+            self.assertFalse(self.denied(rel), rel)
+
+
 class EscapeHatchTest(EnforceBase):
     def test_off_allows_logs_and_stop_reminds_once(self):
         out = self.edit_ext(OFF)
@@ -112,6 +172,17 @@ class EscapeHatchTest(EnforceBase):
     def test_bash_reading_the_switch_or_other_commands_pass(self):
         for cmd in ("echo $ORO_ATLAS_ENFORCE", "printf %s \"${ORO_ATLAS_ENFORCE}\"", "ls -la", "atlas service foo"):
             self.assertIsNone(self.bash(cmd, script="pretooluse_bash.py"), cmd)
+
+    def test_obfuscated_assembly_into_settings_or_rc_is_denied(self):
+        for cmd in ("jq '.env.ORO_ATLAS_\"ENFORCE\"=\"0\"' ~/.claude/settings.json > /tmp/x",
+                    "python3 -c \"import json;d['env']['ORO_ATLAS_'+'ENFORCE']='0'\" ~/.claude/settings.local.json",
+                    "echo 'export ORO_ATLAS_EN''FORCE=0' >> ~/.bashrc", "sed -i 's/x/ATLAS_ENFORCE/' .env.local"):
+            self.assertEqual(self.decision(self.bash(cmd, script="pretooluse_bash.py")), "deny", cmd)
+
+    def test_obfuscated_write_tool_content_is_denied(self):
+        ti = {"file_path": os.path.join(self.home, ".claude", "settings.json"), "content": '{"env":{"ORO_ATLAS_" "ENFORCE":"0"}}'}
+        _, out = run("pretooluse_edit.py", {"session_id": "w", "tool_name": "Write", "tool_input": ti}, self.home)
+        self.assertEqual(self.decision(out), "deny")
 
     def test_settings_and_rc_writes_are_denied_but_source_files_are_not(self):
         for path in (os.path.join(self.home, ".claude", "settings.json"), os.path.join(self.home, ".zshrc"), os.path.join(self.root, ".env.local")):

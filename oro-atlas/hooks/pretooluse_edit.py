@@ -58,10 +58,16 @@ def context_lines(root, path, new):
     return lines
 
 
+def mentions_override(text):
+    """The switch name, also when assembled from quoted/escaped pieces."""
+    flat = re.sub(r"[\"'\\\s+]", "", text).upper()
+    return c.OVERRIDE_VAR in flat or "ATLAS_ENF" in flat
+
+
 def override_write(path, tool, ti):
     """Claude must never set the human-only switch, not even through a settings or rc file."""
     new, _ = added_text(tool, ti)
-    return bool(c.ENV_FILE.search(path.replace("\\", "/")) and c.OVERRIDE_VAR in new)
+    return bool(c.ENV_FILE.search(path.replace("\\", "/")) and mentions_override(new))
 
 
 def decide(payload):
@@ -85,7 +91,7 @@ def enforcement_reason(root, path, state, session_id):
     found = None
     if c.is_extension_file(path):
         _, st = c.session_state(session_id)
-        if state != "ok":
+        if state == "missing" or (state == "stale" and c.staleness_kind(root) == "hard"):
             found = ("atlas-index-fresh", c.build_hint(root, state) + ". Ask the user to run it, or run it yourself, then retry.")
         elif not st.get("queried"):
             found = ("atlas-query-first", "Query the atlas index before editing extension points: run `atlas <sub> <term>` "
@@ -98,7 +104,14 @@ def analyse(root, path, tool, ti, session_id=None):
     state = c.index_state(root)
     notes, reason, decision = [], None, None
     if state != "ok":
-        notes.append(c.build_hint(root, state))
+        pth, st = c.session_state(session_id)
+        if state == "stale" and c.staleness_kind(root) == "soft":
+            if not st.get("behind_warned"):  # one line per session; the next edit must not pay for it again
+                st["behind_warned"] = True
+                c.save_state(pth, st)
+                notes.append(c.build_hint(root, state))
+        else:
+            notes.append(c.build_hint(root, state))
     # A stale index still knows the unsafe services; only a missing one cannot judge.
     if state != "missing":
         found = d.new_targets(new, old, read_file(path) + "\n" + new)

@@ -13,10 +13,22 @@ import _common as c  # noqa: E402
 MENTION = re.compile(r"(?<![$\w{])%s\b|\$\{%s:?=" % (c.OVERRIDE_VAR, c.OVERRIDE_VAR))
 
 
+def flat(text):
+    """Quotes, backslashes and whitespace removed so ORO_ATLAS_"ENFORCE" and split strings still match."""
+    return re.sub(r"[\"'\\\s+]", "", text).upper()
+
+
+def attempts_override(cmd):
+    direct = c.OVERRIDE_VAR in cmd and MENTION.search(cmd)
+    # Obfuscated assembly is only judged when the command also touches a settings/rc/.env file.
+    assembled = c.ENV_TARGET_CMD.search(cmd) and ("ATLAS_ENF" in flat(cmd) or c.OVERRIDE_VAR in flat(cmd))
+    return bool(direct or assembled)
+
+
 def decide(payload):
     cmd = (payload.get("tool_input") or {}).get("command", "")
     out, verdict = None, "skip"
-    if payload.get("tool_name") == "Bash" and c.OVERRIDE_VAR in cmd and MENTION.search(cmd):
+    if payload.get("tool_name") == "Bash" and attempts_override(cmd):
         reason = "%s is a human-only switch: the user sets it in their own shell. Claude must not set, export or write it anywhere." % c.OVERRIDE_VAR
         out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}
         verdict = "deny-override-set"
