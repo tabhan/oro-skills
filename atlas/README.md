@@ -15,7 +15,7 @@ build in `.oro-ai/atlas/raw/`). Output goes to `<project>/.oro-ai/atlas/`: one `
 extractor and `index.json` (composer.lock sha256, oro/platform version, timestamp, counts).
 The directory carries its own `.gitignore` (`*`), so nothing needs ignoring in the project; an index
 left at the older `.claude/atlas/` or `var/atlas/` is migrated automatically: the SessionStart hook
-(`hooks/sessionstart_migrate.py`, also `atlas migrate`) rebuilds into `.oro-ai/atlas/` in the background (about a
+(`hooks/sessionstart_migrate.py`, also `aaxis-oro atlas migrate`) rebuilds into `.oro-ai/atlas/` in the background (about a
 minute on a large project), then deletes the old directory, rewrites old index paths in hook commands of
 `.claude/settings.local.json`, and creates `.oro-ai/.gitignore` (`*`, `!.gitignore`, `!config.json`) when that
 file is missing and `.oro-ai/` has no tracked content. A failed build keeps the old index and retries next session.
@@ -24,12 +24,12 @@ Test directories (`**/Tests/**`) are not part of the staleness hash.
 ## Staying fresh (no daemon, no token cost)
 - Staleness is per shard: a shard is STALE only when an input it ingests changed (composer.lock/vendor
   state, the src files of its kind, the compiled container cache, or the extractor code).
-  `atlas status` lists each shard and exits 0 (fresh) or 2 (STALE/MISSING); `--quiet` prints nothing.
+  `aaxis-oro atlas status` lists each shard and exits 0 (fresh) or 2 (STALE/MISSING); `--quiet` prints nothing.
 - `aaxis-oro atlas build --incremental` rebuilds only stale/missing shards (full build stays the default);
   vendor scans are memoised in `cache/`, so one edited file refreshes in ~2-3s.
 - Atlas never rebuilds on its own: queries on a stale index answer from it and print one stderr line
   `STALE: ...; rebuild (never automatic): atlas build --incremental`; the hooks name the exact command too.
-  The only automatic build left is the one-time legacy move to `.oro-ai/atlas/` (`atlas migrate`, below).
+  The only automatic build left is the one-time legacy move to `.oro-ai/atlas/` (`aaxis-oro atlas migrate`, below).
   `--no-rebuild` is a deprecated no-op.
 - `aaxis-oro atlas setup` builds once when you run it and removes the background git hooks (post-checkout/post-merge/
   post-rewrite) that earlier versions installed; foreign hooks are left alone.
@@ -42,7 +42,7 @@ aaxis-oro atlas setup /path/to/oro-project --no-build  # without the build
 ```
 
 The hooks themselves come from the plugin (`hooks/hooks.json` at the repo root). Setup removes any
-atlas entries left in `<project>/.claude/settings.local.json` by older versions (they would fire twice;
+aaxis-oro atlas entries left in `<project>/.claude/settings.local.json` by older versions (they would fire twice;
 other settings are kept), installs the git refresh hooks, then runs `aaxis-oro atlas build`.
 
 ## Hooks
@@ -80,20 +80,20 @@ other settings are kept), installs the git refresh hooks, then runs `aaxis-oro a
 
 ## Staleness and incremental builds
 
-`atlas status` exits 0 when the index is fresh, 2 when stale (per-shard: only the shards whose inputs
+`aaxis-oro atlas status` exits 0 when the index is fresh, 2 when stale (per-shard: only the shards whose inputs
 changed need rebuilding) and non-zero otherwise when no index exists. Refresh a stale index with
 `aaxis-oro atlas build --project <root> --incremental`; a plain `aaxis-oro atlas build` rebuilds everything.
 
 ## Query
 
 ```bash
-atlas [--project ROOT] <event|tag|service|unsafe|grid|layout|workflow|operation|mq|config|entity|js|search> <query> [--limit N]
-atlas status
-atlas [--project ROOT] <command> <query> --json   # {"query", "results": [{shard, total, hits}]}
-atlas status --json                               # {"index", "stale", "not_built"}
+aaxis-oro atlas [--project ROOT] <event|tag|service|unsafe|grid|layout|workflow|operation|mq|config|entity|js|search> <query> [--limit N]
+aaxis-oro atlas status
+aaxis-oro atlas [--project ROOT] <command> <query> --json   # {"query", "results": [{shard, total, hits}]}
+aaxis-oro atlas status --json                               # {"index", "stale", "not_built"}
 ```
 
-With `--json`, the STALE line goes to stderr so stdout stays parseable. `atlas status` exits
+With `--json`, the STALE line goes to stderr so stdout stays parseable. `aaxis-oro atlas status` exits
 non-zero when no project/index is found; prompts use that to gate the citation rule.
 
 Run from anywhere inside the project, or pass `--project`. A `STALE` line is printed when
@@ -122,7 +122,7 @@ Installed as part of the aaxis-oro plugin (see the top-level README). The plugin
 
 ## Notes
 
-`.oro-ai/notes/*.md` project notes are indexed too (`atlas notes`, anchored notes shown under query hits); format and hook API in [NOTES.md](NOTES.md).
+`.oro-ai/notes/*.md` project notes are indexed too (`aaxis-oro atlas notes`, anchored notes shown under query hits); format and hook API in [NOTES.md](NOTES.md).
 
 ## Tests
 

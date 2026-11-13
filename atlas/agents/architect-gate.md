@@ -23,12 +23,12 @@ means `$ATLAS ...`.
 3. For each one, check the plan cites an atlas entry as `<atlas command> -> <file:line>`. Then
    re-run that command yourself and confirm the entry exists and the file:line is real
    (open the file). A citation you cannot reproduce counts as missing.
-4. For every service the plan overrides, wraps or replaces, run `atlas unsafe <service-or-class>`.
+4. For every service the plan overrides, wraps or replaces, run `aaxis-oro atlas unsafe <service-or-class>`.
    If the class is listed (typehinted by another consumer), a `decorates:` or class swap is a
    blocker: the required mechanism is the `aaxis_aspect.interceptor` tag
    (see `src/Aaxis/Bundle/AspectBundle/README.md`). `decorates:` is acceptable only when
-   `atlas unsafe` shows no concrete-class consumer.
-5. Check for OOTB reuse: run `atlas search <keyword>` for the plan's goal; if an existing event,
+   `aaxis-oro atlas unsafe` shows no concrete-class consumer.
+5. Check for OOTB reuse: run `aaxis-oro atlas search <keyword>` for the plan's goal; if an existing event,
    tag or config already does the job, flag the custom code as unnecessary.
 
 6. Aaxis rules (when the project has `src/Aaxis/`; see the solutions skill, references/aaxis/). Read `project_namespace` from

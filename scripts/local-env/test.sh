@@ -7,7 +7,7 @@
 #   local       console only (default --env=prod); tests never run against the local data stack
 #   verify      only print the verification line
 # Exit: command's own code; 3 target mismatch or refused combination; 64 usage.
-source "$(dirname "$0")/lib/common.sh"
+source "$(dirname "$0")/lib/common.sh"; source "$LE_LIB/stack.sh"
 src_project=$PWD
 if [ "${1:-}" = "--project" ]; then [ -d "${2:-}" ] || { echo "usage: --project needs a directory" >&2; exit 64; }; src_project=$(cd "$2" && pwd); shift 2; fi
 TARGET=${1:-}; ACTION=${2:-}
@@ -94,12 +94,36 @@ case $ACTION in
         [ $has_env = 1 ] && exec php bin/console "$@" || exec php bin/console "$@" --env=behat_test ;;
     phpunit)
         bin=bin/phpunit; [ -x "$bin" ] || bin=vendor/bin/phpunit
-        ORO_ENV=test php "$bin" "$@" >> "$LOG" 2>&1; rc=$?
-        grep -E '^(OK \(|Tests:|FAILURES!|ERRORS!|WARNINGS!|No tests executed)' "$LOG" | tail -4 ;;
+        # Bare --filter runs nothing under phpunit's config, so search each suite until one executes tests.
+        suites=("")
+        has_suite=0; for a in "$@"; do case $a in --testsuite|--testsuite=*) has_suite=1 ;; -*) ;; *) [ -e "$a" ] && has_suite=1 ;; esac; done
+        [ $has_suite = 0 ] && suites=(unit functional)
+        rc=1; ran=0
+        for st in "${suites[@]}"; do
+            sa=(); [ -n "$st" ] && sa=(--testsuite "$st")
+            out=$(mktemp); ORO_ENV=test php "$bin" "${sa[@]}" "$@" > "$out" 2>&1; src=$?
+            sed 's/\x1b\[[0-9;]*m//g' "$out" > "$out.c"; cat "$out.c" >> "$LOG"; rm -f "$out"
+            if grep -q '^No tests executed' "$out.c"; then rm -f "$out.c"; continue; fi
+            ran=1; rc=$src; break
+        done
+        [ -f "$out.c" ] && grep -E '^(OK \(|Tests:|FAILURES!|ERRORS!|WARNINGS!|No tests executed)' "$out.c" | tail -4; rm -f "$out.c"
+        [ $ran = 0 ] && { echo "FAIL no tests executed (checked: ${suites[*]:-all}); check --filter/path"; rc=1; } ;;
     e2e)
+        MQ_PID=""; PIDF="$PROJECT/.oro-ai/local-env/mq-consumer.pid"; mkdir -p "$(dirname "$PIDF")"
+        stop_consumer() { [ -n "$MQ_PID" ] && kill -- -"$MQ_PID" 2>/dev/null; MQ_PID=""; rm -f "$PIDF"; }
+        trap stop_consumer EXIT; trap 'exit 130' INT TERM
+        # A stale pid file from a killed wrapper run is ours to clean; a consumer already attached to the vhost is reused.
+        [ -f "$PIDF" ] && kill -- -"$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"
+        if php bin/console aaxis:test:queue-status oro.default --env=behat_test 2>>"$LOG" | grep -Eq '"consumers": ?[1-9]'; then
+            say "e2e: queue consumer already running on $MQ_VHOST; reusing"
+        else
+            setsid php bin/console oro:message-queue:consume --env=behat_test --no-debug >> "$LOG" 2>&1 < /dev/null &
+            MQ_PID=$!; echo "$MQ_PID" > "$PIDF"; say "e2e: started behat_test queue consumer (pid $MQ_PID)"
+        fi
         php bin/console aaxis:test:e2e --env=behat_test "$@" >> "$LOG" 2>&1; rc=$?
-        grep -E '^\s*[0-9]+ (passed|failed|flaky|skipped|did not run)|scenarios? (passed|failed)' "$LOG" | tail -6
-        res=$(ls -dt var/e2e-results/*/ 2>/dev/null | head -1); [ -n "$res" ] && echo "results: ${res%/}" ;;
+        stop_consumer
+        sed 's/\x1b\[[0-9;]*m//g' "$LOG" | grep -E '^(\[[0-9]+\] )?\s*[0-9]+ (passed|failed|flaky|skipped|did not run)|[0-9]+ (scenarios?|steps?) \(|^(\[[0-9]+\] )?(HTML report|Error|FAIL)' | tail -8
+        res=$(ls -dt var/e2e-results/*/ 2>/dev/null | head -1); [ -n "$res" ] && echo "results: ${res%/}" || echo "results: none found" ;;
 esac
 echo "exit=$rc log=$LOG"
 exit "$rc"

@@ -30,6 +30,9 @@ aaxis-oro version [diff|applies]
 aaxis-oro dev lint
 ```
 
+`phpunit` without `--testsuite` or a path searches the `unit` then `functional` suites, so `--filter X` just works; no tests executed exits 1.
+`e2e` starts its own `behat_test` queue consumer for the run (pid file `.oro-ai/local-env/mq-consumer.pid`, stopped on exit) unless one is already attached; the summary is ANSI-stripped counts plus the results dir.
+
 The plugin's `bin/` is on the Bash tool PATH while the plugin is enabled; `install.sh` links `aaxis-oro` into
 `~/.local/bin` for normal shells (override with `ORO_ATLAS_BIN_DIR`). The team `oro-project` script
 (`scripts/local-env/oro-project`) delegates to `aaxis-oro env switch`.

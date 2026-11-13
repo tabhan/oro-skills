@@ -22,13 +22,13 @@ body
 - Build resolves each anchor against the index (path: file tree, bundle: `<Name>.php` under src/ then vendor/).
   When every anchor of an anchored note is dead the note is demoted to `always` and flagged `possibly stale`.
 - A note with a missing/invalid frontmatter field, unknown kind/anchor type, bad `oro:` range or a secret-like
-  string is skipped with a build warning; `atlas notes --lint` lists them.
+  string is skipped with a build warning; `aaxis-oro atlas notes --lint` lists them.
 - A note whose `oro:` range excludes the project's Oro version is inactive: not injected, not attached to queries,
-  listed by `atlas notes` only with `--all`.
+  listed by `aaxis-oro atlas notes` only with `--all`.
 
 ## Commands
 
-`atlas notes [term...] [--always|--anchored|--lint] [--all] [--limit N] [--json]`: one line per note
+`aaxis-oro atlas notes [term...] [--always|--anchored|--lint] [--all] [--limit N] [--json]`: one line per note
 (`slug  [kind/surface] title  (flags)  path`), exit 1 when nothing matches. Term words match slug, title, kind,
 anchors and body. The shard refreshes itself when a note file changed.
 Every `atlas <sub> <term>` hit is followed by `    note: <slug> - <title>` for matching anchored notes
