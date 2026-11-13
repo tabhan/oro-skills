@@ -19,7 +19,7 @@ code, and deterministic work lives in scripts, not prose.
 | [spec](spec/) | Spec-per-feature in `/spec`, AC ids, `@spec` / `Group('spec:...')` test tags, `aaxis-oro spec coverage|report`. |
 | [env](env/) | Local and local-test environment: check, repair, reset, baseline, workers, host switch. |
 
-Agent: `architect-gate` (read-only plan/diff gate against the atlas index and the Aaxis rules).
+Agent: `architect-gate` (read-only PLAN-phase gate: every extension-point choice cited and appropriate). Mechanical diff checks: `aaxis-oro review check`.
 
 ## CLI
 
@@ -28,6 +28,7 @@ aaxis-oro atlas <sub> <term> | build | setup | precommit | status | notes | migr
 aaxis-oro env check|repair|reset|baseline|import-attachments|restore|workers|switch
 aaxis-oro spec coverage|report
 aaxis-oro test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]
+aaxis-oro review check [--staged|--range A..B|--files F...] [--plan FILE]
 aaxis-oro version [diff|applies]
 aaxis-oro dev lint
 ```

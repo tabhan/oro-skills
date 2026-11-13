@@ -1,4 +1,4 @@
-"""Pre-commit gate: fail when the staged diff adds a decorates/AsDecorator on an atlas-unsafe target."""
+"""Pre-commit gate: `aaxis-oro review check --staged` (unsafe decorates, AppBundle paths, Aaxis independence, direct I/O)."""
 import os
 import subprocess
 import sys
@@ -32,9 +32,12 @@ def reasons(root):
 
 
 def main(argv=None):
+    from . import review
     root = git(os.getcwd(), "rev-parse", "--show-toplevel").strip() or os.getcwd()
-    found = reasons(root)
-    for line in found:
-        sys.stderr.write("aaxis-oro atlas precommit: %s\n" % line)
-    return 1 if found else 0
-
+    found, notes, n = review.run(root, "staged")
+    code = 0
+    if found is not None:
+        for line in review.render(root, found, notes, n)[:-1]:
+            sys.stderr.write("aaxis-oro atlas precommit: %s\n" % line)
+        code = 1 if any(f.severity == "deny" for f in found) else 0
+    return code

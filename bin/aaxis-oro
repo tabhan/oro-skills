@@ -16,6 +16,7 @@ HELP = """usage: aaxis-oro <group> [args]
   memory   <inventory|apply>                                   migrate project auto-memory to .oro-ai/notes
   env      check|repair|reset|baseline|import-attachments|restore|workers|switch   local environment
   test     [--project P] <local|local-test> <phpunit|e2e|console|verify> [args]   explicit-target runner
+  review   check [--staged|--range A..B|--files F...] [--plan FILE]   deterministic review checks (exit 0/1/3/64)
   version  [diff|applies]                                      Oro version and which guidance applies
   spec     coverage|report                                     spec AC traceability: static coverage, run verification
   dev      lint                                                lint the plugin's version-scoped guidance
@@ -40,6 +41,7 @@ TEST_HELP = """usage: aaxis-oro test [--project P] <local|local-test> <phpunit|e
   verify      print the target verification line only
 Exit: the command's own code; 3 target mismatch or refused combination; 64 usage.
 """
+REVIEW_HELP = "usage: aaxis-oro review check [--project P] [--staged|--range A..B|--files F...] [--plan FILE] [--message TEXT] [--json] [--verbose]\nExit: 0 pass, 1 deny finding, 3 diff unreadable, 64 usage.\n"
 DEV_HELP = "usage: aaxis-oro dev lint [--root DIR] [PATH...]\n"
 HELPS = {"-h", "--help", "help"}
 
@@ -80,6 +82,12 @@ def main(argv):
             code = 0
         else:
             run_script("test.sh", rest)
+    elif group == "review" and rest[:1] == ["check"]:
+        from atlas import review
+        code = review.main(rest[1:])
+    elif group == "review":
+        sys.stdout.write(REVIEW_HELP) if not rest or rest[0] in HELPS else sys.stderr.write(REVIEW_HELP)
+        code = 0 if not rest or rest[0] in HELPS else 64
     elif group == "version":
         from oroversion import cli
         code = cli.version_main(rest)

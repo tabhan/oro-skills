@@ -19,10 +19,12 @@ class CatalogueTest(unittest.TestCase):
         skill = open(os.path.join(ROOT, "solutions", "SKILL.md")).read()
         self.assertIn("hantab@aaxis.io", skill)
         gate = open(os.path.join(ROOT, "atlas", "agents", "architect-gate.md")).read()
-        self.assertIn("project_namespace", gate)
-        self.assertIn("src/Aaxis/", gate)
-        self.assertIn("AppBundle/", gate)
+        self.assertIn("review check", gate)
         self.assertIn("stateless", gate)
+        self.assertIn("PLAN", gate)
+        review = open(os.path.join(ROOT, "atlas", "atlas", "review.py")).read()
+        self.assertIn("project_namespace", review)
+        self.assertIn("AppBundle", review)
         self.assertNotIn("AppBundle", open(os.path.join(ROOT, "solutions", "references", "aaxis", "catalogue.md")).read())
 
     def test_no_forbidden_names_in_repo(self):

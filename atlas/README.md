@@ -108,20 +108,33 @@ non-zero when no project/index is found; prompts use that to gate the citation r
 Run from anywhere inside the project, or pass `--project`. A `STALE` line is printed when
 composer.lock differs from the one the index was built from.
 
-## Pre-commit gate (opt-in)
+## Review checks and the pre-commit gate (opt-in)
 
-`aaxis-oro atlas precommit` reads the staged diff (`git diff --cached`) of `src/**` and `config/**`
-`.yml/.yaml/.xml/.php` files and exits 1, printing the deny reason, when it adds a `decorates:` /
-`decorates="..."` / `#[AsDecorator]` on a target the `unsafe` shard flags. `install.sh` puts the CLI on PATH but never
-wires the gate; do that per checkout, e.g. in an untracked `.git/hooks/pre-commit`:
+`aaxis-oro review check [--staged|--range A..B|--files F...] [--plan FILE]` runs the deterministic review checks and
+prints one line per finding plus a summary line (full detail in `.oro-ai/review/logs/`, `--json`, `--verbose`).
+Exit: 0 pass (warnings allowed), 1 deny finding, 3 diff unreadable, 64 usage. Checks (ids in `hooks/checks.yml`,
+gated by `oro:` range and severity):
+
+- `decorates-unsafe-target` (deny): added `decorates:` / `decorates="..."` / `#[AsDecorator]` on an `unsafe` target.
+- `review-atlas-citations` (deny, with `--plan`): every `atlas <sub> <term>` cited in the file has a hit and a cited
+  `file:line` exists; skipped with a note when there is no index.
+- `review-no-appbundle` (deny): no `AppBundle/` path in the diff, added lines or commit messages.
+- `review-no-project-namespace` (deny): no `use <ProjectNamespace>\` under `src/Aaxis/`; the namespace comes from
+  `project_namespace` in `.oro-ai/local-env/env.yml`, skipped with a note when unset.
+- `review-direct-io` (warn): `fopen`/`file_put_contents`/`unlink` on non-temp paths or `%kernel.project_dir%` in
+  touched `src/` (tests excluded).
+
+The plugin's PreToolUse Bash hook runs `--staged` before every `git commit` (deny on a deny finding, one context line
+for warnings). `aaxis-oro atlas precommit` is the same check for a git hook; `install.sh` never wires it, so do that
+per checkout, e.g. in an untracked `.git/hooks/pre-commit`:
 
 ```bash
 #!/bin/sh
 aaxis-oro atlas precommit || exit 1
 ```
 
-or as a `repo: local` entry (`entry: aaxis-oro atlas precommit`,
-`pass_filenames: false`) in a personal pre-commit config. Without a built index it passes.
+or as a `repo: local` entry (`entry: aaxis-oro atlas precommit`, `pass_filenames: false`) in a personal pre-commit
+config. Without a built index the index-dependent checks pass.
 
 ## Install
 

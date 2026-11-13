@@ -13,3 +13,19 @@ checks:
   - id: atlas-query-first
     severity: deny
     oro: ">=7.0.0"
+  # `aaxis-oro review check`: cited atlas entries in a plan must exist
+  - id: review-atlas-citations
+    severity: deny
+    oro: ">=7.0.0"
+  # No AppBundle/ path in the diff or commit (git-ignored spike bundle)
+  - id: review-no-appbundle
+    severity: deny
+    oro: ">=7.0.0"
+  # No project-namespace `use` under src/Aaxis/ (Aaxis bundles are project-independent)
+  - id: review-no-project-namespace
+    severity: deny
+    oro: ">=7.0.0"
+  # Direct disk I/O in touched src is a warning only
+  - id: review-direct-io
+    severity: warn
+    oro: ">=7.0.0"
