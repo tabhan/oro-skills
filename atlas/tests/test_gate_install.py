@@ -8,7 +8,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ATLAS_DIR = os.path.dirname(HERE)
 REPO = os.path.dirname(ATLAS_DIR)
 PIPELINE = "/opt/projects/cc/commands/tab-pipeline.md"
-REVIEW = "/opt/projects/cc/commands/tab-review.md"
 ATLAS_BIN = "/opt/projects/oro-skills/bin/aaxis-oro"
 
 
@@ -77,15 +76,17 @@ class PromptGateTest(unittest.TestCase):
         finally:
             os.unlink(fh.name)
 
-    def test_review_resolves_cli_and_status_gate(self):
-        text = read(REVIEW)
+    def test_gate_agent_resolves_cli_and_degrades(self):
+        text = read(ATLAS_DIR + "/agents/architect-gate.md")
         for step in ("command -v aaxis-oro", "$ORO_SKILLS_DIR/bin/aaxis-oro", ATLAS_BIN):
             self.assertIn(step, text)
         self.assertIn("atlas unavailable", text)
 
-    def test_gate_agent_resolves_cli_and_degrades(self):
-        text = read(ATLAS_DIR + "/agents/architect-gate.md")
-        for step in ("command -v aaxis-oro", "$ORO_SKILLS_DIR/bin/aaxis-oro", ATLAS_BIN):
+
+class OwnedAgentTest(unittest.TestCase):
+    def test_reviewer_agent_resolves_cli_and_degrades(self):
+        text = read(ATLAS_DIR + "/agents/aaxis-reviewer.md")
+        for step in ("command -v aaxis-oro", "$ORO_SKILLS_DIR/bin/aaxis-oro", "${CLAUDE_PLUGIN_ROOT}/bin/aaxis-oro"):
             self.assertIn(step, text)
         self.assertIn("atlas unavailable", text)
 
