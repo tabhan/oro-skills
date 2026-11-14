@@ -54,6 +54,20 @@ def unsafe_findings(root):
     return [(rel, t, r) for rel, t, r in ((rel, t, d.deny_reason(root, t)) for rel, t in found) if r]
 
 
+# Commands that cannot write a file: no redirect, substitution or in-place flag, every segment led by a read-only tool.
+READ_ONLY_HEAD = r"(?:ls|cat|head|tail|wc|pwd|grep|egrep|rg|stat|file|which|date|echo|printf|test|true|jq|tree|du|df|cut|tr|diff|cmp|basename|dirname|realpath|id|whoami|ps|sleep|cd)"
+READ_ONLY_GIT = r"git\s+(?:status|log|diff|show|branch|rev-parse|rev-list|ls-files|remote|config\s+--get|blame|describe|fetch)"
+READ_ONLY_CLI = r"\S*aaxis-oro\s+(?:atlas|spec|review\s+check|task\s+check)"
+READ_ONLY_SEGMENT = re.compile(r"\s*(?:%s|%s|%s)(?:\s|$)" % (READ_ONLY_HEAD, READ_ONLY_GIT, READ_ONLY_CLI))
+WRITE_MARK = re.compile(r"[>`]|\$\(|<\(|\s-(?:i|-in-place|exec|delete|fprint)\b|\bsed\s+-\w*i|\btee\b|\bxargs\b|\bfind\b.*-(?:exec|delete)|--output")
+
+
+def read_only(cmd):
+    """True only when the whole command line is made of read-only tools, so the post-hoc git diff cannot find anything new."""
+    segments = re.split(r"\s*(?:&&|\|\||;|\||\n)\s*", cmd.strip())
+    return bool(cmd.strip()) and not WRITE_MARK.search(cmd) and all(READ_ONLY_SEGMENT.match(x) for x in segments if x)
+
+
 COMPOSER_CHANGE = re.compile(r"(?:^|[\s;&|(])composer\s+(?:install|update|require|remove)\b")
 
 
@@ -76,7 +90,10 @@ def decide(payload):
     note = track(payload, root) if payload.get("tool_name") == "Bash" and root else None
     if note:
         out, verdict = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}, "hint"
-    if payload.get("tool_name") == "Bash" and root and c.index_state(root) != "missing":
+    cmd = (payload.get("tool_input") or {}).get("command", "")
+    if payload.get("tool_name") == "Bash" and root and read_only(cmd):
+        pass
+    elif payload.get("tool_name") == "Bash" and root and c.index_state(root) != "missing":
         path, state = c.session_state(payload.get("session_id"))
         seen = set(state.get("bash_flagged", []))
         fresh = [f for f in unsafe_findings(root) if "%s|%s" % f[:2] not in seen]

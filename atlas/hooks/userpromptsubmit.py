@@ -23,18 +23,15 @@ KEYWORDS = re.compile(
 )
 MIN_HITS = 2
 NUDGE = (
-    "[atlas] Oro extension work detected. Your FIRST step, before grep or reading vendor code, is to run "
-    "the atlas index (%s --project %s search <term>; subcommands: "
-    "event tag service unsafe grid layout workflow operation mq config entity js). "
-    "Reuse an OOTB hook first; never `decorates:` a service in `atlas unsafe` - use aaxis_aspect.interceptor. "
-    "State which atlas hit you used (or that none matched) before editing."
+    "[atlas] Oro extension work: before grepping vendor/, run `%s --project %s search <term>` "
+    "(or event|tag|service|unsafe|grid|layout|workflow|operation|mq|config|entity|js). Reuse an OOTB hook; "
+    "never `decorates:` a service listed by `atlas unsafe` (use aaxis_aspect.interceptor). "
+    "State which atlas hit you used, or that none matched, before editing."
 )
 ATLAS = "%s atlas" % c.CLI
 PROCESS = (
-    "[aaxis-oro] Ticket %s in a setup project: the 'Ticket process' block in CLAUDE_project.md applies and overrides any "
-    "command's fast path. Start with `%s task init %s`; an extension-point commit is denied until "
-    ".oro-ai/task/%s/architect-gate.md holds the architect-gate verdict, and `git push` until /aaxis-oro:review "
-    "has written an approved review.md covering HEAD."
+    "[aaxis-oro] Ticket %s: CLAUDE_project.md 'Ticket process' applies (overrides any fast path). "
+    "Start with `%s task init %s`."
 )
 
 
@@ -66,7 +63,7 @@ def decide(payload):
     if root and key and task.is_setup(root) and key not in state.get("process_keys", []):
         state["process_keys"] = state.get("process_keys", []) + [key]
         c.save_state(path, state)
-        text = PROCESS % (key, c.CLI, key, key)
+        text = PROCESS % (key, c.CLI, key)
         prev = (out or {}).get("hookSpecificOutput", {}).get("additionalContext")
         out = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
                                       "additionalContext": c.clip(prev + "\n" + text if prev else text)}}

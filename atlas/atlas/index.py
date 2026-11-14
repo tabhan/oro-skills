@@ -24,18 +24,28 @@ def composer_lock_sha(root):
 
 
 def _walk_sources(root):
-    """(relpath, mtime_ns, size) of every file under src/ and config/."""
+    """(relpath, mtime_ns, size) of every file under src/ and config/ (scandir: one stat per entry, no relpath calls)."""
     found = []
-    for top in ("src", "config"):
-        for d, dirs, files in os.walk(os.path.join(root, top)):
-            dirs[:] = [x for x in dirs if x != "Tests"]  # tests are no extension points; editing them must not stale a shard
-            for f in files:
-                path = os.path.join(d, f)
+    root = os.path.abspath(root)
+    stack = [(os.path.join(root, top), top) for top in ("src", "config")]
+    while stack:
+        path, rel = stack.pop()
+        try:
+            it = os.scandir(path)
+        except OSError:
+            continue
+        with it:
+            for entry in it:
+                child = rel + os.sep + entry.name
                 try:
-                    st = os.stat(path)
+                    if entry.is_dir(follow_symlinks=True):
+                        if entry.name != "Tests" and not entry.is_symlink():  # tests are no extension points; editing them must not stale a shard
+                            stack.append((entry.path, child))
+                    else:
+                        st = entry.stat()
+                        found.append((child, st.st_mtime_ns, st.st_size))
                 except OSError:
                     continue
-                found.append((os.path.relpath(path, root), st.st_mtime_ns, st.st_size))
     return sorted(found)
 
 

@@ -23,7 +23,10 @@ TEXT = (
 def decide(payload):
     root = c.project_root(payload.get("cwd") or os.getcwd())
     out, verdict = None, "skip"
-    if root and c.index_state(root) != "missing":
+    # The plugin's own agents already carry atlas instructions in their definitions.
+    if str(payload.get("agent_type", "")).startswith("aaxis-oro:"):
+        verdict = "skip-own-agent"
+    elif root and c.index_state(root) != "missing":
         text = TEXT % {"atlas": ATLAS, "root": root}
         out = {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": c.clip(text, 900)}}
         verdict = "inject"

@@ -25,6 +25,12 @@ class SubagentStartTest(Base):
         for needle in ("bin/aaxis-oro", "--project " + self.root, "unsafe", "file:line", "--incremental", "exits 2", "atlas build --project", "config|tags|layout|workflow|js"):
             self.assertIn(needle, ctx)
 
+    def test_silent_for_the_plugins_own_agents(self):
+        self.build_index()
+        code, out = run("subagentstart.py", {"session_id": "s1", "hook_event_name": "SubagentStart",
+                                             "agent_type": "aaxis-oro:aaxis-reviewer", "cwd": self.root}, self.home)
+        self.assertEqual((code, out), (0, None))
+
     def test_silent_without_index_or_outside_oro(self):
         self.assertEqual(self.start(), (0, None))
         self.build_index()

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.3
+
+- Token/time economy, no behaviour change to any gate: atlas staleness check walks `src/`+`config/` with `scandir` (about 2.3x faster; it runs in the SessionStart, Edit/Write and Bash hooks), `atlas` queries skip the backslash regex for plain strings, the PostToolUse Bash hook skips its post-hoc `git diff` scan for command lines made only of read-only tools, SubagentStart no longer injects the atlas reminder into this plugin's own agents, and the atlas and ticket-process prompt reminders are shorter (the process one no longer repeats the Ticket process block).
+
 ## 0.27.2
 
 - `dev refresh`: a `Migrations/` change now also runs `oro:migration:data:load` (new `data-load` step, prod kernel) and reports the fixtures it loaded; `migrate` alone is schema only.

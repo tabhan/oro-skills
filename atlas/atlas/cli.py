@@ -36,7 +36,8 @@ _SLASHES = re.compile(r"\\+")
 
 def normalize(text):
     """Collapse backslash runs so 'Oro\\\\Bundle', 'Oro\\Bundle' and '\\Oro\\Bundle' all compare equal."""
-    return _SLASHES.sub("\\\\", str(text).lower()).lstrip("\\")
+    low = str(text).lower()
+    return (_SLASHES.sub("\\\\", low) if "\\" in low else low).lstrip("\\")
 
 
 def _flatten(value):
