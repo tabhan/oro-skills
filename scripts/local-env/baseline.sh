@@ -19,7 +19,7 @@ le_guard oro_test "$TEST_DB"
 pg_drop "$TEST_BASE" && pg_drop "$TEST_DB" || fail "pg drop"
 mut "create $TEST_DB" pg -c "CREATE DATABASE \"$TEST_DB\"" || fail "create db"
 mut "uuid-ossp in $TEST_DB" dx pgsql psql -U postgres -d "$TEST_DB" -qc 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"' || fail "extension"
-es_drop_prefix "$ES_PREFIX"; redis_flush_session; mq_purge
+es_drop_prefix "$ES_PREFIX"; redis_flush_session; mq_ensure_vhost; mq_purge
 for m in "$MONGO_PUB" "$MONGO_PRIV" "$MONGO_BASE"; do mongo_drop "$m" || fail "mongo drop $m"; done
 lap prepare
 mut "oro:install --env=behat_test (slow)" console oro:install --env=behat_test --no-interaction --timeout=3000 \

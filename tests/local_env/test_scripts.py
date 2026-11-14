@@ -196,8 +196,11 @@ class Baseline(Base):
         self.assertNotIn("DROP DATABASE", self.calls())
 
     def test_dry_run_plans_rebuild(self):
+        write(os.path.join(self.project, ".env-app.test.local"), "ORO_MQ_DSN=amqp://admin:x@127.0.0.1:5672/oro_test\n")
         p = self.run_script("baseline.sh", "--dry-run")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("would: vhost permissions admin on oro_test", p.stdout)
+        self.assertLess(p.stdout.index("would: vhost permissions"), p.stdout.index("would: oro:install"))
         self.assertIn("would: oro:install --env=behat_test", p.stdout)
         self.assertNotIn("DROP DATABASE", self.calls())
         self.assertLessEqual(self.lines(p), 25)
@@ -329,6 +332,103 @@ class Sudo(Base):
         self.assertIn(p.returncode, (0, 10))
         if p.returncode == 10:
             self.assertIn("SUDO-NEEDED: echo '127.0.0.1 ", p.stdout)
+
+
+class MqVhost(Base):
+    """Test vhost ownership: the user comes from the test stack DSN and is granted on every repair."""
+
+    def dotenv(self, name, text):
+        write(os.path.join(self.project, name), text)
+
+    def test_placeholder_dsn_resolves_from_same_file(self):
+        self.dotenv(".env-app.local", "RABBITMQ_DEFAULT_USER=devuser\n")
+        self.dotenv(".env-app.test.local", "RABBITMQ_DEFAULT_USER=admin\nORO_MQ_DSN=amqp://${RABBITMQ_DEFAULT_USER}:s3cret@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("set_permissions -p oro_test admin .* .* .*", self.calls())
+        self.assertNotIn("devuser", self.calls())
+        self.assertNotIn("s3cret", p.stdout + self.calls())
+
+    def test_dev_dotenv_dsn_is_ignored(self):
+        self.dotenv(".env-app.local", "ORO_MQ_DSN=amqp://${RABBITMQ_DEFAULT_USER}:x@127.0.0.1:5672\nRABBITMQ_DEFAULT_USER=admin\n")
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://tester:x@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost", STUB_MQ_USERS="tester:admin")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("set_permissions -p oro_test tester ", self.calls())
+
+    def test_template_default_when_test_dsn_absent(self):
+        self.dotenv(".env-app.local", "RABBITMQ_DEFAULT_USER=admin\n")
+        p = self.run_script("repair.sh", "--only", "vhost")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("set_permissions -p oro_test admin ", self.calls())
+
+    def test_missing_user_fails_loudly_without_guest_fallback(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://ghost:x@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("FAIL vhost user: RabbitMQ user 'ghost' does not exist", p.stdout)
+        self.assertNotIn("set_permissions", self.calls())
+        self.assertNotIn("guest", self.calls())
+
+    def test_unresolvable_user_fails_loudly(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://${NOPE}:x@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("FAIL vhost user: no RabbitMQ user resolvable", p.stdout)
+        self.assertNotIn("set_permissions", self.calls())
+
+    def test_present_vhost_still_grants(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://admin:x@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost")  # stub default: oro_test already present
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("present, admin permissions ensured", p.stdout)
+        self.assertNotIn("add_vhost", self.calls())
+        self.assertIn("set_permissions -p oro_test admin", self.calls())
+
+    def test_missing_vhost_created_then_granted(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://admin:x@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost", STUB_VHOSTS="/")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        calls = self.calls()
+        self.assertLess(calls.index("add_vhost oro_test"), calls.index("set_permissions -p oro_test admin"))
+
+    def test_failure_names_the_real_step_with_stderr(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://admin:x@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost", STUB_SET_PERMS_FAIL="1")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("FAIL vhost permissions admin on oro_test: Error: user not found", p.stdout)
+        p = self.run_script("repair.sh", "--only", "vhost", STUB_VHOSTS="/", STUB_ADD_VHOST_FAIL="1")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("FAIL vhost create oro_test: add_vhost boom", p.stdout)
+
+    def test_dry_run_mutates_nothing(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://admin:x@127.0.0.1:5672/oro_test\n")
+        p = self.run_script("repair.sh", "--only", "vhost", "--dry-run")
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("would: vhost permissions admin on oro_test", p.stdout)
+        self.assertNotIn("set_permissions", self.calls())
+
+    def check_item(self, **env):
+        j = json.loads(self.run_script("check.sh", "--json", **env).stdout)
+        return {i["item"]: i for i in j["items"]}.get("mq-vhost-access")
+
+    def test_check_detects_missing_grant(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://admin:x@127.0.0.1:5672/oro_test\n")
+        item = self.check_item()  # vhost present, no permissions listed
+        self.assertEqual(item["status"], "drift")
+        self.assertIn("lacks configure/write/read on vhost oro_test (repair.sh --only vhost)", item["detail"])
+
+    def test_check_detects_partial_grant_and_passes_full_grant(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://admin:x@127.0.0.1:5672/oro_test\n")
+        self.assertEqual(self.check_item(STUB_MQ_PERMS="admin\\t\\t.*\\t.*")["status"], "drift")
+        self.assertEqual(self.check_item(STUB_MQ_PERMS="other\\t.*\\t.*\\t.*")["status"], "drift")
+        self.assertEqual(self.check_item(STUB_MQ_PERMS="admin\\t.*\\t.*\\t.*")["status"], "ok")
+
+    def test_check_flags_unknown_user(self):
+        self.dotenv(".env-app.test.local", "ORO_MQ_DSN=amqp://ghost:x@127.0.0.1:5672/oro_test\n")
+        item = self.check_item()
+        self.assertEqual(item["status"], "drift")
+        self.assertIn("'ghost' does not exist", item["detail"])
 
 
 class Restore(Base):

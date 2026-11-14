@@ -4,7 +4,7 @@
 # Prints drifted items only (--verbose: every item), then one summary line.
 # Usage: check.sh [--json] [--verbose] [--project P]
 # Exit: 0 clean, 1 env.yml invalid, 2 drift (items listed), 3 guard-invalid env.yml.
-source "$(dirname "$0")/lib/common.sh"
+source "$(dirname "$0")/lib/common.sh"; source "$LE_LIB/stack.sh"
 le_init check "$@"
 RES=$(mktemp); trap 'rm -f "$RES"' EXIT
 item() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$RES"; }   # status item detail
@@ -60,7 +60,14 @@ done
 for db in "$TEST_DB" "$TEST_BASE"; do
     if pg_out=$(pg -c "select 1 from pg_database where datname='$db'" 2>/dev/null) && [ "$pg_out" = 1 ]; then ok "pg-$db"; else bad "pg-$db" "database $db missing"; fi
 done
-if dx rabbitmq rabbitmqctl list_vhosts -q 2>/dev/null | grep -qx "$MQ_VHOST"; then ok mq-vhost "$MQ_VHOST"; else bad mq-vhost "vhost $MQ_VHOST missing"; fi
+if vhost_exists "$MQ_VHOST"; then
+    ok mq-vhost "$MQ_VHOST"
+    mqu=$(mq_test_user)
+    if [ -z "$mqu" ]; then bad mq-vhost-access "no RabbitMQ user resolvable from ORO_MQ_DSN in .env-app.test.local (render.sh)"
+    elif ! mq_user_exists "$mqu"; then bad mq-vhost-access "RabbitMQ user '$mqu' does not exist (rabbitmqctl add_user)"
+    elif mq_user_has_access "$MQ_VHOST" "$mqu"; then ok mq-vhost-access "$mqu"
+    else bad mq-vhost-access "user '$mqu' lacks configure/write/read on vhost $MQ_VHOST (repair.sh --only vhost)"; fi
+else bad mq-vhost "vhost $MQ_VHOST missing"; fi
 if dx mongodb mongosh --quiet --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d=>print(d.name))' 2>/dev/null | grep -qx "$MONGO_BASE"; then ok mongo-baseline "$MONGO_BASE"; else bad mongo-baseline "mongo db $MONGO_BASE missing"; fi
 [ "$(dx redis redis-cli -n "$SESSION_DB" ping 2>/dev/null)" = PONG ] && ok redis "db $SESSION_DB" || bad redis "redis db $SESSION_DB unreachable"
 key=$("$LE_LIB/baseline-key.sh" "$PROJECT" 2>/dev/null)

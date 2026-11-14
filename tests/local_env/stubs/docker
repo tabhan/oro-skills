@@ -8,6 +8,10 @@ case "$*" in
         for d in "${PGDBS[@]}"; do [ "$d" = "$name" ] && echo 1; done ;;
     *listDatabases*) tr ':' '\n' <<< "${STUB_MONGO_DBS:-}" ;;
     *"rabbitmqctl list_vhosts"*) tr ':' '\n' <<< "${STUB_VHOSTS:-}" ;;
+    *"rabbitmqctl list_users"*) tr ':' '\n' <<< "${STUB_MQ_USERS-admin}" | sed 's/$/\t[]/' ;;
+    *"rabbitmqctl list_permissions"*) [ -n "${STUB_MQ_PERMS:-}" ] && printf '%b\n' "$STUB_MQ_PERMS" ;;
+    *"rabbitmqctl add_vhost"*) [ -n "${STUB_ADD_VHOST_FAIL:-}" ] && { echo "add_vhost boom" >&2; exit 70; } ;;
+    *"rabbitmqctl set_permissions"*) [ -n "${STUB_SET_PERMS_FAIL:-}" ] && { echo "Error: user not found" >&2; exit 70; } ;;
     *"rabbitmqctl list_queues"*) echo name; tr ':' '\n' <<< "${STUB_QUEUES:-}" ;;
     *"redis-cli"*ping*) echo PONG ;;
 esac

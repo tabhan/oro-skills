@@ -43,6 +43,53 @@ es_drop_prefix() {
 
 vhost_exists() { dx rabbitmq rabbitmqctl list_vhosts -q 2>/dev/null | grep -qx "$1"; }
 
+# User the test stack connects to RabbitMQ as, or empty. Read from the test stack dotenv ORO_MQ_DSN, never the dev
+# one; a ${VAR} placeholder resolves from the same file, then from the dev dotenv (the value render.sh bakes in).
+mq_test_user() {
+    local f dsn user name val
+    for f in .env-app.test.local .env-app.behat_test.local; do
+        [ -f "$PROJECT/$f" ] || continue
+        dsn=$(grep -E '^ORO_MQ_DSN=' "$PROJECT/$f" | tail -1 | cut -d= -f2- | tr -d "'\"")
+        [ -n "$dsn" ] || continue
+        user=$(sed -nE 's#^amqps?://([^:@/]+).*#\1#p' <<< "$dsn")
+        if [[ $user =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$ ]]; then
+            name=${BASH_REMATCH[1]}; val=$(grep -E "^$name=" "$PROJECT/$f" | tail -1 | cut -d= -f2- | tr -d "'\"")
+            [ -n "$val" ] || val=$(mq_dev_dotenv "$name")
+            user=$val
+        fi
+        [ -n "$user" ] && [[ $user != *'$'* ]] && { echo "$user"; return 0; }
+    done
+    user=$(mq_dev_dotenv RABBITMQ_DEFAULT_USER); [[ $user != *'$'* ]] && echo "$user"
+    return 0
+}
+mq_dev_dotenv() { local f; for f in .env-app.local .env-app; do [ -f "$PROJECT/$f" ] && grep -E "^$1=" "$PROJECT/$f" | tail -1 | cut -d= -f2- | tr -d "'\"" | grep . && return 0; done; return 0; }
+
+mq_user_exists() { dx rabbitmq rabbitmqctl list_users -q 2>/dev/null | cut -f1 | grep -qx "$1"; }
+
+# True when the user holds configure/write/read ".*" on the vhost.
+mq_user_has_access() { dx rabbitmq rabbitmqctl list_permissions -p "$1" -q 2>/dev/null | awk -F'\t' -v u="$2" '$1==u && $2==".*" && $3==".*" && $4==".*" {f=1} END{exit !f}'; }
+
+# Runs a RabbitMQ mutation; on failure reports the step with rabbitmqctl's own output. Exits 1.
+mq_step() {
+    local step=$1 out; shift
+    if [ "$DRY" = 1 ]; then say "would: $step"; return 0; fi
+    logv "+ $step"
+    out=$("$@" 2>&1) || { say "FAIL $step: $(tr '\n' ' ' <<< "$out")"; exit 1; }
+}
+
+# Idempotent: creates the test vhost when missing and always (re)grants the test stack user on it, so a vhost left
+# without permissions by an interrupted run heals. No-op when env.yml configures no local_test vhost.
+mq_ensure_vhost() {
+    [ -n "${MQ_VHOST:-}" ] || return 0
+    le_guard oro_test "$MQ_VHOST"
+    local user created=0; user=$(mq_test_user)
+    [ -n "$user" ] || fail "vhost user: no RabbitMQ user resolvable from ORO_MQ_DSN in .env-app.test.local (or RABBITMQ_DEFAULT_USER); run render.sh"
+    mq_user_exists "$user" || fail "vhost user: RabbitMQ user '$user' does not exist (rabbitmqctl add_user, or fix ORO_MQ_DSN in .env-app.test.local)"
+    vhost_exists "$MQ_VHOST" || { mq_step "vhost create $MQ_VHOST" dx rabbitmq rabbitmqctl add_vhost "$MQ_VHOST"; created=1; }
+    mq_step "vhost permissions $user on $MQ_VHOST" dx rabbitmq rabbitmqctl set_permissions -p "$MQ_VHOST" "$user" '.*' '.*' '.*'
+    if [ "$created" = 1 ]; then say "vhost: created $MQ_VHOST for $user"; else say "vhost: $MQ_VHOST present, $user permissions ensured"; fi
+}
+
 mq_purge() {
     le_guard oro_test "$MQ_VHOST"
     local q rc=0
