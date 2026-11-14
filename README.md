@@ -47,6 +47,7 @@ dev     lint | refresh [--all]       lint this plugin | refresh derived state af
 | [env](env/) | Local and local-test stack: check, repair, reset, baseline, worker sizing. |
 | agent `architect-gate` | Read-only PLAN-phase gate: every extension-point choice cited and appropriate. |
 | `/aaxis-oro:setup` | Foundation setup, `CLAUDE_project.md` rules, `.oro-ai/config.json`, atlas and env hand-off. Idempotent. |
+| `/aaxis-oro:review` | Mandatory supplementary review before push (official pack + Aaxis lenses), verdict in `.oro-ai/task/<KEY>/review.md`. |
 | `/aaxis-oro:notes-migrate` | Project auto-memory to `.oro-ai/notes` (classify, confirm, apply). |
 
 ## Hooks
@@ -75,6 +76,14 @@ applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose 
   `Verdict: skipped - <reason>` line (a bare `PASS`/`REJECT` first line is read the same); `review-ticket-evidence` warns when `STATUS.md` is missing or production `src/`
   code changed on the branch (vs the first of `origin/develop`, `develop`, `origin/main`, `main`, ...) with no
   `*.feature`/`*.steps.ts`.
+- Supplementary review (`/aaxis-oro:review`, agent `aaxis-oro:aaxis-reviewer`): invokes the official
+  `orocommerce-review:review-changes` for the generic lenses and adds the Aaxis ones (reuse/OOTB via atlas, Aaxis rule
+  judgment, plan.md/architect-gate drift, conditional performance), refuted with the official `finding-refuter`.
+  It writes `.oro-ai/task/<KEY>/review.md` with `Verdict: approved|changes-requested|skipped - <reason>` and
+  `Range: <base>..<head>`. An approved review covers HEAD when its head is HEAD, or an ancestor with only `.oro-ai/`
+  files changed since (so committing the review itself keeps it fresh). Once the branch has committed code,
+  `task check` fails without a covering approved/skipped review, and `review-ticket-push` (PreToolUse on Bash
+  `git push`) denies the push; there is no git-side hook, so a human pushing from a shell is not gated.
 - UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch).
 - Escape hatches: `Verdict: skipped - <reason>` for a trivial change (auditable in the task dir); the human-only
   `ORO_ATLAS_ENFORCE=0` downgrades the deny to a warning.

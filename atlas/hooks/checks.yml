@@ -37,3 +37,7 @@ checks:
   - id: review-ticket-evidence
     severity: warn
     oro: ">=7.0.0"
+  # Setup project, ticket branch with committed code: `git push` needs .oro-ai/task/<KEY>/review.md approved/skipped covering HEAD
+  - id: review-ticket-push
+    severity: deny
+    oro: ">=7.0.0"

@@ -14,4 +14,8 @@ may skip plan documents, phase lists and approvals, never the steps below.
    the fix. Behat is deprecated; a unit test supplements, never replaces, the e2e scenario.
 4. Before commit: `aaxis-oro task check` and `aaxis-oro review check`. The commit hook denies an extension-point
    commit on a ticket branch without an approved or skipped gate verdict, and warns on missing `STATUS.md` or e2e.
+5. Supplementary review (aaxis-oro) before push: `/aaxis-oro:review` runs the official `orocommerce-review` pack plus
+   the Aaxis lenses and writes `.oro-ai/task/<TICKET>/review.md` (`Verdict:` and `Range: <base>..<head>`). The
+   `git push` hook and `aaxis-oro task check` fail until an approved verdict covers HEAD; new code commits need a new
+   review. A trivial change records `Verdict: skipped - <reason>` instead.
 <!-- aaxis-oro:process-rules:end -->

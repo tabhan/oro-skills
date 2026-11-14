@@ -34,6 +34,7 @@ def attempts_override(cmd):
 
 
 GIT_COMMIT = re.compile(r"(?:^|[;&|(]\s*)git\b(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+commit\b")
+GIT_PUSH = re.compile(r"(?:^|[;&|(]\s*)git\b(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+push\b")
 
 
 HOOK_MAX_FILES = 300
@@ -92,11 +93,33 @@ def commit_review(payload, cmd):
     return out, verdict
 
 
+def push_review(payload):
+    """(output, verdict): setup project, ticket branch, code committed: deny the push without a fresh review.md verdict."""
+    from atlas import review, task
+    root = c.project_root(payload.get("cwd") or os.getcwd())
+    key = task.branch_key(root) if root and task.is_setup(root) else None
+    problem = task.review_problem(root, key) if key else None
+    d = review.resolve.check_decision(review.resolve.load_registry(review.REGISTRY), "review-ticket-push",
+                                      review.detect(root).version) if problem else {"run": False}
+    out, verdict = None, "skip"
+    if d["run"]:
+        hso = {"hookEventName": "PreToolUse"}
+        if c.enforcement_off() or d["severity"] == "warn":
+            hso["additionalContext"] = "[review] review-ticket-push: " + problem
+            out, verdict = {"hookSpecificOutput": hso}, "context-push"
+        else:
+            hso.update(permissionDecision="deny", permissionDecisionReason="review-ticket-push: " + problem)
+            out, verdict = {"hookSpecificOutput": hso}, "deny-push"
+    return out, verdict
+
+
 def decide(payload):
     cmd = (payload.get("tool_input") or {}).get("command", "")
     out, verdict = None, "skip"
     if payload.get("tool_name") == "Bash" and GIT_COMMIT.search(cmd) and not attempts_override(cmd):
         out, verdict = commit_review(payload, cmd)
+    elif payload.get("tool_name") == "Bash" and GIT_PUSH.search(cmd) and not attempts_override(cmd):
+        out, verdict = push_review(payload)
     elif payload.get("tool_name") == "Bash" and attempts_override(cmd):
         reason = "%s is a human-only switch: the user sets it in their own shell. Claude must not set, export or write it anywhere." % c.OVERRIDE_VAR
         out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}

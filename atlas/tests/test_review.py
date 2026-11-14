@@ -218,3 +218,81 @@ class TicketProcessTest(ReviewBase):
                            env=dict(os.environ, HOME=self.home, ORO_ATLAS_ENFORCE="0"))
         self.assertEqual(p.returncode, 0)
         self.assertIn("review-ticket-gate", p.stdout)
+
+
+class SupplementaryReviewTest(ReviewBase):
+    """review.md verdict + Range staleness, `task check` and the `git push` gate."""
+
+    def setUp(self):
+        super().setUp()
+        self.git("checkout", "-qb", "feature/BUC-9")
+        self.write(".oro-ai/config.json", "{}\n")
+        self.write(".oro-ai/task/BUC-9/architect-gate.md", "Verdict: skipped - test\n")
+        self.write(".oro-ai/task/BUC-9/STATUS.md", "x\n")
+        self.write("src/Foo/Tests/E2e/x.feature", "Feature: x\n")
+        self.write("src/Foo/A.php", "<?php\n")
+        self.git("add", "src")
+        self.git("commit", "-qm", "code")
+
+    def sha(self, ref="HEAD"):
+        return subprocess.run(["git", "-C", self.root, "rev-parse", ref], capture_output=True, text=True).stdout.strip()
+
+    def review(self, text):
+        self.write(".oro-ai/task/BUC-9/review.md", text)
+
+    def task_check(self, env=None):
+        return subprocess.run([sys.executable, EXE, "task", "check"], cwd=self.root, capture_output=True, text=True,
+                              env=dict(os.environ, HOME=self.home, **(env or {})))
+
+    def push(self, cmd="git push -u origin HEAD", env=None):
+        return run("pretooluse_bash.py", {"session_id": "s", "tool_name": "Bash", "cwd": self.root, "tool_input": {"command": cmd}},
+                   self.home, env)[1]
+
+    def test_verdict_parsing_and_staleness(self):
+        from atlas import task
+        head, base = self.sha(), self.sha("HEAD~1")
+        cases = (("", "missing"), ("Verdict: changes-requested\nRange: %s..%s\n" % (base, head), "changes-requested"),
+                 ("Verdict: approved\n", "stale"), ("Verdict: approved\nRange: %s..%s\n" % (base, base), "stale"),
+                 ("Verdict: approved\nRange: %s..%s\n" % (base[:12], head[:12]), "approved"),
+                 ("Verdict: skipped\n", "no-verdict"), ("Verdict: skipped - docs only\n", "skipped"))
+        for text, state in cases:
+            self.review(text)
+            self.assertEqual(task.review_state(self.root, "BUC-9")[0], state, text)
+
+    def test_committing_task_files_after_review_keeps_it_fresh_but_code_does_not(self):
+        from atlas import task
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        self.git("add", "-f", ".oro-ai/task")
+        self.git("commit", "-qm", "review evidence")
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+        self.write("src/Foo/B.php", "<?php\n")
+        self.git("add", "src")
+        self.git("commit", "-qm", "more")
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def test_task_check_requires_fresh_review(self):
+        p = self.task_check()
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("review: missing", p.stdout)
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        self.assertEqual(self.task_check().returncode, 0, self.task_check().stdout)
+
+    def test_push_denied_without_review_allowed_with_fresh_or_skipped(self):
+        out = self.push()
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("review-ticket-push", out["hookSpecificOutput"]["permissionDecisionReason"])
+        self.review("Verdict: skipped - docs only\n")
+        self.assertIsNone(self.push("cd . && git push"))
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        self.assertIsNone(self.push())
+        self.assertIsNone(self.push("git status"))
+
+    def test_push_override_warns_and_non_setup_or_non_ticket_is_noop(self):
+        out = self.push(env={"ORO_ATLAS_ENFORCE": "0"})
+        self.assertNotIn("permissionDecision", out["hookSpecificOutput"])
+        self.assertIn("review-ticket-push", out["hookSpecificOutput"]["additionalContext"])
+        os.remove(os.path.join(self.root, ".oro-ai", "config.json"))
+        self.assertIsNone(self.push())
+        self.write(".oro-ai/config.json", "{}\n")
+        self.git("checkout", "-qb", "chore/cleanup")
+        self.assertIsNone(self.push())

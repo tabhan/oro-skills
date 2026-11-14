@@ -10,11 +10,15 @@ import subprocess
 import sys
 
 KEY = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![0-9])")
-WORDS = r"(approved|pass(?:ed)?|rejected?|fail(?:ed)?|skipped)"
+WORDS = r"(approved|pass(?:ed)?|rejected?|fail(?:ed)?|changes[- ]requested|skipped)"
 # A `Verdict: <word>` line anywhere, or the verdict word alone opening the file (older gate output wrote bare "PASS").
 VERDICT = re.compile(r"^[\s>*_#-]*verdict[\s*_]*:[\s*_`]*%s\b[ \t*_`]*([^\n]*)" % WORDS, re.I | re.M)
 LEAD = re.compile(r"\A\s*[>*_#` \t]*%s\b[ \t*_`]*([^\n]*)" % WORDS, re.I)
-CANON = {"pass": "approved", "passed": "approved", "reject": "rejected", "fail": "rejected", "failed": "rejected"}
+CANON = {"pass": "approved", "passed": "approved", "reject": "rejected", "fail": "rejected", "failed": "rejected",
+         "changes-requested": "changes-requested", "changes requested": "changes-requested"}
+# `Range: <base>..<head>` in review.md: the commits the supplementary review covered.
+RANGE = re.compile(r"^[\s>*_#-]*range[\s*_]*:[\s*_`]*([0-9a-f]{7,40})\.\.\.?([0-9a-f]{7,40})", re.I | re.M)
+TASK_ONLY = re.compile(r"^\.oro-ai/")
 E2E_FILE = re.compile(r"(?:\.feature|\.steps\.ts)$")
 PROD_FILE = re.compile(r"^src/.+\.(?:php|ya?ml|xml|twig|js|ts|scss)$")
 NOT_PROD = re.compile(r"/(?:Tests|Migrations/Data/Demo)/|/translations/")
@@ -52,22 +56,62 @@ def task_dir(root, key):
     return os.path.join(root, ".oro-ai", "task", key)
 
 
-def gate_state(root, key):
-    """('missing'|'unreadable'|'no-verdict'|'approved'|'rejected'|'skipped', reason) from architect-gate.md."""
-    path = os.path.join(task_dir(root, key), "architect-gate.md")
-    state, reason = "missing", ""
-    if os.path.isfile(path):
-        try:
-            with open(path, encoding="utf-8", errors="ignore") as fh:
-                text = fh.read()
-            m = VERDICT.search(text) or LEAD.search(text)
-            word = m.group(1).lower() if m else None
-            state, reason = (CANON.get(word, word), m.group(2).strip(" -:—")) if m else ("no-verdict", "")
-        except OSError:
-            state = "unreadable"
+def read_text(path):
+    """File text, '' when missing, None when unreadable."""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return None
+
+
+def verdict_of(text):
+    """('missing'|'unreadable'|'no-verdict'|'approved'|'rejected'|'changes-requested'|'skipped', reason) of a verdict file."""
+    state, reason = ("unreadable" if text is None else "missing"), ""
+    if text:
+        m = VERDICT.search(text) or LEAD.search(text)
+        word = m.group(1).lower() if m else None
+        state, reason = (CANON.get(word, word), m.group(2).strip(" -:\u2014")) if m else ("no-verdict", "")
         if state == "skipped" and not reason:
             state = "no-verdict"
     return state, reason
+
+
+def gate_state(root, key):
+    """Verdict of .oro-ai/task/<KEY>/architect-gate.md (see verdict_of)."""
+    return verdict_of(read_text(os.path.join(task_dir(root, key), "architect-gate.md")))
+
+
+def review_state(root, key):
+    """(state, reason) of .oro-ai/task/<KEY>/review.md; an approved review is 'stale' unless its Range head covers HEAD.
+
+    Covers = the head is HEAD, or an ancestor of HEAD with only .oro-ai/ files changed since (committing review.md itself).
+    """
+    text = read_text(os.path.join(task_dir(root, key), "review.md"))
+    state, reason = verdict_of(text)
+    if state == "approved":
+        m = RANGE.search(text)
+        head = git(root, "rev-parse", "HEAD")
+        reviewed = m and git(root, "rev-parse", "--verify", "-q", m.group(2) + "^{commit}")
+        since = reviewed and git(root, "diff", "--name-only", "%s..HEAD" % reviewed)
+        covered = bool(reviewed) and (reviewed == head or (
+            since is not None and git(root, "merge-base", "--is-ancestor", reviewed, "HEAD") is not None
+            and all(TASK_ONLY.match(f) for f in since.splitlines() if f)))
+        state, reason = ("approved", reason) if covered else (
+            "stale", "no Range: <base>..<head> line" if not m else "reviewed %s, HEAD is %s" % (m.group(2)[:10], (head or "?")[:10]))
+    return state, reason
+
+
+def review_problem(root, key):
+    """One line when this branch's committed code needs a fresh approved/skipped review.md, else None."""
+    if not any(not TASK_ONLY.match(f) for f in branch_files(root)):
+        return None
+    state, reason = review_state(root, key)
+    return None if state in ("approved", "skipped") else (
+        "review: %s%s (run /aaxis-oro:review; .oro-ai/task/%s/review.md needs 'Verdict: approved' and a "
+        "'Range: <base>..<head>' covering HEAD, or 'Verdict: skipped - <reason>')" % (state, ": " + reason if reason else "", key))
 
 
 def branch_files(root):
@@ -127,6 +171,8 @@ def main(argv=None):
     state, reason = gate_state(root, key)
     staged = (git(root, "diff", "--cached", "--name-only") or "").splitlines()
     problems = evidence(root, key, branch_files(root) + staged)
+    rp = review_problem(root, key)
+    problems += [rp] if rp else []
     if state not in ("approved", "skipped"):
         problems.insert(0, "architect-gate: %s (.oro-ai/task/%s/architect-gate.md needs 'Verdict: approved')" % (state, key))
     print("\n".join(problems + ["task %s: %s (gate %s%s)" % (key, "incomplete" if problems else "ok", state,

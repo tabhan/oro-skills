@@ -33,7 +33,8 @@ ATLAS = "%s atlas" % c.CLI
 PROCESS = (
     "[aaxis-oro] Ticket %s in a setup project: the 'Ticket process' block in CLAUDE_project.md applies and overrides any "
     "command's fast path. Start with `%s task init %s`; an extension-point commit is denied until "
-    ".oro-ai/task/%s/architect-gate.md holds the architect-gate verdict."
+    ".oro-ai/task/%s/architect-gate.md holds the architect-gate verdict, and `git push` until /aaxis-oro:review "
+    "has written an approved review.md covering HEAD."
 )
 
 
