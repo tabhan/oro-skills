@@ -27,12 +27,20 @@ def write_shard(out_dir, name, records):
     return count
 
 
-def read_shard(out_dir, name):
+def read_shard(out_dir, name, terms=None):
+    """Yield the shard's records. `terms` (already case-folded query terms) skips, before json decoding, every line that
+    cannot match: the raw line is lower-cased and stripped of backslashes (JSON escapes) and each term must occur in it.
+    This is only a necessary condition, so callers still score the records they get."""
     path = shard_path(out_dir, name)
     if not os.path.isfile(path):
         raise MissingShard("shard '%s' not built; run: aaxis-oro atlas build --only %s" % (name, name))
+    needles = [t.replace("\\", "") for t in (terms or [])]
     with open(path, encoding="utf-8") as fh:
         for line in fh:
+            if needles:
+                flat = line.lower().replace("\\", "")
+                if not all(n in flat for n in needles):
+                    continue
             line = line.strip()
             if line:
                 yield json.loads(line)

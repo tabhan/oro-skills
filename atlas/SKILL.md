@@ -1,13 +1,11 @@
 ---
 name: atlas
 description: >-
-  Run FIRST (before grep or reading vendor/) for any Oro question of the form "which event / DI tag /
-  service / datagrid / workflow / operation / MQ topic / system config / layout block / mediator event /
-  entity exists or should I hook into": `aaxis-oro atlas <subcommand> <term>` answers from a generated index of
-  vendor/ and src/ with file:line. Use BEFORE writing an event listener, decorator, service override,
-  DI tag, datagrid extension, workflow/operation, MQ processor, system config field, layout block or
-  jsmodules entry, to reuse the OOTB hook. Also use at design/investigation time, before reading
-  vendor/ to learn how Oro wires something. Run `aaxis-oro atlas unsafe <Class>` before any `decorates:`.
+  Run FIRST, before grep or reading vendor/, for any Oro "which event / DI tag / service / datagrid / workflow /
+  operation / MQ topic / system config / layout block / mediator event / entity exists or should I hook into"
+  question: `aaxis-oro atlas <subcommand> <term>` answers from an index of vendor/ and src/ with file:line. Use it
+  before writing a listener, decorator, service override, DI tag, grid extension, workflow/operation, MQ processor,
+  config field, layout block or jsmodules entry, and at design time. Run `atlas unsafe <Class>` before any `decorates:`.
 ---
 
 # atlas

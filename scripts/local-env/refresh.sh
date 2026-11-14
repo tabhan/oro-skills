@@ -21,6 +21,8 @@ PLAN=$(python3 "$LE_LIB/refresh.py" plan --project "$PROJECT" $([ $ALL = 1 ] && 
 SINCE=$(sed -n 's/^#since //p' <<< "$PLAN"); STEPS=$(grep -v '^#' <<< "$PLAN" | cut -f1)
 [ -n "$STEPS" ] || { say "refresh: up to date (since $SINCE)"; exit 0; }
 
+# One verification per target for the whole run: test.sh records it in this private dir and sub-steps reuse it.
+AAXIS_VERIFIED_DIR=$(mktemp -d) && export AAXIS_VERIFIED_DIR && trap 'rm -rf -- "$AAXIS_VERIFIED_DIR"' EXIT
 tc() { "$LE_DIR/test.sh" --project "$PROJECT" --no-refresh-check "$@"; }
 rmcache() { local e; for e in "$@"; do [ -d "var/cache/$e" ] && rm -rf -- "var/cache/$e"; done; return 0; }
 step_composer() {

@@ -101,7 +101,7 @@ def query(root, shard_cmd, text, limit=3):
     out_dir = atlas_dir(root)
     hits = []
     try:
-        recs = list(store.read_shard(out_dir, cli.SHARDS[shard_cmd]))
+        recs = list(store.read_shard(out_dir, cli.SHARDS[shard_cmd], [cli.normalize(t) for t in text.split()]))
         found, _ = cli.search_records(recs, text, limit)
         hits = [cli.format_hit(r) for r in found]
     except Exception:  # noqa: BLE001 - hook must degrade silently
@@ -114,7 +114,7 @@ def unsafe_for(root, target):
     out_dir = atlas_dir(root)
     found = None
     try:
-        for rec in store.read_shard(out_dir, "unsafe"):
+        for rec in store.read_shard(out_dir, "unsafe", [str(target).lower()]):
             if target in rec.get("keys", []) or target == rec.get("id") or target in rec.get("services", []):
                 found = rec
                 break

@@ -2,37 +2,12 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_legacy.py\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_migrate.py\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_version.py\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
         "matcher": "startup|resume|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_atlas.py\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart_notes.py\"",
-            "timeout": 10
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/sessionstart.py\"",
+            "timeout": 15
           }
         ]
       }

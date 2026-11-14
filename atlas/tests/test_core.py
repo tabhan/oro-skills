@@ -55,6 +55,19 @@ class StoreTest(unittest.TestCase):
             store.write_shard(d, "x", boom())
         self.assertEqual([r["id"] for r in store.read_shard(d, "x")], ["a"])
 
+    def test_term_prefilter_never_drops_a_match(self):
+        from atlas import cli
+        d = tempfile.mkdtemp()
+        recs = [{"id": "Oro\\Bundle\\ProductBundle\\Entity\\Product", "keys": ["oro_product"], "text": 'say "Hi" \\ there'},
+                {"id": "svc.one", "keys": ["Ünïcode\\Thing"], "consumers": [{"class": "App\\Foo", "line": 3}]},
+                {"id": "other", "keys": [], "text": "nothing", "n": 42, "flag": True}]
+        store.write_shard(d, "x", iter(recs))
+        for q in ("product", "\\Oro\\Bundle\\ProductBundle", "oro\\\\bundle", 'say "hi"', "ünïcode", "app\\foo", "42", "true", "zzz", "oro product"):
+            terms = [cli.normalize(t) for t in q.split()]
+            full = cli.search_records(list(store.read_shard(d, "x")), q, 10)
+            fast = cli.search_records(list(store.read_shard(d, "x", terms)), q, 10)
+            self.assertEqual(full, fast, q)
+
     def test_missing_shard(self):
         with self.assertRaises(MissingShard):
             list(store.read_shard(tempfile.mkdtemp(), "nope"))

@@ -104,7 +104,8 @@ def format_hit(rec, shard=None):
 
 def collect(out_dir, shards, query, limit):
     """[(shard, hits, total)] for every shard with at least one hit."""
-    found = [(shard,) + search_records(store.read_shard(out_dir, shard), query, max(1, limit)) for shard in shards]
+    terms = [normalize(t) for t in query.split()]
+    found = [(shard,) + search_records(store.read_shard(out_dir, shard, terms), query, max(1, limit)) for shard in shards]
     return [row for row in found if row[1]]
 
 
@@ -223,7 +224,7 @@ def _unsafe_hint(out_dir, query):
     hits = []
     for shard in ("services", "entities"):
         try:
-            hits += [r for r in store.read_shard(out_dir, shard) if q in _flatten([r.get("id", "")] + list(r.get("keys", [])))]
+            hits += [r for r in store.read_shard(out_dir, shard, [q]) if q in _flatten([r.get("id", "")] + list(r.get("keys", [])))]
         except MissingShard:
             pass
     try:

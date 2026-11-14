@@ -104,6 +104,27 @@ class Refresh(Base):
         self.assertNotIn("oro:migration:load --force --env=behat_test", self.calls())
         self.assertIn("up to date", self.refresh().stdout)
 
+    def test_refresh_verifies_each_target_once_but_standalone_calls_verify_every_time(self):
+        p = self.refresh()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        # local: prod once; local-test: test + behat_test once, however many console steps ran per stack.
+        self.assertEqual(self.calls().count("live-target.php"), 3)
+        self.assertGreater(self.calls().count("bin/console"), 3)
+        for _ in range(2):
+            self.gate("local", "--no-refresh-check")
+        self.assertEqual(self.calls().count("live-target.php"), 5)
+
+    def test_token_for_another_stack_or_a_mismatch_is_not_trusted(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        write(os.path.join(d, "local-test"), "%s|db=other" % self.project)
+        env = dict(self.env, AAXIS_VERIFIED_DIR=d)
+        p = subprocess.run([os.path.join(ROOT, "bin", "aaxis-oro"), "test", "--project", self.project, "--no-refresh-check",
+                            "local-test", "console", "list"], capture_output=True, text=True, env=env, cwd=self.project)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn("verified earlier", p.stdout)
+        self.assertEqual(self.calls().count("live-target.php"), 2)
+
     def test_only_needed_steps_run(self):
         self.refresh()
         write(os.path.join(self.project, "src/B/Resources/translations/messages.en.yml"), "b\n")

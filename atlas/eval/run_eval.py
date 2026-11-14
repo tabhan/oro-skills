@@ -87,6 +87,8 @@ def run_one(case, args):
            "--max-budget-usd", str(args.budget)]
     if args.model:
         cmd += ["--model", args.model]
+    if args.plugin_dir:  # evaluate a specific checkout alone: user settings (installed plugins) are not loaded
+        cmd += ["--plugin-dir", args.plugin_dir, "--setting-sources", "project"]
     t0 = time.time()
     try:
         p = subprocess.run(cmd, cwd=PROJECT, env=env, capture_output=True, text=True, timeout=args.timeout)
@@ -121,6 +123,7 @@ def main():
     ap.add_argument("--budget", type=float, default=3.0)
     ap.add_argument("--timeout", type=int, default=300)
     ap.add_argument("--model")
+    ap.add_argument("--plugin-dir", help="load only this plugin checkout instead of the installed plugins")
     ap.add_argument("--out", default=str(HERE / "results.jsonl"))
     args = ap.parse_args()
     cases = json.loads((HERE / "prompts.json").read_text())

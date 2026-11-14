@@ -53,6 +53,9 @@ other settings are kept), installs the git refresh hooks, then runs `aaxis-oro a
   every subagent of an indexed Oro project (Claude Code delivers `additionalContext` from
   `SubagentStart` to the subagent). Silent without an index; never blocks.
 - `pretooluse_edit.py` / `posttooluse_bash.py`: deny unsafe `decorates:` and add context at edit time.
+- `sessionstart.py`: the single registered SessionStart hook (matcher `startup|resume|compact`). It runs
+  `sessionstart_legacy`, `_migrate`, `_version` only for `startup`/`resume` and `_atlas`, `_notes` for all three, joins their
+  outputs and swallows failures; the step modules stay separately runnable.
 - `sessionstart_notes.py`: injects the always-tier notes (one line each, cap 40), a one-line build command when notes
   exist but the shard is missing (never auto-builds), and `run /aaxis-oro:notes-migrate` while project auto-memory
   files without `scope: global` remain.

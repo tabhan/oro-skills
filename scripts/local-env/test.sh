@@ -85,18 +85,31 @@ verify_env() { # env expected_db web
 
 T0=$EPOCHREALTIME
 if [ "$TARGET" = local-test ]; then
-    verify_env test "$TEST_DB" 0; verify_env behat_test "$TEST_DB" 1
     desc="db=$TEST_DB es=$ES_PREFIX* mq=$MQ_VHOST mongo=$MONGO_PUB,$MONGO_PRIV session=$SESSION_DB"
 else
-    verify_env prod "$LOCAL_DB" 1
     desc="db=$LOCAL_DB"
 fi
-if [ ${#MISMATCH[@]} -gt 0 ]; then
-    say "guard: $TARGET does not resolve to its configured stack; nothing was run"
-    printf '  %s\n' "${MISMATCH[@]:0:5}"; printf '  %s\n' "${MISMATCH[@]}" >> "$LOG"
-    exit 3
+# `aaxis-oro dev refresh` verifies each target once and hands its sub-steps a token (AAXIS_VERIFIED_DIR, a private
+# per-run directory it removes on exit). The marker only counts when it names this project and this exact
+# resolved stack; `verify` and every standalone call (no token) boot and compare the kernels each time.
+MARK=""
+[ -n "${AAXIS_VERIFIED_DIR:-}" ] && [ -d "$AAXIS_VERIFIED_DIR" ] && MARK="$AAXIS_VERIFIED_DIR/$TARGET"
+if [ "$ACTION" != verify ] && [ -n "$MARK" ] && [ "$(cat "$MARK" 2>/dev/null)" = "$PROJECT|$desc" ]; then
+    say "test: $TARGET verified earlier in this refresh ($desc)"
+else
+    if [ "$TARGET" = local-test ]; then
+        verify_env test "$TEST_DB" 0; verify_env behat_test "$TEST_DB" 1
+    else
+        verify_env prod "$LOCAL_DB" 1
+    fi
+    if [ ${#MISMATCH[@]} -gt 0 ]; then
+        say "guard: $TARGET does not resolve to its configured stack; nothing was run"
+        printf '  %s\n' "${MISMATCH[@]:0:5}"; printf '  %s\n' "${MISMATCH[@]}" >> "$LOG"
+        exit 3
+    fi
+    [ -n "$MARK" ] && printf '%s' "$PROJECT|$desc" > "$MARK"
+    say "test: $TARGET verified ($desc) in $(awk -v a="$T0" -v b="$EPOCHREALTIME" 'BEGIN{printf "%.1fs", b-a}')"
 fi
-say "test: $TARGET verified ($desc) in $(awk -v a="$T0" -v b="$EPOCHREALTIME" 'BEGIN{printf "%.1fs", b-a}')"
 [ "$ACTION" = verify ] && exit 0
 
 cd "$PROJECT" || exit 1

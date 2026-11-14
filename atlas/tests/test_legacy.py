@@ -129,7 +129,8 @@ class SessionStartHookTest(unittest.TestCase):
     def test_registered_in_plugin_hooks(self):
         with open(os.path.join(REPO, "hooks", "hooks.json")) as fh:
             groups = json.load(fh)["hooks"]["SessionStart"]
-        self.assertIn("sessionstart_legacy.py", groups[0]["hooks"][0]["command"])
+        self.assertEqual(len(groups), 1)
+        self.assertIn("sessionstart.py", groups[0]["hooks"][0]["command"])
 
 
 class InstallCleanupTest(unittest.TestCase):

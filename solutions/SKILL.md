@@ -1,14 +1,12 @@
 ---
 name: solutions
 description: >-
-  Task-indexed solution knowledge for OroCommerce projects, supplementing Oro's official docs. Consult it BEFORE
-  designing, implementing or reviewing any of: a dialog/drawer form or content-widget form (AJAX submit, landing-page
-  embed); overriding an Oro core service method (aspect interceptor vs `decorates:`); changing a standard entity's
-  schema, indexes, unique constraints or repository (`entity_extend.yml`); entity config changes on existing DBs
-  (`entity_configs.yml`, dataaudit, form, importexport); enum options and serialized enum fields; datagrids and
-  report grids; migrations, jsonb columns, workflow data; storefront localization; PHPUnit stubs; cache
-  invalidation, shell aliases and the dev loop; asset rebuild/version busting; system-config cron fields; external
-  providers; Aaxis bundles (src/Aaxis); spikes and POC code.
+  Task-indexed OroCommerce solution knowledge, supplementing Oro's docs. Consult BEFORE designing, implementing or
+  reviewing: dialog/drawer or content-widget forms; overriding a core service method (aspect interceptor vs
+  `decorates:`); standard-entity schema/index/unique/repository changes (`entity_extend.yml`); entity config on
+  existing DBs (`entity_configs.yml`); enum fields; datagrids and report grids; migrations, jsonb, workflow data;
+  storefront localization; PHPUnit stubs; cache invalidation, aliases, dev loop; asset busting; cron config fields;
+  external providers; Aaxis bundles (src/Aaxis); spikes and POC code.
 ---
 
 # solutions
@@ -34,6 +32,7 @@ reference and the Oro doc page in the plan. Run `aaxis-oro atlas ...` first for 
 | Situation -> lever -> forbidden move table (CI, import, Backbone, workflow, DQL) | `decision-tables.md` |
 | Need an Aaxis bundle? (need -> bundle) | `aaxis/catalogue.md`, rules in `aaxis/rules.md` |
 | Spike, experiment, one-off | `poc-appbundle.md` |
+| Why a Ticket process or Review rule exists (root-cause detail, failure each rule prevents) | `process-rules-rationale.md` |
 
 ## Oro docs pointers
 
