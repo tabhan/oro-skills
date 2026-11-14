@@ -137,6 +137,70 @@ class MigrateTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(root, ".oro-ai", ".gitignore")))
 
 
+class SpawnTest(unittest.TestCase):
+    def test_entry_point_exists_and_command_is_runnable(self):
+        root, old = legacy_project()
+        cmd = migrate._command(root)
+        self.assertTrue(os.path.isfile(cmd[1]), cmd[1])
+        self.assertEqual(cmd[2:], ["atlas", "--project", root, "migrate"])
+        p = subprocess.run(cmd[:2] + ["atlas", "--help"], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_manual_command_is_shell_runnable_with_odd_paths(self):
+        root = os.path.join(make_project(), "my proj")
+        os.makedirs(root)
+        import shlex
+        self.assertEqual(shlex.split(migrate.manual_command(root)), migrate._command(root))
+
+    def test_spawn_launches_existing_entry_and_runs_migrate(self):
+        root, old = legacy_project()
+        with mock.patch.object(subprocess, "Popen") as popen:
+            migrate.spawn(root)
+        self.assertEqual(popen.call_args[0][0], migrate._command(root))
+        # a real child on a project the PHP build cannot index must reach migrate.run, not die on a missing file
+        p = subprocess.run(migrate._command(root), capture_output=True, text=True, env=dict(os.environ, ATLAS_NO_AUTOBUILD="1"))
+        self.assertNotIn("can't open file", p.stderr)
+
+    def test_child_dying_at_startup_still_trips_the_gate(self):
+        root, old = legacy_project()
+        now = migrate.time.time()
+        with mock.patch.object(subprocess, "Popen"):  # the child never reaches run(), so it records nothing itself
+            for i in range(migrate.MAX_AUTO_FAILURES):
+                with mock.patch.object(migrate.time, "time", return_value=now + 7200 * i):
+                    self.assertTrue(migrate.may_auto_spawn(root))
+                    migrate.spawn(root)
+        with mock.patch.object(migrate.time, "time", return_value=now + 10**6):
+            self.assertFalse(migrate.may_auto_spawn(root))
+        self.assertTrue(migrate.gave_up(root))
+
+    def test_one_spawn_blocks_immediate_respawn_and_success_clears_it(self):
+        root, old = legacy_project()
+        with mock.patch.object(subprocess, "Popen"):
+            migrate.spawn(root)
+        self.assertFalse(migrate.may_auto_spawn(root))
+        with mock.patch.object(build, "build", fake_build):
+            self.assertEqual(migrate.run(root, io.StringIO()), 0)
+        self.assertIsNone(migrate.failures(root))
+
+    def test_child_failure_after_spawn_is_not_double_counted(self):
+        root, old = legacy_project()
+        with mock.patch.object(subprocess, "Popen"):
+            migrate.spawn(root)
+        with mock.patch.object(build, "build", side_effect=build.AtlasError("php down")), mock.patch.object(sys, "stderr", io.StringIO()):
+            migrate.run(root, io.StringIO())
+        self.assertEqual(migrate.failures(root)["count"], 1)
+
+    def test_log_is_capped(self):
+        root, old = legacy_project()
+        log = os.path.join(root, ".oro-ai", "atlas", migrate.LOG_NAME)
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "wb") as fh:
+            fh.write(b"x" * (migrate.LOG_MAX_BYTES + 1))
+        with mock.patch.object(subprocess, "Popen"):
+            migrate.spawn(root)
+        self.assertEqual(os.path.getsize(log), 0)
+
+
 class HookTest(unittest.TestCase):
     def test_hook_announces_once_and_migrates(self):
         root, old = legacy_project()

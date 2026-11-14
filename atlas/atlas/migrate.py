@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import time
 import subprocess
@@ -13,6 +14,9 @@ from .common import LEGACY_SUBDIRS, AtlasError, Context, new_atlas_dir
 # Lock, log and failure marker live inside the index dir, whose own .gitignore (`*`) keeps them out of git.
 LOCK_NAME, LOG_NAME, FAIL_NAME = "migrate.lock", "migrate.log", "migrate-failed.json"
 RETRY_AFTER_SECONDS = 3600
+LOG_MAX_BYTES = 64 * 1024
+SPAWNED = "spawned"
+PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MAX_AUTO_FAILURES = 3
 OLD_PATHS = tuple(p.replace(os.sep, "/") for p in LEGACY_SUBDIRS)
 NEW_PATH = ".oro-ai/atlas"
@@ -37,9 +41,11 @@ def failures(root):
 
 def record_failure(root, reason):
     prev = failures(root) or {"count": 0}
+    # The parent already counted this attempt when it spawned the child; do not count it twice.
+    count = prev["count"] if prev.get("reason") == SPAWNED and reason != SPAWNED else prev["count"] + 1
     os.makedirs(new_atlas_dir(root), exist_ok=True)
     with open(_p(root, FAIL_NAME), "w", encoding="utf-8") as fh:
-        json.dump({"count": prev["count"] + 1, "ts": time.time(), "fingerprint": _fingerprint(root), "reason": reason}, fh)
+        json.dump({"count": count, "ts": time.time(), "fingerprint": _fingerprint(root), "reason": reason}, fh)
 
 
 def gave_up(root):
@@ -56,8 +62,12 @@ def may_auto_spawn(root):
     return time.time() - f["ts"] >= RETRY_AFTER_SECONDS or f.get("fingerprint") != _fingerprint(root)
 
 
+def _command(root):
+    return [sys.executable, os.path.join(PLUGIN_ROOT, "bin", "aaxis-oro"), "atlas", "--project", root, "migrate"]
+
+
 def manual_command(root):
-    return "%s --project %s migrate" % (os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "atlas"), root)
+    return " ".join(shlex.quote(part) for part in _command(root))
 
 
 def legacy_dirs(root):
@@ -128,11 +138,17 @@ def _complete(root, out_dir):
     return bool(status) and all(st["state"] != "missing" for st in status.values())
 
 
+def _clear_failures(root):
+    if os.path.exists(_p(root, FAIL_NAME)):
+        os.remove(_p(root, FAIL_NAME))
+
+
 def run(root, out=sys.stdout):
     """0 migrated or nothing to do, 1 build failed (old index kept), 3 another migration is running."""
     legacy = legacy_dirs(root)
     ensure_data_root_ignore(root)
     if not legacy:
+        _clear_failures(root)
         return 0
     try:
         lock = build.acquire_lock(_p(root, LOCK_NAME))
@@ -145,8 +161,7 @@ def run(root, out=sys.stdout):
             build.build(ctx, None, out)
         if not _complete(root, ctx.out_dir):
             raise AtlasError("new index incomplete; keeping %s" % ", ".join(legacy))
-        if os.path.exists(_p(root, FAIL_NAME)):
-            os.remove(_p(root, FAIL_NAME))
+        _clear_failures(root)
         for path in legacy:
             shutil.rmtree(path, ignore_errors=True)
         rewrite_hook_paths(root)
@@ -160,10 +175,20 @@ def run(root, out=sys.stdout):
         build.release_lock(lock)
 
 
+def _cap_log(path):
+    try:
+        if os.path.getsize(path) > LOG_MAX_BYTES:
+            open(path, "wb").close()
+    except OSError:
+        pass
+
+
 def spawn(root):
     """Detached migration (a rebuild outlasts a hook's timeout); output goes to .oro-ai/atlas/migrate.log."""
-    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "atlas")
     os.makedirs(new_atlas_dir(root), exist_ok=True)
-    with open(_p(root, LOG_NAME), "ab") as log:
-        subprocess.Popen([sys.executable, script, "--project", root, "migrate"], stdout=log, stderr=log,
-                         stdin=subprocess.DEVNULL, start_new_session=True)
+    # Counted before Popen so a child that dies at startup still trips the retry gate.
+    record_failure(root, SPAWNED)
+    log_path = _p(root, LOG_NAME)
+    _cap_log(log_path)
+    with open(log_path, "ab") as log:
+        subprocess.Popen(_command(root), stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True)
