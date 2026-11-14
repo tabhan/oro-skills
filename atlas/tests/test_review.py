@@ -220,8 +220,8 @@ class TicketProcessTest(ReviewBase):
         self.assertIn("review-ticket-gate", p.stdout)
 
 
-class SupplementaryReviewTest(ReviewBase):
-    """review.md verdict + Range staleness, `task check` and the `git push` gate."""
+class TicketBranchBase(ReviewBase):
+    """Setup project on a ticket branch with one committed code change."""
 
     def setUp(self):
         super().setUp()
@@ -247,6 +247,10 @@ class SupplementaryReviewTest(ReviewBase):
     def push(self, cmd="git push -u origin HEAD", env=None):
         return run("pretooluse_bash.py", {"session_id": "s", "tool_name": "Bash", "cwd": self.root, "tool_input": {"command": cmd}},
                    self.home, env)[1]
+
+
+class SupplementaryReviewTest(TicketBranchBase):
+    """review.md verdict + Range staleness, `task check` and the `git push` gate."""
 
     def test_verdict_parsing_and_staleness(self):
         from atlas import task
@@ -296,3 +300,83 @@ class SupplementaryReviewTest(ReviewBase):
         self.write(".oro-ai/config.json", "{}\n")
         self.git("checkout", "-qb", "chore/cleanup")
         self.assertIsNone(self.push())
+
+
+class StopReviewGateTest(TicketBranchBase):
+    """stop.py blocks the main session's Stop until a fresh review covers finished (committed, clean) ticket code."""
+
+    def stop(self, env=None, **extra):
+        payload = dict({"session_id": "stop-s", "hook_event_name": "Stop", "cwd": self.root, "stop_hook_active": False}, **extra)
+        return run("stop.py", payload, self.home, env)
+
+    def test_blocks_finished_code_without_review(self):
+        rc, out = self.stop()
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("/aaxis-oro:review", out["reason"])
+        self.assertIn("Verdict: skipped - <reason>", out["reason"])
+
+    def test_fresh_approved_or_skipped_review_allows_stop(self):
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        self.assertIsNone(self.stop()[1])
+        self.review("Verdict: skipped - docs only\n")
+        self.assertIsNone(self.stop()[1])
+
+    def test_stale_review_blocks_again(self):
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        self.write("src/Foo/B.php", "<?php\n")
+        self.git("add", "src")
+        self.git("commit", "-qm", "more")
+        self.assertIn("stale", self.stop()[1]["reason"])
+
+    def test_dirty_code_tree_is_mid_work_but_task_files_are_not(self):
+        self.write("src/Foo/A.php", "<?php // wip\n")
+        self.assertIsNone(self.stop()[1])
+        self.git("checkout", "--", "src/Foo/A.php")
+        self.write("src/Foo/New.php", "<?php\n")
+        self.assertIsNone(self.stop()[1], "untracked code is mid-work too")
+        os.remove(os.path.join(self.root, "src", "Foo", "New.php"))
+        self.write(".oro-ai/task/BUC-9/STATUS.md", "changed\n")
+        self.assertEqual(self.stop()[1]["decision"], "block")
+
+    def test_no_committed_code_on_branch_is_noop(self):
+        self.git("checkout", "-qb", "feature/BUC-10", "HEAD~1")
+        self.assertIsNone(self.stop()[1])
+
+    def test_changes_requested_on_head_asks_for_fixes(self):
+        self.review("Verdict: changes-requested\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        out = self.stop()[1]
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("must-fix", out["reason"])
+        self.review("Verdict: changes-requested\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha("HEAD~1")))
+        self.assertNotIn("must-fix", self.stop()[1]["reason"])
+
+    def test_loop_guard_allows_with_warning(self):
+        out = self.stop(stop_hook_active=True)[1]
+        self.assertNotIn("decision", out)
+        self.assertIn("already asked once", out["systemMessage"])
+
+    def test_enforcement_off_warns_only(self):
+        out = self.stop(env={"ORO_ATLAS_ENFORCE": "0"})[1]
+        self.assertNotIn("decision", out)
+        self.assertIn("review-ticket-stop", out["systemMessage"])
+
+    def test_subagent_stop_is_exempt(self):
+        self.assertIsNone(self.stop(hook_event_name="SubagentStop", agent_id="a1")[1])
+        self.assertIsNone(self.stop(agent_id="a1")[1])
+
+    def test_non_setup_non_ticket_and_non_git_are_noop(self):
+        os.remove(os.path.join(self.root, ".oro-ai", "config.json"))
+        self.assertIsNone(self.stop()[1])
+        self.write(".oro-ai/config.json", "{}\n")
+        self.git("checkout", "-qb", "chore/cleanup")
+        self.assertIsNone(self.stop()[1])
+        import shutil
+        shutil.rmtree(os.path.join(self.root, ".git"))
+        self.assertIsNone(self.stop()[1])
+
+    def test_exceptions_and_bad_input_allow_stop(self):
+        p = subprocess.run([sys.executable, os.path.join(HOOKS, "stop.py")], input="not json", capture_output=True, text=True,
+                           env=dict(os.environ, HOME=self.home))
+        self.assertEqual((p.returncode, p.stdout), (0, ""))
+        self.assertIsNone(self.stop(cwd=12345)[1])

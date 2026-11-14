@@ -55,7 +55,7 @@ dev     lint | refresh [--all]       lint this plugin | refresh derived state af
 Shipped in `hooks/hooks.json`, never per project; each injects a few lines at most:
 SessionStart (atlas freshness, notes, version, legacy/memory migration prompts), UserPromptSubmit and SubagentStart
 (atlas-first hints), PreToolUse (atlas/decorator checks on edits, Bash guard for the enforcement switch, memory-write
-block, anchored notes), PostToolUse Bash, Stop (end-of-session reminders).
+block, anchored notes), PostToolUse Bash, Stop (end-of-session reminders, supplementary-review gate).
 `ORO_ATLAS_ENFORCE=0` is a human-only escape hatch; Claude never sets it.
 
 Upgrading from the pre-plugin install: stale `oro-atlas/hooks/*.py` entries in Claude settings keep resolving to
@@ -84,6 +84,13 @@ applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose 
   files changed since (so committing the review itself keeps it fresh). Once the branch has committed code,
   `task check` fails without a covering approved/skipped review, and `review-ticket-push` (PreToolUse on Bash
   `git push`) denies the push; there is no git-side hook, so a human pushing from a shell is not gated.
+- `review-ticket-stop` (Stop hook, `atlas/hooks/stop.py`) makes the review happen when coding finishes: with the
+  same condition as the push gate, plus no uncommitted or untracked changes outside `.oro-ai/` (a dirty tree is
+  mid-work), it returns `decision: block` telling Claude to run `/aaxis-oro:review` (or record a skipped verdict);
+  a `changes-requested` review whose Range head is HEAD asks for the must-fix findings first. It blocks once per
+  stop chain (`stop_hook_active` lets the next Stop through with a warning), exempts subagents (SubagentStop /
+  `agent_id`: the main session owns the review), only warns under the human-only enforcement switch, and any
+  error allows the stop (logged to `~/.claude/atlas-hook.log`).
 - UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch).
 - Escape hatches: `Verdict: skipped - <reason>` for a trivial change (auditable in the task dir); the human-only
   `ORO_ATLAS_ENFORCE=0` downgrades the deny to a warning.

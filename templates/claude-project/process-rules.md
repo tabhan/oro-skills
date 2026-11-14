@@ -17,5 +17,7 @@ may skip plan documents, phase lists and approvals, never the steps below.
 5. Supplementary review (aaxis-oro) before push: `/aaxis-oro:review` runs the official `orocommerce-review` pack plus
    the Aaxis lenses and writes `.oro-ai/task/<TICKET>/review.md` (`Verdict:` and `Range: <base>..<head>`). The
    `git push` hook and `aaxis-oro task check` fail until an approved verdict covers HEAD; new code commits need a new
-   review. A trivial change records `Verdict: skipped - <reason>` instead.
+   review. A Stop hook enforces it: once the ticket's code is committed and the tree is clean, Claude cannot end its
+   turn until `/aaxis-oro:review` has run (or `changes-requested` findings are fixed and re-reviewed). A trivial
+   change records `Verdict: skipped - <reason>` instead.
 <!-- aaxis-oro:process-rules:end -->

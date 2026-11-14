@@ -41,3 +41,7 @@ checks:
   - id: review-ticket-push
     severity: deny
     oro: ">=7.0.0"
+  # Same condition at Stop once the tree has no uncommitted code: block the main session's stop once per chain (stop.py)
+  - id: review-ticket-stop
+    severity: deny
+    oro: ">=7.0.0"
