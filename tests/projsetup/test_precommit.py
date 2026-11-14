@@ -127,6 +127,63 @@ class PrecommitTest(RepoCase):
         self.assertIn("PSR12", open(self.hook()).read())
         self.assertEqual(git_status(self.d), git_status(self.d))
 
+    def test_render_adds_phpcs_speedup_once_and_only_to_direct_calls(self):
+        self.put("bitbucket-pipelines.yml", BITBUCKET)
+        text = precommit.render(self.d)
+        self.assertEqual(text.count('--parallel="$(phpcs_jobs)"'), 1)
+        self.assertEqual(text.count('--cache="$(git rev-parse --absolute-git-dir)/phpcs.cache"'), 1)
+        own = BITBUCKET.replace("--standard=PSR2", "--standard=PSR2 --parallel=$(nproc) --cache=$HOME/.phpcs-cache/phpcs.cache")
+        self.put("bitbucket-pipelines.yml", own)
+        text = precommit.render(self.d)
+        self.assertEqual(text.count("--parallel="), 1)
+        self.assertEqual(text.count("--cache="), 1)
+        self.assertNotIn(".phpcs-cache", text)
+        self.assertNotIn("$(nproc)", text.split("run_step", 1)[1])
+        self.assertEqual(precommit.with_phpcs_speedup("composer run-script phpcs"), "composer run-script phpcs")
+        self.assertEqual(subprocess.run(["bash", "-n"], input=text, text=True).returncode, 0)
+
+    def test_render_runs_phpmd_with_deprecations_hidden(self):
+        q = precommit.PHPMD_QUIET
+        self.assertEqual(precommit.with_phpmd_quiet("php ./vendor/phpmd/phpmd/src/bin/phpmd ./src ansi x.xml"),
+                         q + " ./vendor/phpmd/phpmd/src/bin/phpmd ./src ansi x.xml")
+        self.assertEqual(precommit.with_phpmd_quiet("vendor/bin/phpmd src ansi x.xml"), q + " vendor/bin/phpmd src ansi x.xml")
+        once = precommit.with_phpmd_quiet("php -d error_reporting=E_ALL ./phpmd")
+        self.assertEqual(once, "php -d error_reporting=E_ALL ./phpmd")
+        self.assertEqual(precommit.with_phpmd_quiet("composer run-script phpmd"), "composer run-script phpmd")
+        self.assertIn("--cache-strategy content", precommit.with_phpmd_cache("vendor/bin/phpmd src ansi x.xml"))
+        self.assertEqual(precommit.with_phpmd_cache("phpmd src --cache"), "phpmd src --cache")
+        self.assertEqual(precommit.with_phpmd_cache("composer run-script phpmd"), "composer run-script phpmd")
+        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE)
+        text = precommit.render(self.d)
+        self.assertEqual(text.count("phpmd.result-cache.php"), 1)
+        self.assertIn('"PHP Mess Detector" php -d error_reporting="E_ALL & ~E_DEPRECATED" ./vendor/phpmd/phpmd/src/bin/phpmd', text)
+
+    def test_sync_repairs_an_hook_without_phpmd_error_reporting(self):
+        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE)
+        run("sync", cwd=self.d)
+        current = open(self.hook()).read()
+        old = current.replace(' -d error_reporting="E_ALL & ~E_DEPRECATED"', "").replace(precommit.PHPMD_CACHE, "")
+        self.assertNotEqual(old, current)
+        with open(self.hook(), "w") as fh:
+            fh.write(old)
+        self.assertEqual(precommit.state(self.d)[0], "outdated")
+        run("sync", cwd=self.d)
+        self.assertEqual(open(self.hook()).read(), current)
+
+    def test_sync_repairs_an_installed_hook_without_parallel_and_cache(self):
+        self.put("bitbucket-pipelines.yml", BITBUCKET)
+        run("sync", cwd=self.d)
+        current = open(self.hook()).read()
+        old = current.replace(' --parallel="$(phpcs_jobs)"', "").replace(' --cache="$(git rev-parse --absolute-git-dir)/phpcs.cache"', "")
+        self.assertNotEqual(old, current)
+        with open(self.hook(), "w") as fh:
+            fh.write(old)
+        self.assertEqual(precommit.state(self.d)[0], "outdated")
+        self.assertIn("pre-commit        outdated", run("status", cwd=self.d)[1])
+        self.assertIn("pre-commit: updated", run("sync", cwd=self.d)[1])
+        self.assertEqual(open(self.hook()).read(), current)
+        self.assertEqual(precommit.state(self.d)[0], "ok")
+
     def test_foreign_hook_backed_up_under_hooks_path(self):
         self.put("bitbucket-pipelines.yml", BITBUCKET)
         subprocess.run(["git", "-C", self.d, "config", "core.hooksPath", ".githooks"], check=True)
@@ -263,6 +320,42 @@ class HookRunTest(HookRunBase):
         eslint = self.argv("npm")
         self.assertIn("src/Aaxis/Bundle/AppBundle/**", eslint)
         self.assertIn("src/OroLab/**", eslint)
+
+    def test_phpcs_runs_parallel_with_a_per_checkout_cache(self):
+        self.whole_tree_project()
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        argv = self.argv("phpcs")
+        jobs = [a for a in argv if a.startswith("--parallel=")]
+        self.assertEqual(len(jobs), 1, argv)
+        self.assertGreaterEqual(int(jobs[0].split("=")[1]), 1)
+        cache = [a for a in argv if a.startswith("--cache=")]
+        self.assertEqual(cache, ["--cache=%s" % os.path.join(os.path.realpath(self.d), ".git", "phpcs.cache")])
+        self.assertFalse([a for a in self.argv("phpmd") if "--parallel" in a])
+
+    def test_hook_passes_error_reporting_to_php_for_phpmd(self):
+        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE)
+        self.put("phpmd.xml", "<x/>")
+        run("sync", cwd=self.d)
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        argv = self.argv("php")
+        self.assertIn("error_reporting=E_ALL & ~E_DEPRECATED", argv)
+        self.assertIn("./vendor/phpmd/phpmd/src/bin/phpmd", argv)
+        self.assertIn("content", argv)
+        self.assertIn(os.path.join(os.path.realpath(self.d), ".git", "phpmd.result-cache.php"), argv)
+
+    def test_cpu_count_falls_back_to_getconf_then_one(self):
+        self.whole_tree_project()
+        bare = os.path.join(self.d, ".nonproc")
+        os.makedirs(bare)
+        for tool in ("bash", "git", "grep", "sort", "mktemp", "cat", "dirname", "basename", "rm"):
+            os.symlink(subprocess.run(["which", tool], capture_output=True, text=True).stdout.strip(), os.path.join(bare, tool))
+        for tool in ("phpcs", "phpmd"):
+            pass
+        env = self.hook_env(PATH=bare + os.pathsep + self.bin)
+        subprocess.run([self.hook()], cwd=self.d, capture_output=True, text=True, env=env)
+        self.assertIn("--parallel=1", self.argv("phpcs"))
 
     def test_yamllint_receives_only_tracked_files(self):
         self.whole_tree_project()

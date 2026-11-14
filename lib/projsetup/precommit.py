@@ -7,6 +7,10 @@
   old hook's steps with no managed equivalent are listed first.
 - CI lints the tracked tree, so the hook keeps git-ignored/excluded/untracked paths and `precommit.exclude` entries out of
   the whole-tree steps, and runs each step only when the commit stages a file of its type.
+- phpcs runs with --parallel (CPU count) and --cache (<git dir>/phpcs.cache), replacing CI's own values. The hook is rendered, so a hook without them
+  differs from render() and `state` reports it outdated; sync rewrites it like any other drift.
+- phpmd runs as `php -d error_reporting="E_ALL & ~E_DEPRECATED" ...` (deprecations hidden, violations still fail); same drift repair.
+- phpmd also gets `--cache --cache-strategy content --cache-file <git dir>/phpmd.result-cache.php` (PHPMD >= 2.13 assumed).
 """
 import glob
 import json
@@ -193,8 +197,47 @@ def _flag_value(cmd, flag):
     return re.search(r"(?<=\s)%s(?:=|\s+)(\"[^\"]*\"|'[^']*'|\S+)" % re.escape(flag), cmd)
 
 
+def with_phpcs_speedup(cmd):
+    """Give a direct phpcs call the hook's own --parallel (CPU count) and --cache (per-checkout, under the git dir).
+
+    CI's values (`--parallel=$(nproc)`, a $HOME cache dir shared by every checkout) are replaced, not kept.
+    """
+    if not re.search(r"(^|[\s/])phpcs\s", cmd):
+        return cmd  # a wrapper (composer run-script, make) takes no extra flags
+    cmd = re.sub(r"\s--(parallel|cache)(=\S+|\s+\d+)?(?=\s|$)|\s--no-cache(?=\s|$)", "", cmd)
+    return cmd + ' --parallel="$(phpcs_jobs)" --cache="$(git rev-parse --absolute-git-dir)/phpcs.cache"'
+
+
+PHPMD_QUIET = 'php -d error_reporting="E_ALL & ~E_DEPRECATED"'
+
+
+def with_phpmd_quiet(cmd):
+    """Run PHPMD under php with deprecations hidden (pdepend emits PHP 8.5 deprecation noise); rule violations still fail."""
+    if "error_reporting" in cmd:
+        return cmd
+    if re.match(r"php\s", cmd):
+        return PHPMD_QUIET + cmd[3:]
+    if re.match(r"(\./)?vendor/bin/phpmd\s", cmd):
+        return "%s %s" % (PHPMD_QUIET, cmd)
+    return cmd  # a wrapper or a bare binary: not ours to rewrite
+
+
+PHPMD_CACHE = ' --cache --cache-strategy content --cache-file "$(git rev-parse --absolute-git-dir)/phpmd.result-cache.php"'
+
+
+def with_phpmd_cache(cmd):
+    """Add PHPMD's result cache (content-hashed, per checkout under the git dir; needs PHPMD >= 2.13)."""
+    if re.search(r"(^|[\s/])phpmd\s", cmd) and not re.search(r"\s--cache(-file|-strategy)?\b", cmd):
+        return cmd + PHPMD_CACHE
+    return cmd
+
+
 def with_excludes(key, cmd):
     """Rewrite a whole-tree CI command so the hook's EXCL_CSV / EXCL_IGN (see the template) are excluded too."""
+    if key == "phpcs":
+        cmd = with_phpcs_speedup(cmd)
+    if key == "phpmd":
+        cmd = with_phpmd_cache(with_phpmd_quiet(cmd))
     if key in ("phpcs", "phpmd"):
         flag = "--ignore" if key == "phpcs" else "--exclude"
         hit = _flag_value(cmd, flag)

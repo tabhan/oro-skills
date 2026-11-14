@@ -49,6 +49,13 @@ for entry in "${EXCLUDES[@]}"; do
     fi
 done
 
+# CPU count for phpcs --parallel: nproc, else getconf, else 1 (macOS without coreutils, minimal images).
+phpcs_jobs() {
+    local n
+    n="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null)"
+    [[ "$n" =~ ^[0-9]+$ && "$n" -ge 1 ]] && echo "$n" || echo 1
+}
+
 # Directory arguments are replaced by the tracked, non-excluded YAML files under them (yamllint has no ignore flag).
 run_yamllint() {
     local args=() files=() arg entry file skip dirs=0

@@ -72,6 +72,9 @@ ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.y
 
 - Location: `core.hooksPath` when set (e.g. `.githooks`, keep it in `.git/info/exclude`), else `.git/hooks`. Setup never
   sets `core.hooksPath` and never writes tracked files.
+- Speed: phpcs runs with `--parallel` (nproc, else getconf, else 1) and `--cache` in `<git dir>/phpcs.cache`, replacing CI's own
+  values; PHPMD runs under `php -d error_reporting="E_ALL & ~E_DEPRECATED"` with a content-hash result cache in
+  `<git dir>/phpmd.result-cache.php` (PHPMD >= 2.13). Older managed hooks are `outdated` and rewritten by sync.
 - Foreign hook: an unmanaged hook is copied to `pre-commit.bak-<timestamp>` and replaced; a git-tracked one is left
   alone and reported. A managed hook that differs from the current render is `outdated` and rewritten.
 - `.oro-ai/config.json` `precommit`: `path-prefix` (dir prepended to PATH, e.g. the project Node bin; default: `nvm use`

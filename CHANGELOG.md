@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.1
+
+- Managed pre-commit hook is faster and quieter. phpcs runs with `--parallel` (nproc, then `getconf _NPROCESSORS_ONLN`, then 1) and `--cache` at `<git dir>/phpcs.cache` (per checkout, nothing to git-ignore, no worktree collisions); CI's own `--parallel`/`--cache` values (a `$HOME` cache shared by every checkout) are replaced in the hook. PHPMD runs as `php -d error_reporting="E_ALL & ~E_DEPRECATED"` (pdepend 2.16.2 prints PHP 8.5 deprecation noise; violations still fail) with `--cache --cache-strategy content --cache-file <git dir>/phpmd.result-cache.php` (assumes PHPMD >= 2.13). Direct tool calls only; wrappers such as `composer run-script` are left as written.
+- Repair needs no new mechanism: the hook is rendered, so an installed hook without these flags differs from the render, `setup status` reports `outdated` and `setup sync` rewrites it.
+
 ## 0.28.0
 
 - Managed pre-commit hook now matches CI for the tracked tree. Root cause: the steps are CI's whole-tree commands (`phpcs ./src`, `phpmd ./src`, `eslint src`, `yamllint ./src/`) rendered verbatim (`lib/projsetup/precommit.py` `render`), so any file under `src/` that git ignores or excludes (for example a local-only `src/Aaxis/Bundle/AppBundle` in `.git/info/exclude`) was linted locally but never in CI, and could fail the commit. The hook now computes the ignored/excluded/untracked paths at run time and merges them into PHPCS `--ignore`, PHPMD `--exclude`, ESLint/Stylelint `--ignore-pattern`, and feeds YamlLint the tracked YAML files only. New `.oro-ai/config.json` `precommit.exclude` (paths or globs) adds explicit exclusions.
