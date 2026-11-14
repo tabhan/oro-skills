@@ -29,6 +29,10 @@ checks:
   - id: review-direct-io
     severity: warn
     oro: ">=7.0.0"
+  # Added test skips/disables and removed assertions in test files (warning only)
+  - id: review-test-weakening
+    severity: warn
+    oro: ">=7.0.0"
   # Setup project, ticket branch: staged extension-point change needs .oro-ai/task/<KEY>/architect-gate.md approved/skipped
   - id: review-ticket-gate
     severity: deny

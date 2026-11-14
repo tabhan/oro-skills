@@ -38,6 +38,11 @@ APPBUNDLE = re.compile(r"(?:^|[/\s'\"])AppBundle/")
 IO_CALL = re.compile(r"\b(?:fopen|file_put_contents|unlink)\s*\(")
 IO_SAFE = re.compile(r"sys_get_temp_dir|tempnam|tmpfile|php://|/tmp/")
 PROJECT_DIR_PARAM = re.compile(r"%kernel\.project_dir%")
+TEST_PATH = re.compile(r"(?:^|/)Tests/|Test\.php$|\.feature$|\.steps\.ts$|\.spec\.ts$")
+TEST_SKIP = re.compile(
+    r"markTestSkipped|markTestIncomplete|#\[RequiresPhpExtension|@group\s+skip\b|expectNotToPerformAssertions"
+    r"|\b(?:test|it|describe)\.skip\b|\btest\.fixme\b|\.only\(|(?:^|\s)@(?:skip|wip|ignore)\b")
+TEST_ASSERT = re.compile(r"self::assert|\$this->assert|->expects\(|\bexpect\(|^\s*Then\s")
 
 
 def git(root, *args):
@@ -139,8 +144,28 @@ def check_direct_io(root, ch, notes):
     return found
 
 
+def removed_lines(change):
+    """Lines present in the old text but not in the new one."""
+    return added_lines(Change(change.path, change.old, change.new))
+
+
+def check_test_weakening(root, ch, notes):
+    found = []
+    if TEST_PATH.search(ch.path):
+        hint = "; see the Root cause rule: if the test is wrong, justify it in plan.md"
+        added = added_lines(ch)
+        found = [Finding("warn", "review-test-weakening", "%s:%d" % (ch.path, n),
+                         "added line skips or disables a test" + hint) for n, l in added if TEST_SKIP.search(l)]
+        lost = sum(1 for _, l in removed_lines(ch) if TEST_ASSERT.search(l))
+        gained = sum(1 for _, l in added if TEST_ASSERT.search(l))
+        found += [Finding("warn", "review-test-weakening", ch.path,
+                          "%d assertion line(s) removed, %d added" % (lost, gained) + hint)] if lost > gained else []
+    return found
+
+
 CHECKS = [("decorates-unsafe-target", check_decorates), ("review-no-appbundle", check_appbundle),
-          ("review-no-project-namespace", check_project_namespace), ("review-direct-io", check_direct_io)]
+          ("review-no-project-namespace", check_project_namespace), ("review-direct-io", check_direct_io),
+          ("review-test-weakening", check_test_weakening)]
 
 
 def line_exists(root, rel, line):

@@ -25,7 +25,10 @@ may skip plan documents, phase lists and approvals, never the steps below.
    test / data / environment / config / upstream); the fix changes that layer. Making the symptom disappear elsewhere
    (skip, suppress, catch-all, retry, loosened assertion, mocking away the failing dependency, special-cased data) is a
    workaround: label it so and get the user's approval. "Out of scope" never justifies fixing a symptom instead of the
-   cause; say so and let the user decide. A delegated diagnosis returns the layer and a root-cause fix recommendation.
+   cause; say so and let the user decide. A delegated diagnosis returns the layer and a root-cause fix recommendation. After three fix attempts for the same problem
+   that did not resolve it, stop and report: what failed, what was tried, and the current root-cause hypothesis. Never weaken
+   an assertion, skip a test, or delete a test to make a run pass; if the test itself is wrong, say why in plan.md and get
+   approval.
    `plan.md` records it under `## Root cause` (`n/a - feature` when there is no defect).
 7. When reporting work, do not list standard deploy steps; mention deploy actions only when `review.md` has Deploy
    notes.

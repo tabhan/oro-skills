@@ -123,6 +123,9 @@ gated by `oro:` range and severity):
   `project_namespace` in `.oro-ai/local-env/env.yml`, skipped with a note when unset.
 - `review-direct-io` (warn): `fopen`/`file_put_contents`/`unlink` on non-temp paths or `%kernel.project_dir%` in
   touched `src/` (tests excluded).
+- `review-test-weakening` (warn): in test files (`*/Tests/*`, `*Test.php`, `*.feature`, `*.steps.ts`, `*.spec.ts`), added
+  skip/disable markers (`markTestSkipped`, `test.skip`, `.only(`, `@skip`/`@wip`/`@ignore`, ...) and removed assertion
+  lines not matched by at least as many added ones; points to the Root cause rule. Never denies.
 
 The plugin's PreToolUse Bash hook runs `--staged` before every `git commit` (deny on a deny finding, one context line
 for warnings). `aaxis-oro atlas precommit` is the same check for a git hook; `install.sh` never wires it, so do that

@@ -73,6 +73,47 @@ class StagedChecksTest(ReviewBase):
         self.assertEqual(p.returncode, 0)
         self.assertEqual([f["severity"] for f in data["findings"]], ["warn", "warn"])
 
+    def weak(self, rel, base, new):
+        self.write(rel, base)
+        self.git("add", ".")
+        self.git("commit", "-qm", "t")
+        self.write(rel, new)
+        self.git("add", ".")
+        data = json.loads(self.check("--json").stdout)
+        return [f for f in data["findings"] if f["check"] == "review-test-weakening"], data
+
+    def test_test_weakening_php_skip_markers(self):
+        found, data = self.weak("src/A/Tests/Unit/FooTest.php", "<?php\n",
+                                "<?php\n$this->markTestSkipped('x');\n#[RequiresPhpExtension('intl')]\n$this->expectNotToPerformAssertions();\n")
+        self.assertEqual(len(found), 3)
+        self.assertTrue(all(f["severity"] == "warn" for f in found))
+        self.assertEqual(data["exit"], 0)
+        self.assertIn("plan.md", found[0]["message"])
+
+    def test_test_weakening_js_and_gherkin_skips(self):
+        found, _ = self.weak("src/A/Tests/E2e/a.spec.ts", "x\n", "x\ntest.skip('a', f);\nit.only(\n")
+        self.assertEqual(len(found), 2)
+        found, _ = self.weak("src/A/Tests/E2e/a.feature", "Feature: x\n", "@wip\nFeature: x\n@skip\n")
+        self.assertEqual(len(found), 2)
+
+    def test_test_weakening_removed_assertions_only_when_not_replaced(self):
+        base = "<?php\nself::assertSame(1, $a);\n$this->assertTrue($b);\n"
+        found, _ = self.weak("src/A/Tests/Unit/BarTest.php", base, "<?php\nself::assertSame(1, $a);\n")
+        self.assertEqual(len(found), 1)
+        self.assertIn("1 assertion", found[0]["message"])
+        found, _ = self.weak("src/A/Tests/Unit/BazTest.php", base, "<?php\nself::assertSame(2, $a);\nself::assertTrue($b);\n")
+        self.assertEqual(found, [])
+        found, _ = self.weak("src/A/Tests/E2e/b.steps.ts", "expect(a).toBe(1);\n", "foo();\n")
+        self.assertEqual(len(found), 1)
+        found, _ = self.weak("src/A/Tests/E2e/c.feature", "Feature: x\n  Then ok\n", "Feature: x\n")
+        self.assertEqual(len(found), 1)
+
+    def test_test_weakening_ignores_unrelated_diffs(self):
+        found, _ = self.weak("src/A/Tests/Unit/QuxTest.php", "<?php\n", "<?php\nself::assertTrue(true);\n")
+        self.assertEqual(found, [])
+        found, _ = self.weak("src/A/Service.php", "<?php\nself::assertX();\n$a->markTestSkipped();\n", "<?php\n$b->markTestSkipped();\n")
+        self.assertEqual(found, [])
+
     def test_unsafe_decorates_denied(self):
         self.build_index()
         self.write("src/Foo/s.yml", "services:\n    a:\n        decorates: foo.mgr\n")
