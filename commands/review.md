@@ -41,7 +41,7 @@ read-only; never let a reviewer fix its own findings.
    Range: <BASE sha>..<HEAD sha>
    Official: <path of .oro-ai/review-latest.md, its Gate line>
    ```
-   then the table. `approved` only when no Must-fix item remains. Never hand-edit the Range of an old review: new
+   then the table, then a `Deploy notes` section (from the reviewers' Deploy notes) only when non-empty. `approved` only when no Must-fix item remains. Never hand-edit the Range of an old review: new
    commits need a new review (re-review mode of the official skill is fine for the delta).
 8. `--fix` (or the user asks): AskUserQuestion which items to apply, then file-disjoint waves - wave 1 parallel agents
    (sonnet; opus for design-level edits) each owning a disjoint file set and its tests, no shared config; wave 2 one

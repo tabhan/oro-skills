@@ -20,4 +20,6 @@ may skip plan documents, phase lists and approvals, never the steps below.
    review. A Stop hook enforces it: once the ticket's code is committed and the tree is clean, Claude cannot end its
    turn until `/aaxis-oro:review` has run (or `changes-requested` findings are fixed and re-reviewed). A trivial
    change records `Verdict: skipped - <reason>` instead.
+6. When reporting work, do not list standard deploy steps; mention deploy actions only when `review.md` has Deploy
+   notes.
 <!-- aaxis-oro:process-rules:end -->
