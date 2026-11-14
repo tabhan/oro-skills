@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.2
+
+- The managed hook now replaces CI's PHPMD `--cache`, `--cache-strategy` and `--cache-file` (a `$HOME` path shared by every checkout) with its own per-checkout `<git dir>/phpmd.result-cache.php`, as it already did for phpcs. Root cause: 0.28.1 kept any CI-set `--cache*` flag, so once CI carried them the hook inherited the shared path.
+
 ## 0.28.1
 
 - Managed pre-commit hook is faster and quieter. phpcs runs with `--parallel` (nproc, then `getconf _NPROCESSORS_ONLN`, then 1) and `--cache` at `<git dir>/phpcs.cache` (per checkout, nothing to git-ignore, no worktree collisions); CI's own `--parallel`/`--cache` values (a `$HOME` cache shared by every checkout) are replaced in the hook. PHPMD runs as `php -d error_reporting="E_ALL & ~E_DEPRECATED"` (pdepend 2.16.2 prints PHP 8.5 deprecation noise; violations still fail) with `--cache --cache-strategy content --cache-file <git dir>/phpmd.result-cache.php` (assumes PHPMD >= 2.13). Direct tool calls only; wrappers such as `composer run-script` are left as written.

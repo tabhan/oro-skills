@@ -226,10 +226,14 @@ PHPMD_CACHE = ' --cache --cache-strategy content --cache-file "$(git rev-parse -
 
 
 def with_phpmd_cache(cmd):
-    """Add PHPMD's result cache (content-hashed, per checkout under the git dir; needs PHPMD >= 2.13)."""
-    if re.search(r"(^|[\s/])phpmd\s", cmd) and not re.search(r"\s--cache(-file|-strategy)?\b", cmd):
-        return cmd + PHPMD_CACHE
-    return cmd
+    """Give a direct phpmd call the hook's own content-hashed result cache under the git dir (PHPMD >= 2.13).
+
+    CI's --cache/--cache-strategy/--cache-file (a $HOME path shared by every checkout) are replaced, not kept.
+    """
+    if not re.search(r"(^|[\s/])phpmd\s", cmd):
+        return cmd
+    cmd = re.sub(r"\s--cache(?!-)(?=\s|$)|\s--cache-(strategy|file)(=\S+|\s+(\"[^\"]*\"|'[^']*'|[^\s-]\S*))?", "", cmd)
+    return cmd + PHPMD_CACHE
 
 
 def with_excludes(key, cmd):
