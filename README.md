@@ -62,6 +62,25 @@ Upgrading from the pre-plugin install: stale `oro-atlas/hooks/*.py` entries in C
 shims in `oro-atlas/hooks/` that remove those entries from project and `~/.claude` settings (atlas entries only),
 print nothing and exit 0. `install.sh` and `atlas setup --cleanup-only` do the same cleanup.
 
+## Git pre-commit hook
+
+`aaxis-oro setup sync` installs a managed `pre-commit` (template `templates/git-hooks/pre-commit.sh`, header
+`aaxis-oro:managed-pre-commit`) running static/quality checks only: PHPCS, PHP-CS-Fixer, PHPMD, PHPStan, Psalm, PHPUnit,
+ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.yml`, `.gitlab-ci.yml`,
+`.github/workflows`; installs, Sonar and `pipe:` steps are ignored), else composer/package.json scripts, else
+`vendor/bin` tools that have their config file. Non-git or non-Oro projects are skipped.
+
+- Location: `core.hooksPath` when set (e.g. `.githooks`, keep it in `.git/info/exclude`), else `.git/hooks`. Setup never
+  sets `core.hooksPath` and never writes tracked files.
+- Foreign hook: an unmanaged hook is copied to `pre-commit.bak-<timestamp>` and replaced; a git-tracked one is left
+  alone and reported. A managed hook that differs from the current render is `outdated` and rewritten.
+- `.oro-ai/config.json` `precommit`: `path-prefix` (dir prepended to PATH, e.g. the project Node bin; default: `nvm use`
+  from `.nvmrc` when nvm is installed), `skip` (tool keys), `atlas: true` (adds `aaxis-oro atlas precommit`; off by
+  default, the atlas review stays a Claude PreToolUse hook).
+- yamllint: installed user-level with `pipx install yamllint`, else `python3 -m pip install --user yamllint`, never sudo;
+  without either the hook uses the `cytopia/yamllint` docker image. `setup status` rows `pre-commit` and `hook-tools`
+  report missing/outdated/foreign hooks and absent tools (yamllint, vendor tools, node) with the fix.
+
 ## Ticket process
 
 `/aaxis-oro:setup` writes the `process-rules` block (`templates/claude-project/process-rules.md`) into the project's

@@ -149,6 +149,10 @@ def sync(root, dry):
         if not dry:
             write(gi, GITIGNORE)
         lines.append(".oro-ai/.gitignore: created")
+    from projsetup import precommit
+    lines.append(precommit.install(root, dry))
+    y = precommit.ensure_yamllint(root, dry)
+    lines += [y] if y else []
     return lines, 0
 
 
@@ -198,6 +202,15 @@ def status(root, as_json):
     tracked = tracked_plan(root)
     parts = ["ok" if gi else "missing" + ("" if tracked else "; run: aaxis-oro setup sync")] + (["%d tracked files, see plan" % len(tracked)] if tracked else [])
     add("oro-ai-gitignore", ", ".join(parts), gi and not tracked)
+    from projsetup import precommit
+    hs, hd = precommit.state(root)
+    hint = {"missing": "missing; run: aaxis-oro setup sync", "outdated": "outdated; run: aaxis-oro setup sync",
+            "foreign": "unmanaged hook at %s; run: aaxis-oro setup sync (backs it up, installs the managed one)" % hd,
+            "foreign-tracked": "project-tracked hook at %s; left alone" % hd}.get(hs, "%s (%s)" % (hs, hd))
+    add("pre-commit", hint, hs in ("ok", "skipped", "foreign-tracked"))
+    if hs != "skipped":
+        miss = precommit.missing_tools(root)
+        add("hook-tools", "ok" if not miss else "; ".join("%s missing, fix: %s" % m for m in miss), not miss)
     add("oro-version", detect_version(root), True)
     a, aok = atlas_line(root)
     add("atlas", a, aok)
