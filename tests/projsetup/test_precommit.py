@@ -46,7 +46,9 @@ def run(*args, cwd):
     return p.returncode, p.stdout + p.stderr
 
 
-class PrecommitTest(unittest.TestCase):
+class RepoCase(unittest.TestCase):
+    """A throwaway git repo that looks like an Oro project."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.d = self.tmp.name
@@ -66,6 +68,8 @@ class PrecommitTest(unittest.TestCase):
     def hook(self):
         return precommit.hook_path(self.d)
 
+
+class PrecommitTest(RepoCase):
     def test_ci_steps_in_tool_order_without_installs_or_sonar(self):
         self.put("bitbucket-pipelines.yml", BITBUCKET)
         st = precommit.steps(self.d)
@@ -170,6 +174,238 @@ class PrecommitTest(unittest.TestCase):
         self.assertIn("xxx PHPUnit FAILED", p.stderr)
         self.put("vendor/bin/phpunit", "#!/bin/sh\nexit 0\n")
         self.assertEqual(subprocess.run([self.hook()], cwd=self.d, capture_output=True).returncode, 0)
+
+
+STUB = '#!/bin/sh\nprintf "%s\\n" "$@" >> "$STUB_LOG.$(basename "$0")"\nexit ${STUB_EXIT:-0}\n'
+CI_WHOLE_TREE = """pipelines:
+  default:
+    - step:
+        script:
+          - php ./vendor/squizlabs/php_codesniffer/bin/phpcs ./src --extensions=php --standard=PSR2 --ignore=OroLab -q
+          - php ./vendor/phpmd/phpmd/src/bin/phpmd ./src ansi ./phpmd.xml --suffixes php --exclude OroLab
+          - npm run eslint src -- --ignore-pattern "src/OroLab/**"
+          - npm run stylelint src/Buckman/**/*.scss
+          - yamllint ./src/
+"""
+
+
+class HookRunBase(RepoCase):
+    """Runs the rendered hook against stub tools that record their argv, in a real git repo."""
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.d, ".stubs")
+        self.log = os.path.join(self.d, ".stublog")
+        os.makedirs(self.bin)
+        for tool in ("npm", "yamllint", "php"):
+            self.stub(os.path.join(self.bin, tool))
+
+    def stub(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(STUB)
+        os.chmod(path, 0o755)
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", self.d, *args], check=True, capture_output=True)
+
+    def hook_env(self, **extra):
+        env = dict(os.environ, HOME=self.d, STUB_LOG=self.log, PATH=self.bin + os.pathsep + os.environ["PATH"])
+        env.pop("ORO_ENV", None)
+        env.pop("APP_ENV", None)
+        env.pop("ORO_DB_URL", None)
+        env.update(extra)
+        return env
+
+    def run_hook(self, **extra):
+        p = subprocess.run([self.hook()], cwd=self.d, capture_output=True, text=True, env=self.hook_env(**extra))
+        return p.returncode, p.stdout + p.stderr
+
+    def argv(self, tool):
+        path = "%s.%s" % (self.log, tool)
+        if not os.path.exists(path):
+            return None
+        with open(path) as fh:
+            return fh.read().split("\n")
+
+
+class HookRunTest(HookRunBase):
+    def whole_tree_project(self):
+        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE)
+        self.put("phpmd.xml", "<x/>")
+        self.put("package.json", "{}")
+        self.put(".yamllint", "extends: default\n")
+        for tool in ("phpcs", "phpmd"):
+            self.stub(os.path.join(self.d, "vendor", tool))
+        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE.replace(
+            "php ./vendor/squizlabs/php_codesniffer/bin/phpcs", "vendor/phpcs").replace(
+            "php ./vendor/phpmd/phpmd/src/bin/phpmd", "vendor/phpmd"))
+        self.put("src/Buckman/ok.php", "<?php\n")
+        self.put("src/Buckman/ok.yml", "a: 1\n")
+        self.put("src/Aaxis/Bundle/AppBundle/Bad.php", "<?php\n")
+        self.put("src/Aaxis/Bundle/AppBundle/bad.yml", "a:  1\n")
+        with open(os.path.join(self.d, ".git", "info", "exclude"), "a") as fh:
+            fh.write("src/Aaxis/Bundle/AppBundle/\n")
+        self.git("add", "src/Buckman", "composer.json", "package.json", "phpmd.xml", ".yamllint", "bitbucket-pipelines.yml")
+        run("sync", cwd=self.d)
+
+    def test_git_excluded_paths_never_reach_whole_tree_steps(self):
+        self.whole_tree_project()
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        ignore = "*/src/Aaxis/Bundle/AppBundle/*"
+        phpcs = [a for a in self.argv("phpcs") if a.startswith("--ignore=")]
+        self.assertEqual(len(phpcs), 1)
+        self.assertTrue(phpcs[0].startswith("--ignore=OroLab,"), phpcs)
+        self.assertIn(ignore, phpcs[0].split(","))
+        phpmd = [a for a in self.argv("phpmd") if a.startswith("OroLab,")]
+        self.assertIn(ignore, phpmd[0].split(","))
+        eslint = self.argv("npm")
+        self.assertIn("src/Aaxis/Bundle/AppBundle/**", eslint)
+        self.assertIn("src/OroLab/**", eslint)
+
+    def test_yamllint_receives_only_tracked_files(self):
+        self.whole_tree_project()
+        self.run_hook()
+        args = self.argv("yamllint")
+        self.assertIn("src/Buckman/ok.yml", args)
+        self.assertNotIn("src/Aaxis/Bundle/AppBundle/bad.yml", args)
+        self.assertNotIn("./src/", args)
+
+    def test_precommit_exclude_config_adds_paths_and_globs(self):
+        self.whole_tree_project()
+        self.put(".oro-ai/config.json", json.dumps({"precommit": {"exclude": ["src/Legacy", "src/Gen/*.php"]}}))
+        run("sync", cwd=self.d)
+        self.run_hook()
+        phpcs = "".join(self.argv("phpcs")).split(",")
+        self.assertIn("*/src/Legacy", phpcs)
+        self.assertIn("*/src/Gen/*.php", phpcs)
+        self.assertIn("src/Gen/*.php", self.argv("npm"))
+
+    def test_steps_with_no_matching_staged_file_type_are_skipped(self):
+        self.put("bitbucket-pipelines.yml", "pipelines:\n  default:\n    - step:\n        script:\n          - vendor/bin/phpunit\n          - yamllint ./src/\n")
+        self.put("src/readme.md", "x\n")
+        self.git("add", "src/readme.md")
+        self.stub(os.path.join(self.d, "vendor", "bin", "phpunit"))
+        run("sync", cwd=self.d)
+        code, out = self.run_hook(STUB_EXIT="1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("PHPUnit skipped", out)
+        self.assertIsNone(self.argv("phpunit"))
+        self.put("src/A.php", "<?php\n")
+        self.git("add", "src/A.php")
+        code, out = self.run_hook(STUB_EXIT="1")
+        self.assertEqual(code, 1)
+        self.assertIn("xxx PHPUnit FAILED", out)
+        self.assertIn("YamlLint skipped", out)
+
+    def test_run_all_env_overrides_the_staged_type_gate(self):
+        self.put("bitbucket-pipelines.yml", "pipelines:\n  default:\n    - step:\n        script:\n          - vendor/bin/phpunit\n")
+        self.stub(os.path.join(self.d, "vendor", "bin", "phpunit"))
+        self.put("README.md", "x\n")
+        self.git("add", "README.md")
+        run("sync", cwd=self.d)
+        self.assertEqual(self.run_hook(STUB_EXIT="1")[0], 0)
+        self.assertEqual(self.run_hook(STUB_EXIT="1", AAXIS_ORO_PRECOMMIT_ALL="1")[0], 1)
+
+    def test_nothing_staged_runs_every_step(self):
+        self.put("bitbucket-pipelines.yml", "pipelines:\n  default:\n    - step:\n        script:\n          - vendor/bin/phpunit\n")
+        self.stub(os.path.join(self.d, "vendor", "bin", "phpunit"))
+        run("sync", cwd=self.d)
+        self.assertEqual(self.run_hook(STUB_EXIT="1")[0], 1)
+
+
+class SchemaDriftTest(HookRunBase):
+    def drift_project(self, sql):
+        self.put("bin/console", "")
+        self.put("src/Acme/Entity/Thing.php", "<?php\n")
+        self.git("add", "src/Acme/Entity/Thing.php")
+        self.sql = sql
+        with open(os.path.join(self.bin, "php"), "w") as fh:
+            fh.write('#!/bin/sh\nprintf "%s\\n" "$@" >> "$STUB_LOG.php"\nprintf "%s" "$STUB_SQL"\n[ -n "$STUB_ERR" ] && { echo "$STUB_ERR" >&2; exit 2; }\nexit 0\n')
+        run("sync", cwd=self.d)
+
+    def test_step_added_for_oro_projects_with_console_and_opt_out_via_skip(self):
+        self.assertNotIn("schema-drift", [s[0] for s in precommit.steps(self.d)])
+        self.put("bin/console", "")
+        self.assertIn("schema-drift", [s[0] for s in precommit.steps(self.d)])
+        self.put(".oro-ai/config.json", json.dumps({"precommit": {"skip": ["schema-drift"]}}))
+        self.assertNotIn("schema-drift", [s[0] for s in precommit.steps(self.d)])
+
+    def test_real_drift_fails_with_the_statement_and_uses_the_local_prod_kernel(self):
+        self.drift_project("")
+        code, out = self.run_hook(STUB_SQL="DROP INDEX uniq_x;\n")
+        self.assertEqual(code, 1, out)
+        self.assertIn("DROP INDEX uniq_x;", out)
+        self.assertIn("xxx Doctrine schema drift FAILED", out)
+        args = self.argv("php")
+        self.assertIn("doctrine:schema:update", args)
+        self.assertIn("--dump-sql", args)
+        self.assertIn("--env=prod", args)
+
+    def test_in_sync_and_noise_only_output_passes(self):
+        self.drift_project("")
+        noise = "\n -- comment\n [OK] Nothing to update - your database is already in sync with the current entity metadata.\n\n"
+        self.assertEqual(self.run_hook(STUB_SQL=noise)[0], 0)
+        self.assertEqual(self.run_hook(STUB_SQL="")[0], 0)
+
+    def test_incomplete_database_is_reported_as_such_not_as_drift(self):
+        self.drift_project("")
+        sql = "".join("ALTER TABLE t%d ADD CONSTRAINT FK_%d FOREIGN KEY (a) REFERENCES b (id);\n" % (i, i) for i in range(60))
+        code, out = self.run_hook(STUB_SQL=sql)
+        self.assertEqual(code, 1)
+        self.assertIn("database looks incomplete", out)
+        self.assertNotIn("FK_59", out)
+
+    def test_console_failure_is_unrun_not_passed(self):
+        self.drift_project("")
+        code, out = self.run_hook(STUB_ERR="no database")
+        self.assertEqual(code, 1)
+        self.assertIn("could not run", out)
+        self.assertIn("skip", out)
+
+    def test_refuses_the_test_stack(self):
+        self.drift_project("")
+        for env in ({"ORO_ENV": "behat_test"}, {"APP_ENV": "test"}, {"ORO_DB_URL": "postgresql://u:p@h/oro_test"}):
+            code, out = self.run_hook(**env)
+            self.assertEqual(code, 1, env)
+            self.assertIn("refusing", out)
+
+    def test_skipped_when_no_entity_or_migration_file_is_staged(self):
+        self.drift_project("")
+        self.git("reset", "-q", "src/Acme/Entity/Thing.php")
+        self.put("src/Acme/Util.php", "<?php\n")
+        self.git("add", "src/Acme/Util.php")
+        code, out = self.run_hook(STUB_SQL="DROP INDEX x;\n")
+        self.assertEqual(code, 0, out)
+        self.assertIn("Doctrine schema drift skipped", out)
+        self.assertFalse(os.path.exists(self.log + ".php"))
+
+
+class OldHookInventoryTest(RepoCase):
+    def test_sync_lists_old_hook_steps_that_have_no_managed_equivalent(self):
+        self.put("bitbucket-pipelines.yml", BITBUCKET)
+        subprocess.run(["git", "-C", self.d, "config", "core.hooksPath", ".githooks"], check=True)
+        self.put(".githooks/pre-commit", (
+            '#!/usr/bin/env bash\nrun_step "PHP CodeSniffer (PSR2)" \\\n    php ./vendor/bin/phpcs ./src\n'
+            'run_step "Translation parity" bin/check-translations\n'
+            'echo "==> Doctrine schema drift"\nphp bin/console doctrine:schema:update --dump-sql\n'))
+        code, out = run("sync", cwd=self.d)
+        self.assertIn("no managed equivalent", out)
+        self.assertIn("Translation parity", out)
+        self.assertNotIn("PHP CodeSniffer", out.split("no managed equivalent")[1])
+        self.assertIn("backed up to", out)
+
+    def test_dry_run_lists_them_too_and_a_fully_covered_hook_prints_nothing(self):
+        self.put("bitbucket-pipelines.yml", BITBUCKET)
+        subprocess.run(["git", "-C", self.d, "config", "core.hooksPath", ".githooks"], check=True)
+        self.put(".githooks/pre-commit", '#!/bin/sh\nrun_step "x" vendor/bin/phpunit\n')
+        self.assertNotIn("no managed equivalent", run("sync", "--dry-run", cwd=self.d)[1])
+        docker = '#!/bin/sh\nrun_step() { echo "==> ${name}"; }\nrun_step "YamlLint (docker)" \\\n    docker run --rm cytopia/yamllint:latest ./src/\n'
+        self.put(".githooks/pre-commit", docker)
+        self.assertNotIn("no managed equivalent", run("sync", "--dry-run", cwd=self.d)[1])
+        self.put(".githooks/pre-commit", '#!/bin/sh\nrun_step "Lint SQL" bin/lint-sql\n')
+        self.assertIn("Lint SQL", run("sync", "--dry-run", cwd=self.d)[1])
 
 
 def git_status(d):

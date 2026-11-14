@@ -75,8 +75,27 @@ ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.y
 - Foreign hook: an unmanaged hook is copied to `pre-commit.bak-<timestamp>` and replaced; a git-tracked one is left
   alone and reported. A managed hook that differs from the current render is `outdated` and rewritten.
 - `.oro-ai/config.json` `precommit`: `path-prefix` (dir prepended to PATH, e.g. the project Node bin; default: `nvm use`
-  from `.nvmrc` when nvm is installed), `skip` (tool keys), `atlas: true` (adds `aaxis-oro atlas precommit`; off by
-  default, the atlas review stays a Claude PreToolUse hook).
+  from `.nvmrc` when nvm is installed), `skip` (step keys: the tool keys above plus `schema-drift`), `exclude` (list of
+  repo-relative paths or globs kept out of the whole-tree steps, e.g. `["src/Legacy", "src/Gen/*.php"]`), `atlas: true`
+  (adds `aaxis-oro atlas precommit`; off by default, the atlas review stays a Claude PreToolUse hook). There is no
+  separate JSON schema file for this config; this list is the reference.
+- Same result as CI: CI lints the tracked tree, so the hook keeps every path git ignores or excludes (`.gitignore`,
+  `.git/info/exclude`, e.g. a local-only `src/Aaxis/Bundle/AppBundle`), every untracked path and every `precommit.exclude`
+  entry out of PHPCS (`--ignore`, merged with the CI value), PHPMD (`--exclude`, merged), ESLint and Stylelint
+  (`--ignore-pattern`; `--` is added to `npm run` commands). YamlLint has no ignore flag, so directory arguments become
+  the tracked, non-excluded `*.yml`/`*.yaml` files under them. PHP-CS-Fixer, PHPStan, Psalm and PHPUnit read their own
+  config and are not narrowed; use their config to exclude paths.
+- Staged-type gate: a step runs only when the commit stages a file of its type (PHP tools: `.php`, `.xml`, `.neon`,
+  `.dist`, `composer.json|lock`; ESLint: JS/TS/Vue and `package.json`; Stylelint: SCSS/CSS and `package.json`;
+  YamlLint: `.yml`/`.yaml`; schema drift: `Entity/`, `Migrations/`, `entity_extend.yml`, `entity_configs.yml`,
+  `composer.lock`). Nothing staged, or `AAXIS_ORO_PRECOMMIT_ALL=1`, runs every step.
+- Schema drift (`schema-drift`, on by default for Oro projects that have `bin/console`; opt out with
+  `"skip": ["schema-drift"]`): runs `php bin/console doctrine:schema:update --dump-sql --env=prod`, i.e. the LOCAL
+  database. It refuses (exit 1) when `ORO_ENV`/`APP_ENV` is `test`/`behat_test` or the DSN names `oro_test*`, so it never
+  measures the test stack. Blank lines, SQL comments and the "Nothing to update" banner are ignored; 50 or more
+  `ADD CONSTRAINT` lines are reported as an incomplete database (install or migration still running), not as drift; a
+  console that cannot run fails the step (unrun is not passed). Fixing real drift: `solutions/references/entities/entity-extend-indexes.md`.
+- `setup sync` over an unmanaged hook first lists its steps that have no managed equivalent (printed with the backup path).
 - yamllint: installed user-level with `pipx install yamllint`, else `python3 -m pip install --user yamllint`, never sudo;
   without either the hook uses the `cytopia/yamllint` docker image. `setup status` rows `pre-commit` and `hook-tools`
   report missing/outdated/foreign hooks and absent tools (yamllint, vendor tools, node) with the fix.

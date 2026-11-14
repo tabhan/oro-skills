@@ -3,7 +3,10 @@
 - Steps come from CI config first (bitbucket-pipelines.yml, .gitlab-ci.yml, .github/workflows), then composer/package
   scripts, then vendor/bin defaults; one step per tool, only for tools the project has.
 - Installs where git looks: the configured core.hooksPath, else the git hooks dir; never touches tracked files.
-- An unmanaged hook is backed up to pre-commit.bak-<ts> and replaced; a git-tracked one is left alone (refused).
+- An unmanaged hook is backed up to pre-commit.bak-<ts> and replaced; a git-tracked one is left alone (refused); the
+  old hook's steps with no managed equivalent are listed first.
+- CI lints the tracked tree, so the hook keeps git-ignored/excluded/untracked paths and `precommit.exclude` entries out of
+  the whole-tree steps, and runs each step only when the commit stages a file of its type.
 """
 import glob
 import json
@@ -31,6 +34,18 @@ TOOLS = (
     ("yamllint", "YamlLint", r"^yamllint(\s|$)"),
 )
 NODE_TOOLS = ("eslint", "stylelint")
+DRIFT = "schema-drift"
+DRIFT_LABEL = "Doctrine schema drift"
+# Staged-file gate (ERE) per step: a commit with no matching staged path cannot change that step's result.
+_PHP_GATE = r"\.(php|xml|neon|dist)$|(^|/)composer\.(json|lock)$"
+GATES = {
+    "phpcs": _PHP_GATE, "php-cs-fixer": _PHP_GATE, "phpmd": _PHP_GATE, "phpstan": _PHP_GATE, "psalm": _PHP_GATE,
+    "phpunit": _PHP_GATE,
+    "eslint": r"\.(js|jsx|mjs|cjs|ts|tsx|vue)$|(^|/)(\.eslint[^/]*|eslint\.config\.[^/]*|package\.json)$",
+    "stylelint": r"\.(scss|sass|css)$|(^|/)(\.stylelint[^/]*|stylelint\.config\.[^/]*|package\.json)$",
+    "yamllint": r"\.ya?ml$|(^|/)\.yamllint[^/]*$",
+    DRIFT: r"/(Entity|Migrations)/.*\.php$|(^|/)entity_(extend|configs)\.yml$|(^|/)composer\.lock$",
+}
 SKIP_CI = re.compile(r"^(pipe:|npm i|npm install|pnpm install|yarn install|composer (install|update|config)|git )")
 YAMLLINT_INSTALL = (("pipx", ["pipx", "install", "yamllint"]),
                     ("pip", ["python3", "-m", "pip", "install", "--user", "--quiet", "yamllint"]))
@@ -145,7 +160,7 @@ def defaults(root):
 
 
 def steps(root):
-    """[(key, label, command, source)] in TOOLS order, minus `precommit.skip`, plus the opt-in atlas review gate."""
+    """[(key, label, command, source)] in TOOLS order, minus `precommit.skip`, plus the schema-drift step and the opt-in atlas gate."""
     cfg, ci, dflt = config(root), from_ci(root), defaults(root)
     skip = set(cfg.get("skip") or [])
     out = []
@@ -153,6 +168,8 @@ def steps(root):
         hit = ci.get(key) or dflt.get(key)
         if hit and key not in skip:
             out.append((key, hit[0], hit[1], hit[2]))
+    if DRIFT not in skip and is_oro(root) and os.path.isfile(os.path.join(root, "bin", "console")):
+        out.append((DRIFT, DRIFT_LABEL, "run_schema_drift", "aaxis-oro:schema-drift"))
     if cfg.get("atlas"):
         out.append(("atlas", "Atlas review check", "aaxis-oro atlas precommit", "precommit.atlas"))
     return out
@@ -171,18 +188,45 @@ def node_block(root, cfg):
             'fi\n')
 
 
+def _flag_value(cmd, flag):
+    """Match `--flag=VALUE` / `--flag VALUE` (VALUE as written, quotes included)."""
+    return re.search(r"(?<=\s)%s(?:=|\s+)(\"[^\"]*\"|'[^']*'|\S+)" % re.escape(flag), cmd)
+
+
+def with_excludes(key, cmd):
+    """Rewrite a whole-tree CI command so the hook's EXCL_CSV / EXCL_IGN (see the template) are excluded too."""
+    if key in ("phpcs", "phpmd"):
+        flag = "--ignore" if key == "phpcs" else "--exclude"
+        hit = _flag_value(cmd, flag)
+        if not hit:
+            extra = '${EXCL_CSV:+"--ignore=$EXCL_CSV"}' if key == "phpcs" else '${EXCL_CSV:+--exclude "$EXCL_CSV"}'
+            return "%s %s" % (cmd, extra)
+        joiner = "=" if cmd[hit.start() + len(flag)] == "=" else " "
+        merged = '%s%s%s"${EXCL_CSV:+,$EXCL_CSV}"' % (flag, joiner, hit.group(1))
+        return cmd[:hit.start()] + merged + cmd[hit.end():]
+    if key in ("eslint", "stylelint"):
+        sep = " --" if re.match(r"^npm\s+run\b", cmd) and not re.search(r"\s--(\s|$)", cmd) else ""
+        return '%s%s "${EXCL_IGN[@]}"' % (cmd, sep)
+    return cmd
+
+
 def render(root):
     st = steps(root)
+    cfg = config(root)
     lines = []
     for key, label, cmd, _ in st:
+        gate = GATES.get(key)
+        prefix = "GATE=%s " % shlex.quote(gate) if gate else ""
         if key == "yamllint":
-            lines.append('run_step "%s" run_yamllint %s' % (label, cmd[len("yamllint"):].strip()))
+            lines.append('%srun_step "%s" run_yamllint %s' % (prefix, label, cmd[len("yamllint"):].strip()))
         else:
-            lines.append('run_step "%s" %s' % (label, cmd))
-    node = node_block(root, config(root)) if any(k in NODE_TOOLS for k, *_ in st) else ""
+            lines.append('%srun_step "%s" %s' % (prefix, label, with_excludes(key, cmd)))
+    node = node_block(root, cfg) if any(k in NODE_TOOLS for k, *_ in st) else ""
     sources = ", ".join(sorted({s for *_, s in st})) or "none (no checks discovered)"
+    exclude = " ".join(shlex.quote(str(e)) for e in (cfg.get("exclude") or []) if isinstance(e, str) and e.strip())
     text = _read(TEMPLATE)
-    return text.replace("@@SOURCES@@", sources).replace("@@NODE@@", node).replace("@@STEPS@@", "\n".join(lines) or "true")
+    return (text.replace("@@SOURCES@@", sources).replace("@@NODE@@", node).replace("@@EXCLUDE@@", exclude or "''")
+            .replace("@@STEPS@@", "\n".join(lines) or "true"))
 
 
 def hook_path(root):
@@ -208,6 +252,38 @@ def state(root):
     return ("ok" if cur == render(root) else "outdated"), path
 
 
+def old_hook_gaps(text, managed):
+    """Names of the steps in an unmanaged hook that no managed step (keys in `managed`) replaces."""
+    logical = re.sub(r"\\\n\s*", " ", text).splitlines()
+    blocks, current = [], None  # [(name, [command lines])]
+    for line in logical:
+        stripped = line.strip()
+        run = re.match(r"""run_step\s+(?:"([^"]+)"|'([^']+)')\s*(.*)$""", stripped)
+        echo = re.match(r"""echo\s+["']==>\s*(.+?)["']\s*$""", stripped)
+        if run:
+            current = None
+            blocks.append((run.group(1) or run.group(2), [run.group(3)]))
+        elif echo:
+            current = (echo.group(1), [])
+            blocks.append(current)
+        elif current is not None and stripped and not stripped.startswith("#"):
+            current[1].append(stripped)
+        elif "doctrine:schema:" in stripped:
+            blocks.append((DRIFT_LABEL, [stripped]))
+    gaps = []
+    for name, cmds in blocks:
+        cmd = " ".join(cmds)
+        hit = classify(cmd)
+        key = hit[0] if hit else None
+        if key is None and "doctrine:schema:" in cmd:
+            key = DRIFT
+        elif key is None and re.search(r"(^|[\s/])yamllint(:|\s|$)", cmd):
+            key = "yamllint"  # docker run ... cytopia/yamllint
+        if "$" not in name and key not in managed and name not in gaps:
+            gaps.append(name)
+    return gaps
+
+
 def install(root, dry):
     st, path = state(root)
     if st == "skipped":
@@ -217,9 +293,13 @@ def install(root, dry):
     if st == "foreign-tracked":
         return "pre-commit: NOT installed, %s is tracked by the project (team-owned); add the steps there or remove it" % path
     msg = {"missing": "created", "outdated": "updated", "foreign": "replaced"}[st]
+    gaps_note = ""
     if st == "foreign":
         bak = "%s.bak-%s" % (path, time.strftime("%Y%m%d%H%M%S"))
         msg += ", unmanaged hook backed up to %s" % bak
+        gaps = old_hook_gaps(_read(path) or "", {k for k, *_ in steps(root)})
+        if gaps:
+            gaps_note = "\npre-commit: old hook steps with no managed equivalent (kept in the backup, re-add or drop deliberately): %s" % ", ".join(gaps)
         if not dry:
             shutil.copy2(path, bak)
     if not dry:
@@ -227,7 +307,7 @@ def install(root, dry):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(render(root))
         os.chmod(path, 0o755)
-    return "pre-commit: %s (%s; %d steps)" % (msg, path, len(steps(root)))
+    return "pre-commit: %s (%s; %d steps)%s" % (msg, path, len(steps(root)), gaps_note)
 
 
 def yamllint_state():

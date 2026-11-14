@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.0
+
+- Managed pre-commit hook now matches CI for the tracked tree. Root cause: the steps are CI's whole-tree commands (`phpcs ./src`, `phpmd ./src`, `eslint src`, `yamllint ./src/`) rendered verbatim (`lib/projsetup/precommit.py` `render`), so any file under `src/` that git ignores or excludes (for example a local-only `src/Aaxis/Bundle/AppBundle` in `.git/info/exclude`) was linted locally but never in CI, and could fail the commit. The hook now computes the ignored/excluded/untracked paths at run time and merges them into PHPCS `--ignore`, PHPMD `--exclude`, ESLint/Stylelint `--ignore-pattern`, and feeds YamlLint the tracked YAML files only. New `.oro-ai/config.json` `precommit.exclude` (paths or globs) adds explicit exclusions.
+- New opt-out-able `schema-drift` step (`doctrine:schema:update --dump-sql`, local database only, refuses the test stack, noise filtered, incomplete-database message). Root cause of its absence: `steps()` only knew lint/test tools, so the old hand-written hook's drift check had no managed equivalent and vanished on `setup sync`. Opt out with `precommit.skip: ["schema-drift"]`.
+- Steps are gated by the staged file types (`AAXIS_ORO_PRECOMMIT_ALL=1` or nothing staged runs all).
+- `setup sync` lists the old hook's steps that have no managed equivalent before replacing it.
+- The old buckman hook's exact drift noise filters could not be recovered (its `pre-commit.bak-20261114220450` file no longer exists), so the filters are the ones documented in `env/references/ci-parity.md` and `entity-extend-indexes.md`.
+
 ## 0.27.4
 
 - Synced rule blocks trimmed conservatively (`templates/claude-project/process-rules.md`, `review-rules.md`: 5554 to 4945 chars in every session's `CLAUDE_project.md`). Only rationale and the "Prevents ..." clauses moved to `solutions/references/process-rules-rationale.md`; every rule that encodes a non-standard project practice stays in the block, per ETH "Evaluating AGENTS.md" (arXiv 2602.11988: context files add about 20% cost without raising success, keep only non-discoverable rules), Anthropic "Effective context engineering" (2025-09: start minimal, add back what testing shows is needed) and Lulla et al. (arXiv 2601.20404: good context files cut runtime, so keep the anti-wandering rules). Regression guard: `tests/projsetup/rule_inventory.json` lists every command token and key phrase of the pre-trim blocks (all must remain in the blocks or the rationale file; enforcement tokens must stay in the blocks) and pins each block's sha256, so the text is byte-stable (an edit invalidates the prompt-cache prefix and must be deliberate). Run `aaxis-oro setup sync` to refresh projects.

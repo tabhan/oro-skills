@@ -89,7 +89,7 @@ c doctrine:schema:update --dump-sql          # Should show "Nothing to update"
 
 ## Quick Diagnosis
 
-When the pre-commit hook reports drift:
+When the pre-commit hook (managed `schema-drift` step, local database) reports drift:
 
 1. Run `c doctrine:schema:update --dump-sql`
 2. If output is `DROP INDEX <name>`:
