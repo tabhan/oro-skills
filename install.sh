@@ -6,7 +6,7 @@
 # Usage:
 #   ./install.sh                 # update this checkout (git pull), remove legacy symlinks, install the plugin, link CLIs
 #   ./install.sh --no-update     # skip git pull
-#   ./install.sh --project DIR   # project whose .claude/settings.local.json is cleaned of legacy atlas hooks (default: cwd)
+#   ./install.sh --project DIR   # project whose .claude/settings*.json are cleaned of legacy atlas hooks, with ~/.claude/settings*.json (default: cwd)
 #   ./install.sh --uninstall     # remove the CLI symlink this script created
 #
 # First-time install with SSH access to the repo:
@@ -154,12 +154,10 @@ if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
   fi
 fi
 
-# Pre-plugin atlas hooks in the project's settings.local.json would fire a second time next to the plugin's.
-if [ -f "$PROJECT_DIR/.claude/settings.local.json" ] && grep -q "oro-atlas" "$PROJECT_DIR/.claude/settings.local.json"; then
-  echo "Cleaning legacy atlas hooks from $PROJECT_DIR/.claude/settings.local.json"
-  python3 "$SCRIPT_DIR/bin/aaxis-oro" atlas setup --cleanup-only "$PROJECT_DIR" \
-    || FAILED+=("python3 $SCRIPT_DIR/bin/aaxis-oro atlas setup --cleanup-only $PROJECT_DIR")
-fi
+# Pre-plugin atlas hooks would fire a second time next to the plugin's; they can sit in project or user settings.
+echo "Cleaning legacy atlas hooks from user and project Claude settings"
+python3 "$SCRIPT_DIR/bin/aaxis-oro" atlas setup --cleanup-only "$PROJECT_DIR" \
+  || FAILED+=("python3 $SCRIPT_DIR/bin/aaxis-oro atlas setup --cleanup-only $PROJECT_DIR")
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
   echo "Done with failures; re-run these by hand:" >&2

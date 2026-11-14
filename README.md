@@ -56,6 +56,10 @@ SessionStart (atlas freshness, notes, version, legacy/memory migration prompts),
 block, anchored notes), PostToolUse Bash, Stop (end-of-session reminders).
 `ORO_ATLAS_ENFORCE=0` is a human-only escape hatch; Claude never sets it.
 
+Upgrading from the pre-plugin install: stale `oro-atlas/hooks/*.py` entries in Claude settings keep resolving to
+shims in `oro-atlas/hooks/` that remove those entries from project and `~/.claude` settings (atlas entries only),
+print nothing and exit 0. `install.sh` and `atlas setup --cleanup-only` do the same cleanup.
+
 ## Principles
 
 - Token efficiency: deterministic work lives in scripts with quiet output (one line per step, documented exit codes,

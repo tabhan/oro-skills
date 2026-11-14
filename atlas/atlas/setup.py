@@ -29,8 +29,8 @@ def main(argv):
     if not cleanup_only and not os.path.isfile(os.path.join(project, "bin", "console")):
         sys.stderr.write("usage: aaxis-oro atlas setup [--cleanup-only] [--no-build] <oro-project-root>\n")
         return 2
-    if legacy.cleanup(project):
-        print("removed legacy atlas hooks from %s (the aaxis-oro plugin provides them)" % legacy.settings_path(project))
+    for path in legacy.cleanup_all(project):
+        print("removed legacy atlas hooks from %s (the aaxis-oro plugin provides them)" % path)
     if cleanup_only:
         return 0
     for note in remove_git_hooks(project):
