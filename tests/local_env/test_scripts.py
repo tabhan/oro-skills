@@ -247,6 +247,19 @@ class OroTest(Base):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("verified", p.stdout)
 
+    def test_empty_database_dsn_after_cold_boot_is_retried_once(self):
+        write(os.path.join(self.stubdir, "live-empty-once"), "")
+        p = self.run_ot("local", "verify")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.calls().count("live-target.php"), 2)
+
+    def test_persistently_empty_database_dsn_is_refused(self):
+        self.write_live("prod", db="oro", database_dsn="", search_engine_dsn="elastic-search://h:9200?prefix=oro_search",
+                        **{"gaufrette_adapter.private": "gridfs:mongodb://h/private"})
+        p = self.run_ot("local", "verify")
+        self.assertEqual(p.returncode, 3, p.stdout)
+        self.assertIn("database_dsn", p.stdout)
+
     def test_phpunit_pointed_at_local_db_refused(self):
         self.write_live("test", db="oro")
         p = self.run_ot("local-test", "phpunit")
@@ -535,6 +548,30 @@ class Params(Base):
         self.assertEqual(len(ts), 1)
         self.assertTrue(os.path.exists(os.path.join(aside, ts[0], "public", "media", "js", "frontend_routes.json")))
         self.assertNotIn("media-shadow", self.run_script("check.sh").stdout)
+
+    def sitemap(self, adapter="'gridfs:%env(ORO_MONGODB_DSN_PUBLIC)%'"):
+        write(self.params, read(self.params).replace("'local'", adapter))
+        d = os.path.join(self.project, "public", "media", "sitemaps", "1")
+        os.makedirs(d)
+        write(os.path.join(d, "sitemap-index-1.xml.gz"), "x")
+        return d
+
+    def test_check_flags_stale_sitemaps_shadowing_gridfs_and_repair_moves_them_aside(self):
+        d = self.sitemap()
+        self.assertIn("DRIFT sitemap-shadow", self.run_script("check.sh").stdout)
+        r = self.run_script("repair.sh", "--only", "media")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(d, "sitemap-index-1.xml.gz")))
+        aside = os.path.join(self.project, ".oro-ai", "local-env", "moved-aside")
+        ts = os.listdir(aside)
+        self.assertTrue(os.path.exists(os.path.join(aside, ts[0], "public", "media", "sitemaps", "1", "sitemap-index-1.xml.gz")))
+        self.assertNotIn("sitemap-shadow", self.run_script("check.sh").stdout)
+
+    def test_local_adapter_sitemaps_are_not_shadowing(self):
+        d = self.sitemap("'local:/var/media'")
+        self.assertNotIn("sitemap-shadow", self.run_script("check.sh").stdout)
+        self.run_script("repair.sh", "--only", "media")
+        self.assertTrue(os.path.exists(os.path.join(d, "sitemap-index-1.xml.gz")))
 
     def test_local_filesystem_adapter_is_not_shadowing(self):
         js = self.shadow("'local:/var/media'")

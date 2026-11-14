@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 echo "php $*" >> "$STUB_LOG"
-case "$1" in */live-target.php) cat "$STUB_DIR/live-$3.txt" 2>/dev/null; exit "${STUB_PHP_RC:-0}" ;; esac
+# A "live-empty-once" marker makes the first boot report an empty database_dsn, like a cold container compile.
+case "$1" in */live-target.php)
+    if [ -e "$STUB_DIR/live-empty-once" ]; then rm -f "$STUB_DIR/live-empty-once"; sed 's/^database_dsn=.*/database_dsn=/' "$STUB_DIR/live-$3.txt"
+    else cat "$STUB_DIR/live-$3.txt" 2>/dev/null; fi
+    exit "${STUB_PHP_RC:-0}" ;; esac
 [ -f "$1" ] && [ "$1" != "-r" ] && exec bash "$@"
 case "$*" in
     *debug:dotenv*) env=$(sed -E 's/.*--env=([a-z_]+).*/\1/' <<< "$*"); cat "$STUB_DIR/dotenv-$env.txt" 2>/dev/null ;;
+    *oro:migration:data:load*) printf 'Loading "main" data fixtures (language: en, formatting code: en)...\n  > loading Acme\\Bundle\\XBundle\\Migrations\\Data\\ORM\\LoadSlugs 1.00 MiB - 5 ms\n' ;;
     *dbal:run-sql*) printf ' current_database\n %s\n' "${STUB_LIVE_DB:-oro_test}" ;;
     *-r*PHP_VERSION*) echo "8.5.10" ;;
 esac

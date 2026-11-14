@@ -63,6 +63,9 @@ live_get() { sed -n "s/^$1=//p" <<< "$LIVE" | head -1; }
 verify_env() { # env expected_db web
     local e=$1 want_db=$2 web=$3 v
     LIVE=$(cd "$PROJECT" && ORO_ENV=$e ORO_DEBUG=0 php "$LE_LIB/live-target.php" "$PROJECT" "$e" 2>>"$LOG")
+    # The first boot after a cache clear compiles the container and can resolve parameters empty; the second boot reads
+    # the warmed cache, so an empty database_dsn gets one retry before it counts as a mismatch.
+    [ -n "$(live_get database_dsn)" ] || LIVE=$(cd "$PROJECT" && ORO_ENV=$e ORO_DEBUG=0 php "$LE_LIB/live-target.php" "$PROJECT" "$e" 2>>"$LOG")
     [ -n "$LIVE" ] || { MISMATCH+=("$e kernel did not boot (see $LOG)"); return; }
     expect_eq "$e" "live current_database()" "$(live_get current_database)" "$want_db"
     expect_eq "$e" database_dsn "$(live_get database_dsn | dsn_path)" "$want_db"

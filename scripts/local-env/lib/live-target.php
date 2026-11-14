@@ -21,7 +21,18 @@ return function () use ($env) {
     } catch (\Throwable $e) {
         echo "current_database=\n";
     }
-    foreach (['database_dsn', 'search_engine_dsn', 'website_search_engine_dsn', 'message_queue_transport_dsn',
+    $dsn = $c->hasParameter('database_dsn') ? (string) $c->getParameter('database_dsn') : '';
+    if ($dsn === '') {
+        // A freshly cleared prod container can lack the parameter; the live connection still knows its target.
+        try {
+            $p = $c->get('doctrine')->getConnection()->getParams();
+            $dsn = sprintf('%s://%s:%s/%s', $p['driver'] ?? 'pgsql', $p['host'] ?? '', $p['port'] ?? '', $p['dbname'] ?? '');
+        } catch (\Throwable $e) {
+            $dsn = '';
+        }
+    }
+    echo 'database_dsn=', $dsn, "\n";
+    foreach (['search_engine_dsn', 'website_search_engine_dsn', 'message_queue_transport_dsn',
         'gaufrette_adapter.public', 'gaufrette_adapter.private', 'session_handler_dsn'] as $p) {
         echo $p, '=', $c->hasParameter($p) ? $c->getParameter($p) : '', "\n";
     }

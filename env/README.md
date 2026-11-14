@@ -45,7 +45,7 @@ Categories come from `lib/refresh.py` (Tests/ dirs ignored). Steps run in this o
 |---|---|
 | `composer.lock` | `composer install --no-interaction --no-scripts` (Oro's script handlers run pnpm/assets, which `assets` covers; `--no-dev` only if vendor was installed without dev; one `--ignore-platform-req` per entry of env.yml `composer_ignore_platform_reqs`), caches, routes dump |
 | `config/**`, `Resources/config/**`, `*.php` / `*.twig` under `src` | delete `var/cache/<env>` (also `tes_`) and `cache:warmup`: local (prod, dev), then behat_test; the `test` cache is only deleted, since the test kernel rebuilds its extend-entity cache from the test DB on first boot (`OroEntityExtendBundle::ensureInitialized`) and warmup fails before that |
-| any `Migrations/` | local `oro:migration:load --force`; local-test only reports `baseline-stale` (nothing rebuilds it automatically: run `aaxis-oro env baseline`) |
+| any `Migrations/` | local `oro:migration:load --force`, then `oro:migration:data:load` on the same prod kernel (refresh lists the fixtures it loaded); local-test only reports `baseline-stale` (nothing rebuilds it automatically: run `aaxis-oro env baseline`) |
 | `entity_extend.yml`, `config/oro/entity*.yml`, `entity_configs.yml` | local `oro:entity-config:update` + `oro:entity-extend:update` |
 | `translations/*.yml` | local `oro:translation:load --rebuild-cache` + `oro:translation:dump` |
 | `routing*.yml`, `*Controller.php` | `fos:js-routing:dump` per stack: `routing-local` (prod) and `routing-test` (behat_test); Oro writes `*_routes.json` through the public gaufrette FileManager, so on gridfs projects each stack's dump lands in its own Mongo |
@@ -57,7 +57,7 @@ step applicable to the target is due (git index + worktree hashes, well under 1s
 A run also prints `WARN tracked file modified: ...` for tracked files it newly modified (never reverted), and
 `WARN stale public/media/js files ...` after a routes/translation step when `check` item `media-shadow` applies: with a
 non-local public gaufrette adapter, `public/media/js/*_routes.json` and `translation/*.json` left on disk shadow the dump
-(nginx serves the file). `env repair --only media` moves them to `.oro-ai/local-env/moved-aside/<ts>/`, never deletes.
+(nginx serves the file). `check` item `sitemap-shadow` flags the same for `public/media/sitemaps/**` (the `sitemaps` gaufrette filesystem uses the public adapter, so `oro:cron:sitemap:generate` writes to GridFS while nginx serves any stale disk copy first). `env repair --only media` moves both kinds to `.oro-ai/local-env/moved-aside/<ts>/`, never deletes.
 
 ## Scripts
 

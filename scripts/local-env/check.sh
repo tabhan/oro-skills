@@ -33,6 +33,8 @@ for k in public private; do
 done
 shadow=$(media_shadow_files | wc -l)
 if [ "$shadow" -gt 0 ]; then bad media-shadow "$shadow stale file(s) in public/media/js shadow the gridfs-served routes/translation dump (repair.sh --only media)"; else ok media-shadow; fi
+sshadow=$(sitemap_shadow_files | wc -l)
+if [ "$sshadow" -gt 0 ]; then bad sitemap-shadow "$sshadow stale file(s) in public/media/sitemaps shadow the gridfs-served sitemap (repair.sh --only media)"; else ok sitemap-shadow; fi
 redis=$(grep -lE '^ORO_REDIS_(CACHE|DOCTRINE|LAYOUT)_DSN=' "$PROJECT"/.env-app.test.local "$PROJECT"/.env-app.behat_test.local 2>/dev/null | xargs -r -n1 basename | tr '\n' ' ')
 if [ -n "$redis" ]; then bad redis-cache "Redis cache DSNs set in ${redis% }; caches stay on disk (repair.sh --only params)"; else ok redis-cache; fi
 

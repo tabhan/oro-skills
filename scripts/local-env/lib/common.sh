@@ -91,10 +91,15 @@ media_shadow_files() {
     public_adapter_remote || return 0
     ls -1 "$PROJECT"/public/media/js/*_routes.json "$PROJECT"/public/media/js/translation/*.json 2>/dev/null
 }
+# Sitemaps and robots.txt are written to the "sitemaps" gaufrette filesystem, which uses the public adapter, so with a
+# remote adapter any file left under public/media/sitemaps is served by nginx ahead of the generated copy.
+sitemap_shadow_files() {
+    public_adapter_remote || return 0
+    find "$PROJECT/public/media/sitemaps" -type f 2>/dev/null | sort
+}
 
 nvm_version() { # resolves env.yml node_pin, else .nvmrc, through nvm; prints vX.Y.Z or N/A
     local want=${NODE_PIN:-}; [ -n "$want" ] || want=$(tr -d ' \n' < "$PROJECT/.nvmrc" 2>/dev/null) || return
     # shellcheck disable=SC1091
     (export NVM_DIR=${NVM_DIR:-$HOME/.nvm}; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm version "$want" 2>/dev/null)
 }
-

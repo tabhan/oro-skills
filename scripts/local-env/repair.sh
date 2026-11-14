@@ -49,7 +49,7 @@ if want_item media; then
         rel=${f#"$PROJECT"/}
         mut "move aside $rel" bash -c 'mkdir -p "$(dirname "$2/$3")" && mv "$1" "$2/$3"' _ "$f" "$dst" "$rel" || fail "move $rel"
         n=$((n + 1))
-    done < <(media_shadow_files)
+    done < <(media_shadow_files; sitemap_shadow_files)
     [ "$n" -gt 0 ] && say "media: moved $n shadowing file(s) to ${dst#"$PROJECT"/}"
 fi
 want_item vhost && mq_ensure_vhost

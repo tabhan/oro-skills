@@ -24,6 +24,8 @@ STEPS = (
     ("cache-local", "local", ("code", "composer")),
     ("cache-test", "local-test", ("code", "composer")),
     ("migrate", "local", ("migrations",)),
+    # oro:migration:load is schema only; versioned data fixtures (Migrations/Data/ORM) need their own command.
+    ("data-load", "local", ("migrations",)),
     ("baseline-stale", "local-test", ("migrations", "composer")),
     ("entity", "local", ("entity",)),
     ("translations", "local", ("translations",)),

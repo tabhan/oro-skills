@@ -38,6 +38,8 @@ step_cache_local() {
 step_cache_test() { rmcache test tes_ behat_test; tc local-test console cache:warmup --env=behat_test; }
 step_baseline() { echo "baseline stale (composer.lock/migrations changed): run aaxis-oro env baseline before e2e (about 8 minutes)"; }
 step_migrate() { tc local console oro:migration:load --force; }
+# oro:migration:data:load prints each fixture it applies as "  > <FQCN>"; the loop below lists them.
+step_data_load() { tc local console oro:migration:data:load; }
 step_entity() { tc local console oro:entity-config:update && tc local console oro:entity-extend:update; }
 step_translations() { tc local console oro:translation:load --rebuild-cache && tc local console oro:translation:dump; }
 step_routing_local() { tc local console fos:js-routing:dump; }
@@ -53,8 +55,15 @@ for s in $STEPS; do
     fn=step_${s//-/_}; [ "$s" = baseline-stale ] && fn=step_baseline
     if [ "$DRY" = 1 ]; then say "refresh: would run $s ($(grep -P "^$s\t" <<< "$PLAN" | cut -f2))"; continue; fi
     t0=$EPOCHREALTIME
-    if "$fn" >> "$LOG" 2>&1; then r=ok; else r=FAIL; fi
+    out=$(mktemp)
+    if "$fn" > "$out" 2>&1; then r=ok; else r=FAIL; fi
+    cat "$out" >> "$LOG"
     say "$(awk -v a="$t0" -v b="$EPOCHREALTIME" -v s="$s" -v r="$r" 'BEGIN{printf "refresh: %-14s %-4s %5.1fs", s, r, b-a}')"
+    if [ $r = ok ] && [ "$s" = data-load ]; then
+        fx=$(sed -nE 's/^ *> *(loading |Loading )?([A-Za-z_][A-Za-z0-9_]*(\\[A-Za-z0-9_]+)+).*/\2/p' "$out" | sed 's/.*\\//' | paste -sd, -)
+        say "refresh: data fixtures loaded: ${fx:-none}"
+    fi
+    rm -f "$out"
     [ $r = ok ] || { warn_new_dirty; say "refresh: stopped; log: $LOG"; exit 1; }
     case $s in routing-*|translations) [ -n "$(media_shadow_files)" ] && say "refresh: WARN stale public/media/js files shadow the gridfs dump; run: aaxis-oro env repair --only media" ;; esac
 done
