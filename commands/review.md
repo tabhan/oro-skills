@@ -11,7 +11,13 @@ read-only; never let a reviewer fix its own findings.
 1. Scope. `KEY` from `$ARGUMENTS` or the branch. Base = first existing of `origin/develop`, `develop`, `origin/main`,
    `main`; `BASE=$(git merge-base <base> HEAD)`, `HEAD=$(git rev-parse HEAD)`. Uncommitted changes: stop and ask to
    commit first (the verdict covers commits only). File list: `git diff --name-only $BASE..$HEAD`. No code change
-   (only `.oro-ai/`, docs): write `Verdict: skipped - <reason>` and stop.
+   (only `.oro-ai/`, docs): write `Verdict: skipped - <reason>` and stop. Create the task dir with
+   `aaxis-oro task init $KEY` when missing.
+   Before step 2, write the in-progress marker to `.oro-ai/task/$KEY/review.md` (overwriting any earlier review;
+   this run's verdict replaces it): `Verdict: in-progress`, `Range: $BASE..$HEAD`, `Started: <date -u +%FT%TZ>`.
+   The Stop hook then lets turns end while lenses run in the background; push and `task check` still fail. If the
+   run aborts, overwrite the marker with the outcome you have (e.g. `Verdict: changes-requested` plus why); a
+   leftover marker goes stale after 2h or on a new commit and the Stop hook blocks again.
 2. Deterministic checks: `aaxis-oro review check --range $BASE..$HEAD` and `aaxis-oro task check $KEY`; keep both
    outputs for the lenses and the report (a deny is a Blocker).
 3. Intentional invariants: from WHY-comments, the ticket, `plan.md`, bundle READMEs and `.oro-ai/notes`, write the
@@ -29,7 +35,7 @@ read-only; never let a reviewer fix its own findings.
    official pack refutes its own. A refuted finding becomes `[Advisory]` with the reason on one line.
 6. Synthesize: dedupe across lenses (keep the higher severity, keep both lens names), then tier as Must-fix (Blocker
    and Risk), Worth doing, Judgment call. One table: file:line, finding, lens, tier, fix.
-7. Write `.oro-ai/task/$KEY/review.md` (create the dir with `aaxis-oro task init $KEY`):
+7. Overwrite the marker in `.oro-ai/task/$KEY/review.md` with the final verdict:
    ```
    Verdict: approved | changes-requested
    Range: <BASE sha>..<HEAD sha>

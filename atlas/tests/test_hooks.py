@@ -194,6 +194,24 @@ class HookTest(Base):
         self.assertIsNotNone(self.prompt("now BUC-13", sid="p1"))
         self.assertIsNone(self.prompt("encode as UTF-8", sid="p2"))
 
+    def test_prompt_process_reminder_ignores_keys_in_system_wrappers(self):
+        os.makedirs(os.path.join(self.root, ".oro-ai"), exist_ok=True)
+        open(os.path.join(self.root, ".oro-ai", "config.json"), "w").close()
+        note = "<task-notification>agent done, see TST-1</task-notification>"
+        self.assertIsNone(self.prompt(note, sid="w1"))
+        self.assertIsNone(self.prompt("<system-reminder>TST-1</system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT] TST-1", sid="w1"))
+        out = self.prompt(note + "\nnow look at BUC-20", sid="w2")
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("BUC-20", ctx)
+        self.assertNotIn("TST-1", ctx)
+        subprocess.run(["git", "-C", self.root, "init", "-q"], check=True)
+        subprocess.run(["git", "-C", self.root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
+                        "--allow-empty", "-m", "init"], check=True)
+        subprocess.run(["git", "-C", self.root, "checkout", "-qb", "bugfix/BUC-30"], check=True)
+        out = self.prompt(note, sid="w3")
+        self.assertIn("task init BUC-30", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIsNone(self.prompt(note, sid="w3"))
+
     def test_prompt_nudge_mentions_build_when_index_missing(self):
         out = self.prompt("override the datagrid listener")
         self.assertIn("atlas build", out["hookSpecificOutput"]["additionalContext"])

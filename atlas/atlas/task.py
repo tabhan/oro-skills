@@ -10,14 +10,18 @@ import subprocess
 import sys
 
 KEY = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![0-9])")
-WORDS = r"(approved|pass(?:ed)?|rejected?|fail(?:ed)?|changes[- ]requested|skipped)"
+WORDS = r"(approved|pass(?:ed)?|rejected?|fail(?:ed)?|changes[- ]requested|skipped|in[- ]progress)"
 # A `Verdict: <word>` line anywhere, or the verdict word alone opening the file (older gate output wrote bare "PASS").
 VERDICT = re.compile(r"^[\s>*_#-]*verdict[\s*_]*:[\s*_`]*%s\b[ \t*_`]*([^\n]*)" % WORDS, re.I | re.M)
 LEAD = re.compile(r"\A\s*[>*_#` \t]*%s\b[ \t*_`]*([^\n]*)" % WORDS, re.I)
 CANON = {"pass": "approved", "passed": "approved", "reject": "rejected", "fail": "rejected", "failed": "rejected",
-         "changes-requested": "changes-requested", "changes requested": "changes-requested"}
+         "changes-requested": "changes-requested", "changes requested": "changes-requested",
+         "in progress": "in-progress"}
 # `Range: <base>..<head>` in review.md: the commits the supplementary review covered.
 RANGE = re.compile(r"^[\s>*_#-]*range[\s*_]*:[\s*_`]*([0-9a-f]{7,40})\.\.\.?([0-9a-f]{7,40})", re.I | re.M)
+# `Started: <ISO-8601 UTC>` on the in-progress marker /aaxis-oro:review writes before dispatching its lenses.
+STARTED = re.compile(r"^[\s>*_#-]*started[\s*_]*:[\s*_`]*(\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?)", re.I | re.M)
+IN_PROGRESS_TTL = 2 * 3600
 TASK_ONLY = re.compile(r"^\.oro-ai/")
 E2E_FILE = re.compile(r"(?:\.feature|\.steps\.ts)$")
 PROD_FILE = re.compile(r"^src/.+\.(?:php|ya?ml|xml|twig|js|ts|scss)$")
@@ -68,7 +72,7 @@ def read_text(path):
 
 
 def verdict_of(text):
-    """('missing'|'unreadable'|'no-verdict'|'approved'|'rejected'|'changes-requested'|'skipped', reason) of a verdict file."""
+    """('missing'|'unreadable'|'no-verdict'|'approved'|'rejected'|'changes-requested'|'skipped'|'in-progress', reason) of a verdict file."""
     state, reason = ("unreadable" if text is None else "missing"), ""
     if text:
         m = VERDICT.search(text) or LEAD.search(text)
@@ -104,11 +108,37 @@ def review_state(root, key):
     return state, reason
 
 
+def in_progress(root, key, now=None):
+    """(fresh, started, why) for an in-progress review.md marker; None when review.md is not in-progress.
+
+    Fresh = its Range head is HEAD and Started is younger than IN_PROGRESS_TTL; otherwise `why` says what is stale.
+    """
+    from datetime import datetime, timezone
+    text = read_text(os.path.join(task_dir(root, key), "review.md"))
+    if verdict_of(text)[0] != "in-progress":
+        return None
+    m, s = RANGE.search(text), STARTED.search(text)
+    reviewed = m and git(root, "rev-parse", "--verify", "-q", m.group(2) + "^{commit}")
+    try:
+        started = datetime.fromisoformat(s.group(1).replace("Z", "+00:00")) if s else None
+        started = started and (started if started.tzinfo else started.replace(tzinfo=timezone.utc))
+    except ValueError:
+        started = None
+    age = started and ((now or datetime.now(timezone.utc)) - started).total_seconds()
+    why = ("no Range head" if not reviewed else "Range head is not HEAD" if reviewed != git(root, "rev-parse", "HEAD")
+           else "no valid Started time" if not started else "started over %dh ago" % (IN_PROGRESS_TTL // 3600)
+           if age > IN_PROGRESS_TTL else "")
+    return not why, s.group(1) if s else "?", why
+
+
 def review_problem(root, key):
     """One line when this branch's committed code needs a fresh approved/skipped review.md, else None."""
     if not any(not TASK_ONLY.match(f) for f in branch_files(root)):
         return None
     state, reason = review_state(root, key)
+    if state == "in-progress":
+        return ("review in progress (.oro-ai/task/%s/review.md says 'Verdict: in-progress'; not approved until "
+                "/aaxis-oro:review writes its final verdict)" % key)
     return None if state in ("approved", "skipped") else (
         "review: %s%s (run /aaxis-oro:review; .oro-ai/task/%s/review.md needs 'Verdict: approved' and a "
         "'Range: <base>..<head>' covering HEAD, or 'Verdict: skipped - <reason>')" % (state, ": " + reason if reason else "", key))

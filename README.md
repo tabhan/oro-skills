@@ -109,8 +109,13 @@ applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose 
   a `changes-requested` review whose Range head is HEAD asks for the must-fix findings first. It blocks once per
   stop chain (`stop_hook_active` lets the next Stop through with a warning), exempts subagents (SubagentStop /
   `agent_id`: the main session owns the review), only warns under the human-only enforcement switch, and any
-  error allows the stop (logged to `~/.claude/atlas-hook.log`).
-- UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch).
+  error allows the stop (logged to `~/.claude/atlas-hook.log`). `/aaxis-oro:review` first writes a
+  `Verdict: in-progress` marker (`Range: <base>..<HEAD>`, `Started: <ISO-8601 UTC>`): while its head is HEAD and it is
+  younger than 2h (`task.IN_PROGRESS_TTL`) the Stop hook only warns "review in progress since <t>"; a stale marker
+  blocks as usual. `in-progress` is never approved: push gate and `task check` still fail.
+- UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch). Keys
+  inside harness wrappers (`<task-notification>`, `<system-reminder>`, text after `[SYSTEM NOTIFICATION`) are ignored:
+  background-task notifications reach the hook as `prompt` text with no distinguishing payload field.
 - Escape hatches: `Verdict: skipped - <reason>` for a trivial change (auditable in the task dir); the human-only
   `ORO_ATLAS_ENFORCE=0` downgrades the deny to a warning.
 

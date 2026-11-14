@@ -291,6 +291,17 @@ class SupplementaryReviewTest(TicketBranchBase):
         self.assertIsNone(self.push())
         self.assertIsNone(self.push("git status"))
 
+    def test_in_progress_is_not_approved_for_push_or_task_check(self):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.review("Verdict: in-progress\nRange: %s..%s\nStarted: %s\n" % (self.sha("HEAD~1"), self.sha(), now))
+        out = self.push()
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("review in progress", out["hookSpecificOutput"]["permissionDecisionReason"])
+        p = self.task_check()
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("review in progress", p.stdout)
+
     def test_push_override_warns_and_non_setup_or_non_ticket_is_noop(self):
         out = self.push(env={"ORO_ATLAS_ENFORCE": "0"})
         self.assertNotIn("permissionDecision", out["hookSpecificOutput"])
@@ -350,6 +361,26 @@ class StopReviewGateTest(TicketBranchBase):
         self.assertIn("must-fix", out["reason"])
         self.review("Verdict: changes-requested\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha("HEAD~1")))
         self.assertNotIn("must-fix", self.stop()[1]["reason"])
+
+    def marker(self, head=None, started=None):
+        from datetime import datetime, timezone
+        started = started or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.review("Verdict: in-progress\nRange: %s..%s\nStarted: %s\n" % (self.sha("HEAD~1"), head or self.sha(), started))
+        return started
+
+    def test_fresh_in_progress_marker_does_not_block(self):
+        started = self.marker()
+        out = self.stop()[1]
+        self.assertNotIn("decision", out)
+        self.assertIn("review in progress since %s" % started, out["systemMessage"])
+
+    def test_stale_in_progress_marker_blocks(self):
+        self.marker(started="2020-01-01T00:00:00Z")
+        out = self.stop()[1]
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("stale in-progress marker", out["reason"])
+        self.marker(head=self.sha("HEAD~1"))
+        self.assertIn("Range head is not HEAD", self.stop()[1]["reason"])
 
     def test_loop_guard_allows_with_warning(self):
         out = self.stop(stop_hook_active=True)[1]

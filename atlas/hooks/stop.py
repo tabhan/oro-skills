@@ -4,6 +4,7 @@
 Review gate (check `review-ticket-stop`): a setup project on a ticket branch with committed code (outside .oro-ai/),
 a tree with no uncommitted code and no approved/skipped review.md covering HEAD blocks the main session's Stop once
 per stop chain (`stop_hook_active` lets the second Stop through). Subagents are exempt; the main session owns the review.
+A fresh `Verdict: in-progress` marker (Range head == HEAD, Started within task.IN_PROGRESS_TTL) only warns.
 """
 import json
 import os
@@ -43,7 +44,14 @@ def review_gate(payload):
                                       review.detect(root).version) if problem else {"run": False}
     if not d["run"]:
         return None, "skip"
-    if changes_requested_on_head(root, key):
+    marker = task.in_progress(root, key)
+    if marker and marker[0]:
+        return {"systemMessage": "[review] review in progress since %s (%s); not blocking." % (
+            marker[1], ".oro-ai/task/%s/review.md" % key)}, "in-progress"
+    if marker:
+        reason = ("review-ticket-stop: .oro-ai/task/%s/review.md holds a stale in-progress marker (started %s; %s). "
+                  "Re-run /aaxis-oro:review to completion, then stop." % (key, marker[1], marker[2]))
+    elif changes_requested_on_head(root, key):
         reason = ("review-ticket-stop: .oro-ai/task/%s/review.md is changes-requested for HEAD. Address its must-fix "
                   "findings, commit, re-run /aaxis-oro:review, then stop." % key)
     else:

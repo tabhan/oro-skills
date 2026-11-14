@@ -38,6 +38,15 @@ PROCESS = (
 )
 
 
+# Harness-injected text (background-task notifications, reminders) arrives in `prompt` too; Claude Code's payload has
+# no field marking it, so ticket keys are read only from the user's own text outside these wrappers.
+WRAPPED = re.compile(r"<(task-notification|system-reminder)\b[^>]*>.*?(?:</\1>|\Z)|\[SYSTEM NOTIFICATION.*\Z", re.S | re.I)
+
+
+def user_text(prompt):
+    return WRAPPED.sub(" ", prompt or "")
+
+
 def decide(payload):
     """(output, verdict): nudge once per session when the prompt is clearly Oro extension work."""
     root = c.project_root(payload.get("cwd") or os.getcwd())
@@ -53,7 +62,7 @@ def decide(payload):
         state["nudged"] = True
         c.save_state(path, state)
         out, verdict = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": c.clip(text)}}, "nudge"
-    key = task.key_from(prompt) or (task.branch_key(root) if root else None)
+    key = task.key_from(user_text(prompt)) or (task.branch_key(root) if root else None)
     if root and key and task.is_setup(root) and key not in state.get("process_keys", []):
         state["process_keys"] = state.get("process_keys", []) + [key]
         c.save_state(path, state)
