@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "lib"))
 
 import _common as c  # noqa: E402
 import _decorates  # noqa: E402
-from atlas import cli, index, miniyaml  # noqa: E402
+from atlas import cli, index, miniyaml, task  # noqa: E402
 from atlas.common import atlas_dir  # noqa: E402
 from atlas.common import ensure_ignored as c_ensure  # noqa: E402
 from oroversion import resolve  # noqa: E402
@@ -174,12 +174,29 @@ def check_citations(root, plan_file, notes):
     return found
 
 
+def check_ticket(root, chs, verdicts):
+    """Setup project on a ticket branch: an extension-point change needs an approved/skipped architect-gate verdict."""
+    key = task.branch_key(root) if task.is_setup(root) else None
+    found = []
+    if key and verdicts["review-ticket-gate"] != "skip" and any(c.is_extension_file("/" + ch.path) for ch in chs):
+        state, _ = task.gate_state(root, key)
+        if state not in ("approved", "skipped"):
+            sev = "warn" if verdicts["review-ticket-gate"] == "warn" else "deny"
+            found.append(Finding(sev, "review-ticket-gate", ".oro-ai/task/%s/architect-gate.md" % key,
+                                 "extension-point change with architect-gate %s: run aaxis-oro:architect-gate on the plan and save "
+                                 "its verdict ('Verdict: approved', or 'Verdict: skipped - <reason>' for a trivial change)" % state))
+    if key and verdicts["review-ticket-evidence"] != "skip":
+        paths = task.branch_files(root) + [ch.path for ch in chs]
+        found += [Finding("warn", "review-ticket-evidence", key, line) for line in task.evidence(root, key, paths)]
+    return found
+
+
 def gate(root):
     """check id -> 'run'|'warn'|'skip' from the version registry (an unknown Oro version downgrades deny to warn)."""
     registry = resolve.load_registry(REGISTRY)
     version = detect(root).version
     verdicts = {}
-    for cid in [i for i, _ in CHECKS] + ["review-atlas-citations"]:
+    for cid in [i for i, _ in CHECKS] + ["review-atlas-citations", "review-ticket-gate", "review-ticket-evidence"]:
         d = resolve.check_decision(registry, cid, version)
         verdicts[cid] = "skip" if not d["run"] else ("warn" if d["severity"] == "warn" else "run")
     return verdicts
@@ -197,6 +214,8 @@ def run(root, scope="staged", arg=None, plan=None, message=""):
                 found += [f._replace(severity="warn" if verdicts[cid] == "warn" else f.severity) for f in fn(root, ch, notes)]
     if verdicts["review-no-appbundle"] != "skip" and APPBUNDLE.search(msgs + "\n" + message):
         found.append(Finding("deny", "review-no-appbundle", "commit", "commit message or command references AppBundle/"))
+    if scope == "staged":
+        found += check_ticket(root, chs, verdicts)
     if plan and verdicts["review-atlas-citations"] != "skip":
         found += check_citations(root, plan, notes)
     if c.enforcement_off():

@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 import _common as c  # noqa: E402
+from atlas import task  # noqa: E402
 
 # Oro-specific vocabulary is enough on its own; generic words need a second hit to avoid noise.
 STRONG = re.compile(
@@ -29,6 +30,11 @@ NUDGE = (
     "State which atlas hit you used (or that none matched) before editing."
 )
 ATLAS = "%s atlas" % c.CLI
+PROCESS = (
+    "[aaxis-oro] Ticket %s in a setup project: the 'Ticket process' block in CLAUDE_project.md applies and overrides any "
+    "command's fast path. Start with `%s task init %s`; an extension-point commit is denied until "
+    ".oro-ai/task/%s/architect-gate.md holds the architect-gate verdict."
+)
 
 
 def decide(payload):
@@ -46,6 +52,15 @@ def decide(payload):
         state["nudged"] = True
         c.save_state(path, state)
         out, verdict = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": c.clip(text)}}, "nudge"
+    key = task.key_from(prompt) or (task.branch_key(root) if root else None)
+    if root and key and task.is_setup(root) and key not in state.get("process_keys", []):
+        state["process_keys"] = state.get("process_keys", []) + [key]
+        c.save_state(path, state)
+        text = PROCESS % (key, c.CLI, key, key)
+        prev = (out or {}).get("hookSpecificOutput", {}).get("additionalContext")
+        out = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                      "additionalContext": c.clip(prev + "\n" + text if prev else text)}}
+        verdict = "process" if verdict in ("skip", "already-nudged") else verdict + "+process"
     return out, verdict
 
 

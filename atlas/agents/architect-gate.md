@@ -31,6 +31,7 @@ Resolve the CLI: `command -v aaxis-oro`, else `$ORO_SKILLS_DIR/bin/aaxis-oro`, e
      to an Aaxis bundle, external providers behind an interface and DI-tag registry, interceptors without per-call state.
 
 ## Output
-Verdict `approved` or `rejected`, then findings: severity (blocker / risk), plan step, the source or command consulted
+First line `Verdict: approved` or `Verdict: rejected` (the caller saves the output to
+`.oro-ai/task/<TICKET>/architect-gate.md`; `aaxis-oro review check` reads that line), then findings: severity (blocker / risk), plan step, the source or command consulted
 (file:line), the concrete fix. Approve only when every choice is sourced and appropriate. An empty list is valid.
 Do not guess: no hit means say so.

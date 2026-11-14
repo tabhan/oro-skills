@@ -184,6 +184,16 @@ class HookTest(Base):
         self.assertIsNone(self.prompt("fix the typo in the README", sid="m4"))
         self.assertIsNone(self.prompt("decorate the price provider service", sid="m5"))
 
+    def test_prompt_process_reminder_once_per_key_in_setup_projects(self):
+        self.assertIsNone(self.prompt("/tab-jira BUC-12", sid="p0"))
+        os.makedirs(os.path.join(self.root, ".oro-ai"), exist_ok=True)
+        open(os.path.join(self.root, ".oro-ai", "config.json"), "w").close()
+        out = self.prompt("/tab-jira BUC-12", sid="p1")
+        self.assertIn("task init BUC-12", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIsNone(self.prompt("continue BUC-12", sid="p1"))
+        self.assertIsNotNone(self.prompt("now BUC-13", sid="p1"))
+        self.assertIsNone(self.prompt("encode as UTF-8", sid="p2"))
+
     def test_prompt_nudge_mentions_build_when_index_missing(self):
         out = self.prompt("override the datagrid listener")
         self.assertIn("atlas build", out["hookSpecificOutput"]["additionalContext"])

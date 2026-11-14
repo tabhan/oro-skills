@@ -13,7 +13,7 @@ import time
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", ".."))
 TEMPLATES = os.path.join(ROOT, "templates", "claude-project")
 BIN = os.path.join(ROOT, "bin", "aaxis-oro")
-BLOCKS = ("review-rules", "plan-rules")  # template file stem == block name
+BLOCKS = ("process-rules", "review-rules", "plan-rules")  # template file stem == block name
 CONFIG = {"spec": {"id-pattern": "[A-Z][A-Z0-9-]*:AC-[0-9]+"}}
 GITIGNORE = "*\n!.gitignore\n!config.json\n"
 OWN_FILES = (".oro-ai/config.json", ".oro-ai/.gitignore")

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,8 @@ class SetupTest(unittest.TestCase):
         before = open(os.path.join(self.d, "CLAUDE_project.md")).read()
         self.assertIn("aaxis-oro:review-rules:start", before)
         self.assertIn("aaxis-oro:plan-rules:start", before)
+        self.assertIn("aaxis-oro:process-rules:start", before)
+        self.assertIn("override any command's", before)
         code, out = run("sync", cwd=self.d)
         self.assertIn("CLAUDE_project.md: unchanged", out)
         self.assertEqual(before, open(os.path.join(self.d, "CLAUDE_project.md")).read())
@@ -64,6 +67,17 @@ class SetupTest(unittest.TestCase):
         self.assertIn("## Review rules", new)
         self.assertIn("User text", new)
         self.assertEqual(new.count("aaxis-oro:review-rules:start"), 1)
+
+    def test_sync_adds_process_block_to_project_set_up_before_it(self):
+        run("sync", cwd=self.d)
+        pm = os.path.join(self.d, "CLAUDE_project.md")
+        text = open(pm).read()
+        old = re.sub(r"<!-- aaxis-oro:process-rules:start -->.*?<!-- aaxis-oro:process-rules:end -->\n?", "", text, flags=re.S)
+        self.put("CLAUDE_project.md", old)
+        code, out = run("status", cwd=self.d)
+        self.assertIn("blocks out of sync: process-rules", out)
+        run("sync", cwd=self.d)
+        self.assertEqual(open(pm).read().count("aaxis-oro:process-rules:start"), 1)
 
     def test_tracked_oro_ai_blocks_gitignore(self):
         self.put(".oro-ai/task/X/plan.md", "x")

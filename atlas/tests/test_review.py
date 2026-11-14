@@ -167,3 +167,54 @@ class HookTest(ReviewBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TicketProcessTest(ReviewBase):
+    def setUp(self):
+        super().setUp()
+        self.git("checkout", "-qb", "bugfix/BUC-7")
+        self.write(".oro-ai/config.json", "{}\n")
+        self.write("src/Foo/Resources/config/services.yml", "services: {}\n")
+        self.git("add", "src")
+
+    def gate(self, text):
+        self.write(".oro-ai/task/BUC-7/architect-gate.md", text)
+
+    def test_extension_change_without_gate_denied(self):
+        p = self.check()
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("review-ticket-gate", p.stdout)
+
+    def test_rejected_or_bare_skip_denied_approved_and_reasoned_skip_pass(self):
+        for text, code in (("Verdict: rejected\n", 1), ("Verdict: skipped\n", 1), ("**Verdict:** approved\n", 0),
+                           ("Verdict: skipped - one-line yaml rename\n", 0), ("PASS\n\nGate: ...\n", 0), ("REJECT\n", 1),
+                           ("notes only\n", 1)):
+            self.gate(text)
+            self.assertEqual(self.check().returncode, code, text)
+
+    def test_evidence_warnings_and_task_init_check(self):
+        self.gate("Verdict: approved\n")
+        p = self.check()
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("STATUS.md", p.stdout)
+        self.assertIn("no e2e", p.stdout)
+        run_task = lambda *a: subprocess.run([sys.executable, EXE, "task", *a], cwd=self.root, capture_output=True, text=True)
+        self.assertIn("created STATUS.md, plan.md", run_task("init").stdout)
+        self.assertIn("exists", run_task("init").stdout)
+        self.write("src/Foo/Tests/E2e/x.feature", "Feature: x\n")
+        self.git("add", "src")
+        self.assertEqual(run_task("check").returncode, 0)
+        self.assertNotIn("review-ticket-evidence", self.check().stdout)
+
+    def test_non_setup_project_and_non_ticket_branch_unaffected(self):
+        os.remove(os.path.join(self.root, ".oro-ai", "config.json"))
+        self.assertEqual(self.check().returncode, 0)
+        self.write(".oro-ai/config.json", "{}\n")
+        self.git("checkout", "-qb", "chore/cleanup")
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_human_override_downgrades(self):
+        p = subprocess.run([sys.executable, EXE, "review", "check"], cwd=self.root, capture_output=True, text=True,
+                           env=dict(os.environ, HOME=self.home, ORO_ATLAS_ENFORCE="0"))
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("review-ticket-gate", p.stdout)

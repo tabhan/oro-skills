@@ -29,6 +29,7 @@ memory  inventory|apply              project auto-memory -> .oro-ai/notes
 env     setup|render|check|repair|reset|baseline|import-attachments|restore|workers|switch
 test    [--project P] [--no-refresh-check] <local|local-test> <phpunit|e2e|console|verify>
 review  check [--staged|--range A..B|--files F...]
+task    init|check [KEY]             per-ticket evidence in .oro-ai/task/<KEY>/
 version [diff|applies]               detected Oro version and which guidance applies
 spec    coverage|report              spec AC traceability
 setup   status|sync|rules|apply-rules
@@ -59,6 +60,26 @@ block, anchored notes), PostToolUse Bash, Stop (end-of-session reminders).
 Upgrading from the pre-plugin install: stale `oro-atlas/hooks/*.py` entries in Claude settings keep resolving to
 shims in `oro-atlas/hooks/` that remove those entries from project and `~/.claude` settings (atlas entries only),
 print nothing and exit 0. `install.sh` and `atlas setup --cleanup-only` do the same cleanup.
+
+## Ticket process
+
+`/aaxis-oro:setup` writes the `process-rules` block (`templates/claude-project/process-rules.md`) into the project's
+`CLAUDE_project.md`; it states the per-ticket steps and that they override any command's fast path. Enforcement
+applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose name holds a ticket key
+(`[A-Z][A-Z0-9]+-<n>`); elsewhere nothing changes.
+
+- `aaxis-oro task init [KEY]` creates `.oro-ai/task/<KEY>/STATUS.md` and `plan.md` stubs (never overwrites);
+  `aaxis-oro task check [KEY]` lists missing evidence (exit 1). KEY defaults to the branch's key.
+- `review check --staged` (and so the `git commit` PreToolUse hook): `review-ticket-gate` denies a staged
+  extension-point file (same list as the atlas edit hook) unless `architect-gate.md` has a `Verdict: approved` or
+  `Verdict: skipped - <reason>` line (a bare `PASS`/`REJECT` first line is read the same); `review-ticket-evidence` warns when `STATUS.md` is missing or production `src/`
+  code changed on the branch (vs the first of `origin/develop`, `develop`, `origin/main`, `main`, ...) with no
+  `*.feature`/`*.steps.ts`.
+- UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch).
+- Escape hatches: `Verdict: skipped - <reason>` for a trivial change (auditable in the task dir); the human-only
+  `ORO_ATLAS_ENFORCE=0` downgrades the deny to a warning.
+
+Existing projects pick up the block with `aaxis-oro setup sync` (`setup status` reports `blocks out of sync: process-rules`).
 
 ## Principles
 
