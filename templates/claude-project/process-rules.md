@@ -20,6 +20,13 @@ may skip plan documents, phase lists and approvals, never the steps below.
    review. A Stop hook enforces it: once the ticket's code is committed and the tree is clean, Claude cannot end its
    turn until `/aaxis-oro:review` has run (or `changes-requested` findings are fixed and re-reviewed). A trivial
    change records `Verdict: skipped - <reason>` instead.
-6. When reporting work, do not list standard deploy steps; mention deploy actions only when `review.md` has Deploy
+6. Root cause before fix, for every problem handled (bug, CI or test failure, review finding, data issue): before
+   proposing a fix, state the root cause with evidence (file:line, log, reproduction) and the layer it lives in (code /
+   test / data / environment / config / upstream); the fix changes that layer. Making the symptom disappear elsewhere
+   (skip, suppress, catch-all, retry, loosened assertion, mocking away the failing dependency, special-cased data) is a
+   workaround: label it so and get the user's approval. "Out of scope" never justifies fixing a symptom instead of the
+   cause; say so and let the user decide. A delegated diagnosis returns the layer and a root-cause fix recommendation.
+   `plan.md` records it under `## Root cause` (`n/a - feature` when there is no defect).
+7. When reporting work, do not list standard deploy steps; mention deploy actions only when `review.md` has Deploy
    notes.
 <!-- aaxis-oro:process-rules:end -->

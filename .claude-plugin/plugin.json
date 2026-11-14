@@ -1,6 +1,6 @@
 {
   "name": "aaxis-oro",
-  "version": "0.26.3",
+  "version": "0.27.0",
   "description": "OroCommerce team skills, atlas extension-point index and hooks",
   "skills": [
     "./atlas",

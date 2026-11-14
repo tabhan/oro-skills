@@ -281,6 +281,24 @@ class SupplementaryReviewTest(TicketBranchBase):
         self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
         self.assertEqual(self.task_check().returncode, 0, self.task_check().stdout)
 
+    def test_task_check_warns_on_missing_or_empty_root_cause_without_failing(self):
+        from atlas import task
+        self.review("Verdict: skipped - test\n")
+        self.assertNotIn("Root cause", self.task_check().stdout)  # no plan.md: nothing to check
+        task.init(self.root, "BUC-9")  # stub: heading + guidance prose only counts as empty
+        for text, warned in ((None, "an empty"), ("# p\n\n## Tests\n\nx\n", "no"),
+                             ("## Root cause\n\n## Tests\nx\n", "an empty"),
+                             ("## Root cause\n\nn/a - feature\n", None),
+                             ("## Root Cause\nCI image lacks ext-intl (log l.40); layer: environment\n## Tests\n", None)):
+            if text is not None:
+                self.write(".oro-ai/task/BUC-9/plan.md", text)
+            p = self.task_check()
+            self.assertEqual(p.returncode, 0, p.stdout)
+            if warned:
+                self.assertIn("has %s '## Root cause' section" % warned, p.stdout)
+            else:
+                self.assertNotIn("Root cause' section", p.stdout)
+
     def test_push_denied_without_review_allowed_with_fresh_or_skipped(self):
         out = self.push()
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")

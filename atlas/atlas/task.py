@@ -30,7 +30,9 @@ BASES = ("origin/develop", "develop", "origin/main", "main", "origin/master", "m
 STATUS_STUB = "# %s status\n\nOne line per milestone (date, step, result).\n\n- [ ] plan written (plan.md)\n" \
               "- [ ] architect-gate verdict saved (architect-gate.md)\n- [ ] e2e scenario red\n- [ ] implementation green\n" \
               "- [ ] review check / verification\n"
-PLAN_STUB = "# %s plan\n\n## Extension points\n\nFor each choice: mechanism, source (`aaxis-oro atlas <sub> <term>` -> file:line, " \
+PLAN_STUB = "# %s plan\n\n## Root cause\n\nEvidence (file:line, log, reproduction), the layer it lives in (code / test / data / environment / " \
+            "config / upstream) and why the change fixes that layer, not a symptom (process rule \"Root cause before " \
+            "fix\"). A feature with no defect writes `n/a - feature`.\n\n## Extension points\n\nFor each choice: mechanism, source (`aaxis-oro atlas <sub> <term>` -> file:line, " \
             "an `aaxis-oro:solutions` reference, an Oro docs URL).\n\n## Tests\n\nThe e2e scenario(s) written first.\n"
 
 
@@ -167,6 +169,24 @@ def evidence(root, key, paths):
     return lines
 
 
+ROOT_CAUSE = re.compile(r"^#{1,6}[ \t]*root[ \t]+cause[ \t]*#*[ \t]*$", re.I | re.M)
+NEXT_HEADING = re.compile(r"^#{1,6}[ \t]", re.M)
+STUB_PROSE = re.compile(r"^Evidence \(file:line, log, reproduction\).*?A feature with no defect writes `n/a - feature`\.$",
+                        re.S | re.M)
+
+
+def root_cause_problem(root, key):
+    """A warning when plan.md exists, the branch has committed code and its `## Root cause` section is missing or empty."""
+    text = read_text(os.path.join(task_dir(root, key), "plan.md"))
+    if not text or not any(not TASK_ONLY.match(f) for f in branch_files(root)):
+        return None
+    m = ROOT_CAUSE.search(text)
+    nxt = m and NEXT_HEADING.search(text, m.end())
+    body = m and STUB_PROSE.sub("", text[m.end():nxt.start() if nxt else len(text)]).strip()
+    return None if body else ("warning: .oro-ai/task/%s/plan.md has %s '## Root cause' section (evidence + layer, or "
+                              "'n/a - feature'; process rule \"Root cause before fix\")" % (key, "an empty" if m else "no"))
+
+
 def init(root, key):
     d = task_dir(root, key)
     os.makedirs(d, exist_ok=True)
@@ -203,8 +223,9 @@ def main(argv=None):
     problems = evidence(root, key, branch_files(root) + staged)
     rp = review_problem(root, key)
     problems += [rp] if rp else []
+    warning = root_cause_problem(root, key)
     if state not in ("approved", "skipped"):
         problems.insert(0, "architect-gate: %s (.oro-ai/task/%s/architect-gate.md needs 'Verdict: approved')" % (state, key))
-    print("\n".join(problems + ["task %s: %s (gate %s%s)" % (key, "incomplete" if problems else "ok", state,
+    print("\n".join(problems + ([warning] if warning else []) + ["task %s: %s (gate %s%s)" % (key, "incomplete" if problems else "ok", state,
                                                             ": " + reason if reason else "")]))
     return 1 if problems else 0

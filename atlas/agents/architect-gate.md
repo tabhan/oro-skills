@@ -29,6 +29,9 @@ Resolve the CLI: `command -v aaxis-oro`, else `$ORO_SKILLS_DIR/bin/aaxis-oro`, e
    - Aaxis standard ways (solutions skill, references/aaxis/): entity config via `entity_configs.yml` +
      `AbstractSetEntityConfigs` with a version bump, Doctrine mapping via `entity_extend.yml`, a need the catalogue maps
      to an Aaxis bundle, external providers behind an interface and DI-tag registry, interceptors without per-call state.
+5. Root cause (process rule "Root cause before fix" in CLAUDE_project.md): a plan for a defect without a `## Root cause`
+   (evidence + layer), or whose change lands in a different layer than that cause without being labelled a
+   user-approved workaround, is a blocker.
 
 ## Output
 First line `Verdict: approved` or `Verdict: rejected` (the caller saves the output to

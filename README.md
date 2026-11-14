@@ -89,7 +89,9 @@ applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose 
 (`[A-Z][A-Z0-9]+-<n>`); elsewhere nothing changes.
 
 - `aaxis-oro task init [KEY]` creates `.oro-ai/task/<KEY>/STATUS.md` and `plan.md` stubs (never overwrites);
-  `aaxis-oro task check [KEY]` lists missing evidence (exit 1). KEY defaults to the branch's key.
+  `aaxis-oro task check [KEY]` lists missing evidence (exit 1). KEY defaults to the branch's key. Once the branch has
+  committed code, a `plan.md` whose `## Root cause` section is missing or empty (the stub's guidance prose alone counts
+  as empty) prints a warning without changing the exit code; features write `n/a - feature`.
 - `review check --staged` (and so the `git commit` PreToolUse hook): `review-ticket-gate` denies a staged
   extension-point file (same list as the atlas edit hook) unless `architect-gate.md` has a `Verdict: approved` or
   `Verdict: skipped - <reason>` line (a bare `PASS`/`REJECT` first line is read the same); `review-ticket-evidence` warns when `STATUS.md` is missing or production `src/`

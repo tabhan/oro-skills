@@ -35,6 +35,10 @@ When `<cli> atlas status --project <root>` does not exit 0, say "atlas unavailab
 3. Plan drift. Compare the diff with `plan.md` and every risk in `architect-gate.md`: an extension point in the diff
    but not in the plan, a planned one replaced by another mechanism, a gate risk left unaddressed. Missing plan on an
    extension-point diff is a Risk.
+4. Symptom fixes (process rule "Root cause before fix"). A change that makes a failure disappear instead of fixing
+   the cause in `plan.md`'s `## Root cause` (skipped or weakened tests, broad catch, retry, suppression, mocked-away
+   dependency, special-cased data, workaround in another layer) is a Risk unless the plan labels it a user-approved
+   workaround. Cite the Root cause section, or its absence.
 
 ## Lens "performance"
 Only for the files that touch queries, persistence, loops over entities, caches or MQ. Per new query: joins,
