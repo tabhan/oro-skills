@@ -32,6 +32,12 @@
 #     (override the default plugin list; orocommerce-orchestrator is NOT installed
 #     by default since it duplicates the ai-sdlc-c1 flow some projects already use)
 
+# Sourcing would apply set -e and exit to the caller's interactive shell and close the terminal.
+if [ -z "${BASH_VERSION:-}" ] || [ "${BASH_SOURCE[0]}" != "$0" ]; then
+  echo "Run ./install.sh directly; do not source it." >&2
+  return 1 2>/dev/null || exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -114,6 +120,9 @@ if [ "$INSTALL_PLUGIN" -eq 1 ]; then
     echo "Registering aaxis-oro marketplace ($MARKETPLACE) and installing the plugin"
     claude plugin marketplace add "$MARKETPLACE" || echo "  (marketplace add failed or already present)" >&2
     claude plugin install aaxis-oro@aaxis-oro || FAILED+=("claude plugin install aaxis-oro@aaxis-oro")
+    # install is a no-op for an already-installed plugin; refresh the marketplace and update to pick up new versions.
+    claude plugin marketplace update aaxis-oro || FAILED+=("claude plugin marketplace update aaxis-oro")
+    claude plugin update aaxis-oro@aaxis-oro || FAILED+=("claude plugin update aaxis-oro@aaxis-oro")
   else
     echo "  (claude CLI not found: run 'claude plugin marketplace add $MARKETPLACE' and 'claude plugin install aaxis-oro@aaxis-oro' later)" >&2
   fi
