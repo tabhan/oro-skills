@@ -200,11 +200,20 @@ def init(root, key):
     return made
 
 
+
+def _default_project():
+    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+    lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import projroot
+    return projroot.resolve()
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="aaxis-oro task", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("action", choices=("init", "check"))
     ap.add_argument("key", nargs="?", help="ticket key; default: from the branch name")
-    ap.add_argument("--project", default=os.getcwd())
+    ap.add_argument("--project", default=_default_project())
     try:
         a = ap.parse_args(argv)
     except SystemExit as exc:

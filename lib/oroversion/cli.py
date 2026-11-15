@@ -4,6 +4,7 @@ import json
 import os
 import sys
 
+import projroot
 from . import ConstraintError, detect, parse_version
 from . import diff as D
 from . import lint
@@ -52,7 +53,7 @@ def version_main(argv):
     if argv[:1] == ["applies"]:
         return applies_main(argv[1:])
     ap = argparse.ArgumentParser(prog="aaxis-oro version", description=VERSION_DOC)
-    ap.add_argument("--project", default=os.getcwd())
+    ap.add_argument("--project", default=projroot.resolve())
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-cache", action="store_true", help="ignore and do not write .oro-ai/version.json")
     try:
@@ -78,7 +79,7 @@ UNKNOWN_LINE = "Oro version unknown; only version-neutral rules are active, vers
 def applies_main(argv):
     ap = argparse.ArgumentParser(prog="aaxis-oro version applies", description=APPLIES_DOC, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("targets", nargs="*")
-    ap.add_argument("--project", default=os.getcwd())
+    ap.add_argument("--project", default=projroot.resolve())
     ap.add_argument("--root", default=ROOT, help="where topics are searched (default: the plugin)")
     ap.add_argument("--list-active", metavar="DIR")
     ap.add_argument("--list-inactive", metavar="DIR")

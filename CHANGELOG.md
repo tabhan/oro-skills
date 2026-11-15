@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.3
+
+- `.stylelintignore` is now the only exclusion list for every linter; the hook no longer builds exclusions from git-ignored and untracked paths. Root cause: the hook turned every ignored path into `--ignore-pattern "dir/**"`, and Oro's stylelint proxy (`oro-stylelint-proxy.mjs`) respawns stylelint with `shell:true` unescaped, so `/bin/sh` expanded the patterns into real directories and stylelint linted about 460k files (OOM). It also wrongly skipped the git-ignored `src/Aaxis/Bundle/AppBundle`. Stylelint now gets no ignore arguments (it reads `.stylelintignore` itself); ESLint gets the entries as quoted `--ignore-pattern` arguments; a negation or unsupported line fails loudly. `precommit.exclude` is retired (sync prints a note).
+- PHPCS and PHPMD run through a generated, tracked `lint-php.sh` (`.bitbucket/`, `.gitlab/`, `.github/` or `.ci/`) that CI and the hook share, reading `.stylelintignore` and `lint.phpcs-standard` from `.oro-ai/config.json`. `setup sync` fills the standard only when missing (CI's `--standard`, else the old hook's, else PSR12) and creates/refreshes the script; CI keeps its `$HOME` phpcs/phpmd caches, local runs use the git dir. A missing script fails the hook step with a pointer instead of skipping. Removed: the per-command phpcs/phpmd rewriting (`--parallel`, `--cache`, `error_reporting`, PHPMD cache flags) now lives in the script.
+- Project root: `aaxis-oro env|test|setup|task|review|version|memory` run from a subdirectory resolved the project to the cwd and created `.oro-ai/local-env/` there (for example under `src/.../Tests/`). Root cause: the `--project` defaults were `$PWD`/`os.getcwd()`. They now use `lib/projroot.py`: nearest ancestor holding `.oro-ai/config.json`, else the git toplevel, else the cwd.
+
 ## 0.28.2
 
 - The managed hook now replaces CI's PHPMD `--cache`, `--cache-strategy` and `--cache-file` (a `$HOME` path shared by every checkout) with its own per-checkout `<git dir>/phpmd.result-cache.php`, as it already did for phpcs. Root cause: 0.28.1 kept any CI-set `--cache*` flag, so once CI carried them the hook inherited the shared path.

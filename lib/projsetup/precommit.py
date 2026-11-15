@@ -5,12 +5,13 @@
 - Installs where git looks: the configured core.hooksPath, else the git hooks dir; never touches tracked files.
 - An unmanaged hook is backed up to pre-commit.bak-<ts> and replaced; a git-tracked one is left alone (refused); the
   old hook's steps with no managed equivalent are listed first.
-- CI lints the tracked tree, so the hook keeps git-ignored/excluded/untracked paths and `precommit.exclude` entries out of
-  the whole-tree steps, and runs each step only when the commit stages a file of its type.
-- phpcs runs with --parallel (CPU count) and --cache (<git dir>/phpcs.cache), replacing CI's own values. The hook is rendered, so a hook without them
-  differs from render() and `state` reports it outdated; sync rewrites it like any other drift.
-- phpmd runs as `php -d error_reporting="E_ALL & ~E_DEPRECATED" ...` (deprecations hidden, violations still fail); same drift repair.
-- phpmd also gets `--cache --cache-strategy content --cache-file <git dir>/phpmd.result-cache.php` (PHPMD >= 2.13 assumed).
+- `.stylelintignore` (repo root, tracked) is the only exclusion list for every linter: stylelint reads it natively, the generated
+  CI script turns it into PHPCS `--ignore` / PHPMD `--exclude` patterns, the hook passes it to ESLint as quoted `--ignore-pattern`
+  arguments. Only plain paths and `*`/`**` globs are supported; a negation or anything else fails loudly. Git-ignored and
+  untracked paths are NOT excluded automatically (a local-only AppBundle is linted like any other code).
+- PHPCS and PHPMD run through one generated, tracked script (`.bitbucket/lint-php.sh` for Bitbucket; `.gitlab/`, `.github/`
+  or `.ci/` for the others) that CI and the hook both call. The PHPCS standard is `lint.phpcs-standard` in `.oro-ai/config.json`,
+  filled by sync only when missing (detected from CI or the old hook, else PSR12).
 """
 import glob
 import json
@@ -23,7 +24,19 @@ import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", ".."))
 TEMPLATE = os.path.join(ROOT, "templates", "git-hooks", "pre-commit.sh")
+LINT_TEMPLATE = os.path.join(ROOT, "templates", "lint", "lint-php.sh")
+IGNORE_LIB = os.path.join(ROOT, "templates", "lint", "ignore-lib.sh")
 MARK = "# aaxis-oro:managed-pre-commit"
+LINT_MARK = "# aaxis-oro:managed-lint-php"
+LINT_NAME = "lint-php.sh"
+# Where the shared lint script lives, by the CI system that runs it; no CI file at all falls back to .ci/.
+LINT_DIRS = (("bitbucket-pipelines.yml", ".bitbucket"), (".gitlab-ci.yml", ".gitlab"), (".github/workflows", ".github"))
+LINT_FALLBACK_DIR = ".ci"
+DEFAULT_STANDARD = "PSR12"
+DEFAULT_SRC = "./src"
+DEFAULT_RULESET = "./vendor/oro/platform/build/phpmd.xml"
+LINT_BINS = ("vendor/squizlabs/php_codesniffer/bin/phpcs", "vendor/phpmd/phpmd/src/bin/phpmd")
+DIRECT_TOOL = re.compile(r"^(php\s+)?(\S*/)?(phpcs|phpmd)(\s|$)")
 CI_FILES = ("bitbucket-pipelines.yml", ".gitlab-ci.yml", ".github/workflows/*.yml", ".github/workflows/*.yaml")
 # (key, label, command regex); order is the hook's step order. Coverage, Sonar, installs and deploys never match.
 TOOLS = (
@@ -41,11 +54,13 @@ NODE_TOOLS = ("eslint", "stylelint")
 DRIFT = "schema-drift"
 DRIFT_LABEL = "Doctrine schema drift"
 # Staged-file gate (ERE) per step: a commit with no matching staged path cannot change that step's result.
+_IGN = r"|(^|/)\.stylelintignore$"
 _PHP_GATE = r"\.(php|xml|neon|dist)$|(^|/)composer\.(json|lock)$"
+_LINT_GATE = _PHP_GATE + _IGN + r"|(^|/)lint-php\.sh$"
 GATES = {
-    "phpcs": _PHP_GATE, "php-cs-fixer": _PHP_GATE, "phpmd": _PHP_GATE, "phpstan": _PHP_GATE, "psalm": _PHP_GATE,
+    "phpcs": _LINT_GATE, "php-cs-fixer": _PHP_GATE, "phpmd": _LINT_GATE, "phpstan": _PHP_GATE, "psalm": _PHP_GATE,
     "phpunit": _PHP_GATE,
-    "eslint": r"\.(js|jsx|mjs|cjs|ts|tsx|vue)$|(^|/)(\.eslint[^/]*|eslint\.config\.[^/]*|package\.json)$",
+    "eslint": r"\.(js|jsx|mjs|cjs|ts|tsx|vue)$|(^|/)(\.eslint[^/]*|eslint\.config\.[^/]*|package\.json)$" + _IGN,
     "stylelint": r"\.(scss|sass|css)$|(^|/)(\.stylelint[^/]*|stylelint\.config\.[^/]*|package\.json)$",
     "yamllint": r"\.ya?ml$|(^|/)\.yamllint[^/]*$",
     DRIFT: r"/(Entity|Migrations)/.*\.php$|(^|/)entity_(extend|configs)\.yml$|(^|/)composer\.lock$",
@@ -118,10 +133,31 @@ def from_ci(root):
     for pattern in CI_FILES:
         for path in sorted(glob.glob(os.path.join(root, pattern))):
             for cmd in ci_commands(_read(path) or ""):
+                if LINT_NAME in cmd:  # the shared lint script stands for both PHPCS and PHPMD
+                    for key in ("phpcs", "phpmd"):
+                        found.setdefault(key, (dict((k, lb) for k, lb, _ in TOOLS)[key], cmd, os.path.relpath(path, root)))
+                    continue
                 hit = classify(cmd)
                 if hit and hit[0] not in found:
                     found[hit[0]] = (hit[1], cmd, os.path.relpath(path, root))
     return found
+
+
+def lint_script_rel(root, ci):
+    """Repo-relative path of the shared lint script: the one CI already names, else the CI system's directory, else .ci/."""
+    for key in ("phpcs", "phpmd"):
+        for tok in shlex.split(ci[key][1]) if key in ci else ():
+            if tok.endswith(LINT_NAME):
+                return os.path.normpath(tok)
+    for ci_file, directory in LINT_DIRS:
+        if any(glob.glob(os.path.join(root, ci_file))) or os.path.isdir(os.path.join(root, ci_file)):
+            return "%s/%s" % (directory, LINT_NAME)
+    return "%s/%s" % (LINT_FALLBACK_DIR, LINT_NAME)
+
+
+def uses_lint_script(ci):
+    """True when CI runs PHPCS/PHPMD directly or through the shared script (a wrapper such as composer is left alone)."""
+    return any(k in ci and (DIRECT_TOOL.match(ci[k][1]) or LINT_NAME in ci[k][1]) for k in ("phpcs", "phpmd"))
 
 
 def _scripts(root, name):
@@ -167,9 +203,12 @@ def steps(root):
     """[(key, label, command, source)] in TOOLS order, minus `precommit.skip`, plus the schema-drift step and the opt-in atlas gate."""
     cfg, ci, dflt = config(root), from_ci(root), defaults(root)
     skip = set(cfg.get("skip") or [])
+    rel = lint_script_rel(root, ci)
     out = []
     for key, _, _ in TOOLS:
         hit = ci.get(key) or dflt.get(key)
+        if hit and key in ("phpcs", "phpmd") and key in ci and (DIRECT_TOOL.match(hit[1]) or LINT_NAME in hit[1]):
+            hit = (hit[0], "run_lint_php %s %s" % (shlex.quote(rel), key), hit[2])
         if hit and key not in skip:
             out.append((key, hit[0], hit[1], hit[2]))
     if DRIFT not in skip and is_oro(root) and os.path.isfile(os.path.join(root, "bin", "console")):
@@ -197,64 +236,118 @@ def _flag_value(cmd, flag):
     return re.search(r"(?<=\s)%s(?:=|\s+)(\"[^\"]*\"|'[^']*'|\S+)" % re.escape(flag), cmd)
 
 
-def with_phpcs_speedup(cmd):
-    """Give a direct phpcs call the hook's own --parallel (CPU count) and --cache (per-checkout, under the git dir).
+def with_ignores(key, cmd):
+    """ESLint gets the shared exclusion list (the hook's ESLINT_IGN array); every other command is rendered as written.
 
-    CI's values (`--parallel=$(nproc)`, a $HOME cache dir shared by every checkout) are replaced, not kept.
+    PHPCS/PHPMD read .stylelintignore inside the generated script and stylelint reads it natively, so neither takes arguments.
     """
-    if not re.search(r"(^|[\s/])phpcs\s", cmd):
-        return cmd  # a wrapper (composer run-script, make) takes no extra flags
-    cmd = re.sub(r"\s--(parallel|cache)(=\S+|\s+\d+)?(?=\s|$)|\s--no-cache(?=\s|$)", "", cmd)
-    return cmd + ' --parallel="$(phpcs_jobs)" --cache="$(git rev-parse --absolute-git-dir)/phpcs.cache"'
-
-
-PHPMD_QUIET = 'php -d error_reporting="E_ALL & ~E_DEPRECATED"'
-
-
-def with_phpmd_quiet(cmd):
-    """Run PHPMD under php with deprecations hidden (pdepend emits PHP 8.5 deprecation noise); rule violations still fail."""
-    if "error_reporting" in cmd:
-        return cmd
-    if re.match(r"php\s", cmd):
-        return PHPMD_QUIET + cmd[3:]
-    if re.match(r"(\./)?vendor/bin/phpmd\s", cmd):
-        return "%s %s" % (PHPMD_QUIET, cmd)
-    return cmd  # a wrapper or a bare binary: not ours to rewrite
-
-
-PHPMD_CACHE = ' --cache --cache-strategy content --cache-file "$(git rev-parse --absolute-git-dir)/phpmd.result-cache.php"'
-
-
-def with_phpmd_cache(cmd):
-    """Give a direct phpmd call the hook's own content-hashed result cache under the git dir (PHPMD >= 2.13).
-
-    CI's --cache/--cache-strategy/--cache-file (a $HOME path shared by every checkout) are replaced, not kept.
-    """
-    if not re.search(r"(^|[\s/])phpmd\s", cmd):
-        return cmd
-    cmd = re.sub(r"\s--cache(?!-)(?=\s|$)|\s--cache-(strategy|file)(=\S+|\s+(\"[^\"]*\"|'[^']*'|[^\s-]\S*))?", "", cmd)
-    return cmd + PHPMD_CACHE
-
-
-def with_excludes(key, cmd):
-    """Rewrite a whole-tree CI command so the hook's EXCL_CSV / EXCL_IGN (see the template) are excluded too."""
-    if key == "phpcs":
-        cmd = with_phpcs_speedup(cmd)
-    if key == "phpmd":
-        cmd = with_phpmd_cache(with_phpmd_quiet(cmd))
-    if key in ("phpcs", "phpmd"):
-        flag = "--ignore" if key == "phpcs" else "--exclude"
-        hit = _flag_value(cmd, flag)
-        if not hit:
-            extra = '${EXCL_CSV:+"--ignore=$EXCL_CSV"}' if key == "phpcs" else '${EXCL_CSV:+--exclude "$EXCL_CSV"}'
-            return "%s %s" % (cmd, extra)
-        joiner = "=" if cmd[hit.start() + len(flag)] == "=" else " "
-        merged = '%s%s%s"${EXCL_CSV:+,$EXCL_CSV}"' % (flag, joiner, hit.group(1))
-        return cmd[:hit.start()] + merged + cmd[hit.end():]
-    if key in ("eslint", "stylelint"):
+    if key == "eslint":
         sep = " --" if re.match(r"^npm\s+run\b", cmd) and not re.search(r"\s--(\s|$)", cmd) else ""
-        return '%s%s "${EXCL_IGN[@]}"' % (cmd, sep)
+        return '%s%s "${ESLINT_IGN[@]}"' % (cmd, sep)
     return cmd
+
+
+def lint_needs_script(root):
+    return any(cmd.startswith("run_lint_php ") for _, _, cmd, _ in steps(root))
+
+
+def _positionals(cmd, binary):
+    toks = shlex.split(cmd)
+    idx = next((i for i, t in enumerate(toks) if t.endswith(binary)), None)
+    return [] if idx is None else [t for t in toks[idx + 1:] if not t.startswith("-")]
+
+
+def lint_params(root):
+    """(src dir, phpmd ruleset): a direct CI command wins, else the values in the installed script, else the defaults."""
+    src, ruleset = DEFAULT_SRC, DEFAULT_RULESET
+    cur = _read(os.path.join(root, lint_script_rel(root, from_ci(root)))) or ""
+    m = re.search(r"^SRC_DIR='([^']*)'", cur, re.M)
+    src = m.group(1) if m else src
+    m = re.search(r"^PHPMD_RULESET='([^']*)'", cur, re.M)
+    ruleset = m.group(1) if m else ruleset
+    ci = from_ci(root)
+    if "phpcs" in ci and DIRECT_TOOL.match(ci["phpcs"][1]):
+        pos = _positionals(ci["phpcs"][1], "phpcs")
+        src = pos[0] if pos else src
+    if "phpmd" in ci and DIRECT_TOOL.match(ci["phpmd"][1]):
+        pos = _positionals(ci["phpmd"][1], "phpmd")
+        src = pos[0] if pos else src
+        ruleset = pos[2] if len(pos) > 2 else ruleset
+    return src, ruleset
+
+
+def render_lint_script(root):
+    src, ruleset = lint_params(root)
+    return (_read(LINT_TEMPLATE).replace("@@IGNORE_LIB@@", _read(IGNORE_LIB).rstrip("\n"))
+            .replace("@@SRC@@", src).replace("@@PHPMD_RULESET@@", ruleset))
+
+
+def lint_state(root):
+    """(state, rel path): skipped (no PHPCS/PHPMD through the script) | missing | ok | outdated | foreign."""
+    if not lint_needs_script(root):
+        return "skipped", ""
+    rel = lint_script_rel(root, from_ci(root))
+    cur = _read(os.path.join(root, rel))
+    if cur is None:
+        return "missing", rel
+    if LINT_MARK not in cur:
+        return "foreign", rel
+    return ("ok" if cur == render_lint_script(root) else "outdated"), rel
+
+
+def detect_standard(root):
+    """The PHPCS standard in use today: CI's `--standard`, else the installed hook's, else the default."""
+    ci = from_ci(root)
+    texts = [ci["phpcs"][1]] if "phpcs" in ci else []
+    texts.append(_read(hook_path(root)) or "")
+    for text in texts:
+        m = re.search(r"--standard(?:=|\s+)[\"']?([A-Za-z0-9_./,-]+)", text)
+        if m:
+            return m.group(1)
+    return DEFAULT_STANDARD
+
+
+def ensure_lint(root, dry):
+    """Fill `lint.phpcs-standard` when missing (never overwrite) and write/refresh the shared lint script. Returns lines."""
+    lines = []
+    if not lint_needs_script(root):
+        return lines
+    cfg_path = os.path.join(root, ".oro-ai", "config.json")
+    try:
+        data = json.loads(_read(cfg_path) or "{}")
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return ["lint: .oro-ai/config.json is not a JSON object; fix it, then set \"lint\": {\"phpcs-standard\": \"...\"}"]
+    lint = data.get("lint")
+    if isinstance(lint, dict) and lint.get("phpcs-standard"):
+        lines.append("lint.phpcs-standard: %s (left as is)" % lint["phpcs-standard"])
+    elif isinstance(lint, dict) or lint is None:
+        std = detect_standard(root)
+        data["lint"] = dict(lint or {}, **{"phpcs-standard": std})
+        if not dry:
+            os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        lines.append("lint.phpcs-standard: %s %s" % ("would set" if dry else "set to", std))
+    else:
+        lines.append("lint: \"lint\" in .oro-ai/config.json is not an object; fix it by hand")
+    state, rel = lint_state(root)
+    path = os.path.join(root, rel) if rel else ""
+    if state == "foreign":
+        lines.append("%s: exists and is not managed by aaxis-oro (left as is)" % rel)
+    elif state in ("missing", "outdated"):
+        if not dry:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(render_lint_script(root))
+            os.chmod(path, 0o755)
+        lines.append("%s: %s" % (rel, {"missing": "created", "outdated": "updated"}[state]))
+    elif state == "ok":
+        lines.append("%s: unchanged" % rel)
+    if isinstance(cfg_ex := config(root).get("exclude"), list) and cfg_ex:
+        lines.append("note: precommit.exclude is no longer used; move its entries to .stylelintignore (the only exclusion list)")
+    return lines
 
 
 def render(root):
@@ -267,12 +360,11 @@ def render(root):
         if key == "yamllint":
             lines.append('%srun_step "%s" run_yamllint %s' % (prefix, label, cmd[len("yamllint"):].strip()))
         else:
-            lines.append('%srun_step "%s" %s' % (prefix, label, with_excludes(key, cmd)))
+            lines.append('%srun_step "%s" %s' % (prefix, label, with_ignores(key, cmd)))
     node = node_block(root, cfg) if any(k in NODE_TOOLS for k, *_ in st) else ""
     sources = ", ".join(sorted({s for *_, s in st})) or "none (no checks discovered)"
-    exclude = " ".join(shlex.quote(str(e)) for e in (cfg.get("exclude") or []) if isinstance(e, str) and e.strip())
     text = _read(TEMPLATE)
-    return (text.replace("@@SOURCES@@", sources).replace("@@NODE@@", node).replace("@@EXCLUDE@@", exclude or "''")
+    return (text.replace("@@SOURCES@@", sources).replace("@@NODE@@", node).replace("@@IGNORE_LIB@@", _read(IGNORE_LIB).rstrip("\n"))
             .replace("@@STEPS@@", "\n".join(lines) or "true"))
 
 
@@ -388,6 +480,8 @@ def fix_yamllint():
 def missing_tools(root):
     """[(tool, fix)] for each step whose tool is absent."""
     out = []
+    if lint_needs_script(root):
+        out += [(b, "composer install") for b in LINT_BINS if not os.path.exists(os.path.join(root, b))]
     for key, _, cmd, _ in steps(root):
         if key == "yamllint" and not yamllint_state()[1]:
             out.append(("yamllint", fix_yamllint()))

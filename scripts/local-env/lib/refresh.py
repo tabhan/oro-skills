@@ -159,10 +159,19 @@ def baseline_key(project):
     return 0
 
 
+
+def _default_project():
+    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+    lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import projroot
+    return projroot.resolve()
+
 def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("plan", "gate", "record", "baseline-key"))
-    ap.add_argument("--project", default=os.getcwd())
+    ap.add_argument("--project", default=_default_project())
     ap.add_argument("--target", choices=("local", "local-test"))
     ap.add_argument("--all", action="store_true")
     a = ap.parse_args(argv)

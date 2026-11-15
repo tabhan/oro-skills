@@ -72,22 +72,32 @@ ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.y
 
 - Location: `core.hooksPath` when set (e.g. `.githooks`, keep it in `.git/info/exclude`), else `.git/hooks`. Setup never
   sets `core.hooksPath` and never writes tracked files.
-- Speed: phpcs runs with `--parallel` (nproc, else getconf, else 1) and `--cache` in `<git dir>/phpcs.cache`, replacing CI's own
-  values; PHPMD runs under `php -d error_reporting="E_ALL & ~E_DEPRECATED"` with a content-hash result cache in
-  `<git dir>/phpmd.result-cache.php` (PHPMD >= 2.13). Older managed hooks are `outdated` and rewritten by sync.
+- PHPCS and PHPMD run through one generated, tracked script that CI and the hook both call: `.bitbucket/lint-php.sh`
+  (Bitbucket), `.gitlab/lint-php.sh`, `.github/lint-php.sh`, else `.ci/lint-php.sh` (header `aaxis-oro:managed-lint-php`;
+  sync creates and refreshes it, never overwrites an unmanaged file of that name). It runs phpcs (`--parallel` by CPU
+  count, `--cache`) and phpmd (`php -d error_reporting="E_ALL & ~E_DEPRECATED"`, content-hash result cache, PHPMD >= 2.13)
+  over the source dir and PHPMD ruleset it was generated from. Caches: `$HOME/.phpcs-cache/phpcs.cache` and
+  `$HOME/.phpmd-cache/result-cache.php` when `CI` is set (so a pipeline's custom caches keep working), else `<git dir>/`.
+  Point the CI step at it (`bash .bitbucket/lint-php.sh`; optional argument `phpcs` or `phpmd`). Other CI commands are
+  rendered as written; wrappers such as `composer run-script phpcs` are left alone.
 - Foreign hook: an unmanaged hook is copied to `pre-commit.bak-<timestamp>` and replaced; a git-tracked one is left
   alone and reported. A managed hook that differs from the current render is `outdated` and rewritten.
 - `.oro-ai/config.json` `precommit`: `path-prefix` (dir prepended to PATH, e.g. the project Node bin; default: `nvm use`
-  from `.nvmrc` when nvm is installed), `skip` (step keys: the tool keys above plus `schema-drift`), `exclude` (list of
-  repo-relative paths or globs kept out of the whole-tree steps, e.g. `["src/Legacy", "src/Gen/*.php"]`), `atlas: true`
-  (adds `aaxis-oro atlas precommit`; off by default, the atlas review stays a Claude PreToolUse hook). There is no
-  separate JSON schema file for this config; this list is the reference.
-- Same result as CI: CI lints the tracked tree, so the hook keeps every path git ignores or excludes (`.gitignore`,
-  `.git/info/exclude`, e.g. a local-only `src/Aaxis/Bundle/AppBundle`), every untracked path and every `precommit.exclude`
-  entry out of PHPCS (`--ignore`, merged with the CI value), PHPMD (`--exclude`, merged), ESLint and Stylelint
-  (`--ignore-pattern`; `--` is added to `npm run` commands). YamlLint has no ignore flag, so directory arguments become
-  the tracked, non-excluded `*.yml`/`*.yaml` files under them. PHP-CS-Fixer, PHPStan, Psalm and PHPUnit read their own
-  config and are not narrowed; use their config to exclude paths.
+  from `.nvmrc` when nvm is installed), `skip` (step keys: the tool keys above plus `schema-drift`), `atlas: true`
+  (adds `aaxis-oro atlas precommit`; off by default, the atlas review stays a Claude PreToolUse hook). `precommit.exclude`
+  is retired (sync prints a note): exclusions live in `.stylelintignore` only. `lint.phpcs-standard` (the PHPCS standard
+  the script uses) is filled by sync only when missing: CI's `--standard`, else the old hook's, else `PSR12`; an existing
+  value is never overwritten and a missing one makes the script fail rather than guess. There is no separate JSON schema
+  file for this config; this list is the reference.
+- One exclusion list: `.stylelintignore` (repo root, tracked) drives every linter. Stylelint reads it natively and gets no
+  ignore arguments (Oro's stylelint proxy respawns with `shell:true`, so shell-expanded patterns would lint whole trees);
+  the lint script turns it into PHPCS `--ignore` and PHPMD `--exclude` patterns; the hook passes it to ESLint as quoted
+  `--ignore-pattern` arguments (ESLint keeps its own `.eslintignore` too; CI's own ESLint flags are unchanged).
+  Supported lines: blank, `#` comments, and plain paths or `*`/`**` globs (`[A-Za-z0-9_./*-]`). A negation (`!`) or any
+  other character fails the hook and the script loudly, naming the line. Git-ignored and untracked paths are not
+  excluded automatically: CI lints the tracked tree, so a local-only bundle that must not be linted is listed in
+  `.stylelintignore` or kept out of `src/`. YamlLint has no ignore flag, so directory arguments become the tracked
+  `*.yml`/`*.yaml` files under them.
 - Staged-type gate: a step runs only when the commit stages a file of its type (PHP tools: `.php`, `.xml`, `.neon`,
   `.dist`, `composer.json|lock`; ESLint: JS/TS/Vue and `package.json`; Stylelint: SCSS/CSS and `package.json`;
   YamlLint: `.yml`/`.yaml`; schema drift: `Entity/`, `Migrations/`, `entity_extend.yml`, `entity_configs.yml`,

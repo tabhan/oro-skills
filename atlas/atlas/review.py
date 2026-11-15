@@ -275,9 +275,18 @@ def render(root, found, notes, nfiles, verbose=False, limit=CONSOLE_CAP, clip=24
     return lines
 
 
+
+def _default_project():
+    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+    lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import projroot
+    return projroot.resolve()
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="aaxis-oro review check", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--project", default=os.getcwd())
+    ap.add_argument("--project", default=_default_project())
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--staged", action="store_true", help="the staged diff (default)")
     g.add_argument("--range", metavar="A..B")

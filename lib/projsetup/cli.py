@@ -10,6 +10,8 @@ import subprocess
 import sys
 import time
 
+import projroot
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", ".."))
 TEMPLATES = os.path.join(ROOT, "templates", "claude-project")
 BIN = os.path.join(ROOT, "bin", "aaxis-oro")
@@ -150,6 +152,7 @@ def sync(root, dry):
             write(gi, GITIGNORE)
         lines.append(".oro-ai/.gitignore: created")
     from projsetup import precommit
+    lines += precommit.ensure_lint(root, dry)  # before install: the old hook still names the PHPCS standard in use
     lines.append(precommit.install(root, dry))
     y = precommit.ensure_yamllint(root, dry)
     lines += [y] if y else []
@@ -208,6 +211,11 @@ def status(root, as_json):
             "foreign": "unmanaged hook at %s; run: aaxis-oro setup sync (backs it up, installs the managed one)" % hd,
             "foreign-tracked": "project-tracked hook at %s; left alone" % hd}.get(hs, "%s (%s)" % (hs, hd))
     add("pre-commit", hint, hs in ("ok", "skipped", "foreign-tracked"))
+    ls, lrel = precommit.lint_state(root)
+    if ls != "skipped":
+        lhint = {"missing": "%s missing; run: aaxis-oro setup sync" % lrel, "outdated": "%s outdated; run: aaxis-oro setup sync" % lrel,
+                 "foreign": "%s is not managed by aaxis-oro; left alone" % lrel}.get(ls, "ok (%s)" % lrel)
+        add("lint-script", lhint, ls in ("ok", "foreign"))
     if hs != "skipped":
         miss = precommit.missing_tools(root)
         add("hook-tools", "ok" if not miss else "; ".join("%s missing, fix: %s" % m for m in miss), not miss)
@@ -345,7 +353,7 @@ def apply_rules(root, plan_path, dry):
 def main(argv):
     ap = argparse.ArgumentParser(prog="aaxis-oro setup", usage=ASK)
     ap.add_argument("action", choices=("status", "sync", "rules", "apply-rules"))
-    ap.add_argument("--project", default=os.getcwd())
+    ap.add_argument("--project", default=projroot.resolve())
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--plan")

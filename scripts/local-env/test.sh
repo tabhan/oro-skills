@@ -10,7 +10,7 @@
 #   last `aaxis-oro dev refresh` is refused with exit 3 before anything runs.
 # Exit: command's own code; 3 target mismatch or refused combination; 64 usage.
 source "$(dirname "$0")/lib/common.sh"; source "$LE_LIB/stack.sh"
-src_project=$PWD; NO_REFRESH_CHECK=0
+src_project=$(le_default_project); NO_REFRESH_CHECK=0
 while true; do
     case ${1:-} in
         --project) [ -d "${2:-}" ] || { echo "usage: --project needs a directory" >&2; exit 64; }; src_project=$(cd "$2" && pwd); shift 2 ;;

@@ -6,8 +6,11 @@ LE_DIR=$(dirname "$LE_LIB")
 LE_ROOT=$(cd "$LE_DIR/../.." && pwd)
 SUDO_PENDING=0
 
+# Project root from any subdirectory: nearest .oro-ai/config.json, else the git toplevel, else $PWD.
+le_default_project() { python3 "$LE_ROOT/lib/projroot.py" 2>/dev/null || printf '%s\n' "$PWD"; }
+
 le_parse() {
-    PROJECT=$PWD DRY=0 VERBOSE=0 JSON=0 ARGS=()
+    PROJECT=$(le_default_project) DRY=0 VERBOSE=0 JSON=0 ARGS=()
     while [ $# -gt 0 ]; do
         case $1 in
             --project) [ $# -ge 2 ] && [ -d "$2" ] || { echo "usage: --project needs an existing directory" >&2; exit 64; }

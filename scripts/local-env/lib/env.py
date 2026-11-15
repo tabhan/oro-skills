@@ -232,12 +232,21 @@ def init(project, name=None):
     return 0
 
 
+
+def _default_project():
+    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+    lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import projroot
+    return projroot.resolve()
+
 def main(argv):
     if not argv or argv[0] not in ("validate", "migrate", "get", "path", "init", "asks"):
         sys.stderr.write(__doc__)
         return 64
     cmd, rest = argv[0], argv[1:]
-    project = os.getcwd()
+    project = _default_project()
     if "--project" in rest:
         i = rest.index("--project")
         project = rest[i + 1] if i + 1 < len(rest) else project

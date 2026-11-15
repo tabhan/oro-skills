@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -120,75 +122,11 @@ class PrecommitTest(RepoCase):
         self.assertEqual(precommit.state(self.d)[0], "ok")
         code, out = run("sync", cwd=self.d)
         self.assertIn("pre-commit: unchanged", out)
-        self.put("bitbucket-pipelines.yml", BITBUCKET.replace("--standard=PSR2", "--standard=PSR12"))
+        self.put("bitbucket-pipelines.yml", BITBUCKET + "                  - npm run stylelint src/x.scss\n")
         code, out = run("status", cwd=self.d)
         self.assertIn("pre-commit        outdated", out)
         run("sync", cwd=self.d)
-        self.assertIn("PSR12", open(self.hook()).read())
-        self.assertEqual(git_status(self.d), git_status(self.d))
-
-    def test_render_adds_phpcs_speedup_once_and_only_to_direct_calls(self):
-        self.put("bitbucket-pipelines.yml", BITBUCKET)
-        text = precommit.render(self.d)
-        self.assertEqual(text.count('--parallel="$(phpcs_jobs)"'), 1)
-        self.assertEqual(text.count('--cache="$(git rev-parse --absolute-git-dir)/phpcs.cache"'), 1)
-        own = BITBUCKET.replace("--standard=PSR2", "--standard=PSR2 --parallel=$(nproc) --cache=$HOME/.phpcs-cache/phpcs.cache")
-        self.put("bitbucket-pipelines.yml", own)
-        text = precommit.render(self.d)
-        self.assertEqual(text.count("--parallel="), 1)
-        self.assertEqual(text.count("--cache="), 1)
-        self.assertNotIn(".phpcs-cache", text)
-        self.assertNotIn("$(nproc)", text.split("run_step", 1)[1])
-        self.assertEqual(precommit.with_phpcs_speedup("composer run-script phpcs"), "composer run-script phpcs")
-        self.assertEqual(subprocess.run(["bash", "-n"], input=text, text=True).returncode, 0)
-
-    def test_render_runs_phpmd_with_deprecations_hidden(self):
-        q = precommit.PHPMD_QUIET
-        self.assertEqual(precommit.with_phpmd_quiet("php ./vendor/phpmd/phpmd/src/bin/phpmd ./src ansi x.xml"),
-                         q + " ./vendor/phpmd/phpmd/src/bin/phpmd ./src ansi x.xml")
-        self.assertEqual(precommit.with_phpmd_quiet("vendor/bin/phpmd src ansi x.xml"), q + " vendor/bin/phpmd src ansi x.xml")
-        once = precommit.with_phpmd_quiet("php -d error_reporting=E_ALL ./phpmd")
-        self.assertEqual(once, "php -d error_reporting=E_ALL ./phpmd")
-        self.assertEqual(precommit.with_phpmd_quiet("composer run-script phpmd"), "composer run-script phpmd")
-        self.assertIn("--cache-strategy content", precommit.with_phpmd_cache("vendor/bin/phpmd src ansi x.xml"))
-        ci = "php ./vendor/phpmd/phpmd/src/bin/phpmd ./src ansi x.xml --cache --cache-strategy content --cache-file $HOME/.phpmd-cache/result-cache.php --suffixes php"
-        out = precommit.with_phpmd_cache(ci)
-        self.assertNotIn(".phpmd-cache", out)
-        self.assertEqual(out.count("--cache "), 1)
-        self.assertEqual(out.count("--cache-file"), 1)
-        self.assertTrue(out.startswith("php ./vendor/phpmd/phpmd/src/bin/phpmd ./src ansi x.xml --suffixes php --cache"), out)
-        self.assertEqual(precommit.with_phpmd_cache(out), out)
-        self.assertEqual(precommit.with_phpmd_cache("composer run-script phpmd"), "composer run-script phpmd")
-        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE)
-        text = precommit.render(self.d)
-        self.assertEqual(text.count("phpmd.result-cache.php"), 1)
-        self.assertIn('"PHP Mess Detector" php -d error_reporting="E_ALL & ~E_DEPRECATED" ./vendor/phpmd/phpmd/src/bin/phpmd', text)
-
-    def test_sync_repairs_an_hook_without_phpmd_error_reporting(self):
-        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE)
-        run("sync", cwd=self.d)
-        current = open(self.hook()).read()
-        old = current.replace(' -d error_reporting="E_ALL & ~E_DEPRECATED"', "").replace(precommit.PHPMD_CACHE, "")
-        self.assertNotEqual(old, current)
-        with open(self.hook(), "w") as fh:
-            fh.write(old)
-        self.assertEqual(precommit.state(self.d)[0], "outdated")
-        run("sync", cwd=self.d)
-        self.assertEqual(open(self.hook()).read(), current)
-
-    def test_sync_repairs_an_installed_hook_without_parallel_and_cache(self):
-        self.put("bitbucket-pipelines.yml", BITBUCKET)
-        run("sync", cwd=self.d)
-        current = open(self.hook()).read()
-        old = current.replace(' --parallel="$(phpcs_jobs)"', "").replace(' --cache="$(git rev-parse --absolute-git-dir)/phpcs.cache"', "")
-        self.assertNotEqual(old, current)
-        with open(self.hook(), "w") as fh:
-            fh.write(old)
-        self.assertEqual(precommit.state(self.d)[0], "outdated")
-        self.assertIn("pre-commit        outdated", run("status", cwd=self.d)[1])
-        self.assertIn("pre-commit: updated", run("sync", cwd=self.d)[1])
-        self.assertEqual(open(self.hook()).read(), current)
-        self.assertEqual(precommit.state(self.d)[0], "ok")
+        self.assertIn('run_step "Stylelint" npm run stylelint src/x.scss', open(self.hook()).read())
 
     def test_foreign_hook_backed_up_under_hooks_path(self):
         self.put("bitbucket-pipelines.yml", BITBUCKET)
@@ -312,57 +250,6 @@ class HookRunTest(HookRunBase):
         self.git("add", "src/Buckman", "composer.json", "package.json", "phpmd.xml", ".yamllint", "bitbucket-pipelines.yml")
         run("sync", cwd=self.d)
 
-    def test_git_excluded_paths_never_reach_whole_tree_steps(self):
-        self.whole_tree_project()
-        code, out = self.run_hook()
-        self.assertEqual(code, 0, out)
-        ignore = "*/src/Aaxis/Bundle/AppBundle/*"
-        phpcs = [a for a in self.argv("phpcs") if a.startswith("--ignore=")]
-        self.assertEqual(len(phpcs), 1)
-        self.assertTrue(phpcs[0].startswith("--ignore=OroLab,"), phpcs)
-        self.assertIn(ignore, phpcs[0].split(","))
-        phpmd = [a for a in self.argv("phpmd") if a.startswith("OroLab,")]
-        self.assertIn(ignore, phpmd[0].split(","))
-        eslint = self.argv("npm")
-        self.assertIn("src/Aaxis/Bundle/AppBundle/**", eslint)
-        self.assertIn("src/OroLab/**", eslint)
-
-    def test_phpcs_runs_parallel_with_a_per_checkout_cache(self):
-        self.whole_tree_project()
-        code, out = self.run_hook()
-        self.assertEqual(code, 0, out)
-        argv = self.argv("phpcs")
-        jobs = [a for a in argv if a.startswith("--parallel=")]
-        self.assertEqual(len(jobs), 1, argv)
-        self.assertGreaterEqual(int(jobs[0].split("=")[1]), 1)
-        cache = [a for a in argv if a.startswith("--cache=")]
-        self.assertEqual(cache, ["--cache=%s" % os.path.join(os.path.realpath(self.d), ".git", "phpcs.cache")])
-        self.assertFalse([a for a in self.argv("phpmd") if "--parallel" in a])
-
-    def test_hook_passes_error_reporting_to_php_for_phpmd(self):
-        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE)
-        self.put("phpmd.xml", "<x/>")
-        run("sync", cwd=self.d)
-        code, out = self.run_hook()
-        self.assertEqual(code, 0, out)
-        argv = self.argv("php")
-        self.assertIn("error_reporting=E_ALL & ~E_DEPRECATED", argv)
-        self.assertIn("./vendor/phpmd/phpmd/src/bin/phpmd", argv)
-        self.assertIn("content", argv)
-        self.assertIn(os.path.join(os.path.realpath(self.d), ".git", "phpmd.result-cache.php"), argv)
-
-    def test_cpu_count_falls_back_to_getconf_then_one(self):
-        self.whole_tree_project()
-        bare = os.path.join(self.d, ".nonproc")
-        os.makedirs(bare)
-        for tool in ("bash", "git", "grep", "sort", "mktemp", "cat", "dirname", "basename", "rm"):
-            os.symlink(subprocess.run(["which", tool], capture_output=True, text=True).stdout.strip(), os.path.join(bare, tool))
-        for tool in ("phpcs", "phpmd"):
-            pass
-        env = self.hook_env(PATH=bare + os.pathsep + self.bin)
-        subprocess.run([self.hook()], cwd=self.d, capture_output=True, text=True, env=env)
-        self.assertIn("--parallel=1", self.argv("phpcs"))
-
     def test_yamllint_receives_only_tracked_files(self):
         self.whole_tree_project()
         self.run_hook()
@@ -370,16 +257,6 @@ class HookRunTest(HookRunBase):
         self.assertIn("src/Buckman/ok.yml", args)
         self.assertNotIn("src/Aaxis/Bundle/AppBundle/bad.yml", args)
         self.assertNotIn("./src/", args)
-
-    def test_precommit_exclude_config_adds_paths_and_globs(self):
-        self.whole_tree_project()
-        self.put(".oro-ai/config.json", json.dumps({"precommit": {"exclude": ["src/Legacy", "src/Gen/*.php"]}}))
-        run("sync", cwd=self.d)
-        self.run_hook()
-        phpcs = "".join(self.argv("phpcs")).split(",")
-        self.assertIn("*/src/Legacy", phpcs)
-        self.assertIn("*/src/Gen/*.php", phpcs)
-        self.assertIn("src/Gen/*.php", self.argv("npm"))
 
     def test_steps_with_no_matching_staged_file_type_are_skipped(self):
         self.put("bitbucket-pipelines.yml", "pipelines:\n  default:\n    - step:\n        script:\n          - vendor/bin/phpunit\n          - yamllint ./src/\n")
@@ -479,6 +356,198 @@ class SchemaDriftTest(HookRunBase):
         self.assertEqual(code, 0, out)
         self.assertIn("Doctrine schema drift skipped", out)
         self.assertFalse(os.path.exists(self.log + ".php"))
+
+
+REAL_PHP = shutil.which("php") or "/usr/bin/php"
+# Logs argv like STUB but runs the real php for `php -r` (the lint script reads config.json that way).
+PHP_STUB = '#!/bin/sh\n[ "$1" = "-r" ] && exec %s "$@"\nprintf "%%s\\n" "$@" >> "$STUB_LOG.php"\nexit ${STUB_EXIT:-0}\n' % REAL_PHP
+IGNORES = "# shared\n**/node_modules/**\nsrc/OroLab\n**/lib/*\n**/*.min.css\n"
+
+
+class LintScriptTest(HookRunBase):
+    """The generated CI lint script, the hook that calls it, and .stylelintignore as the only exclusion list."""
+
+    def setUp(self):
+        super().setUp()
+        with open(os.path.join(self.bin, "php"), "w") as fh:
+            fh.write(PHP_STUB)
+        self.script = os.path.join(self.d, ".bitbucket", "lint-php.sh")
+
+    def project(self, ci=CI_WHOLE_TREE, **config):
+        self.put("bitbucket-pipelines.yml", ci)
+        self.put("package.json", "{}")
+        self.put(".stylelintignore", IGNORES)
+        if config:
+            self.put(".oro-ai/config.json", json.dumps(config))
+        self.put("src/Buckman/ok.php", "<?php\n")
+        self.put("src/Aaxis/Bundle/AppBundle/Bad.php", "<?php\n")
+        with open(os.path.join(self.d, ".git", "info", "exclude"), "a") as fh:
+            fh.write("src/Aaxis/Bundle/AppBundle/\n")
+        return run("sync", cwd=self.d)[1]
+
+    def php_args(self, marker):
+        """argv of the php call that ran `marker` (phpcs or phpmd), as a list."""
+        raw = "\n".join(self.argv("php") or [])
+        calls = re.split(r"(?=^-d$|^\./vendor/squizlabs)", raw, flags=re.M)
+        return next(c.split("\n") for c in calls if marker in c)
+
+    def test_sync_writes_the_script_and_detects_the_standard_from_ci(self):
+        out = self.project()
+        self.assertIn("lint.phpcs-standard: set to PSR2", out)
+        self.assertIn(".bitbucket/lint-php.sh: created", out)
+        self.assertTrue(os.access(self.script, os.X_OK))
+        self.assertEqual(json.load(open(os.path.join(self.d, ".oro-ai", "config.json")))["lint"], {"phpcs-standard": "PSR2"})
+        text = open(self.hook()).read()
+        self.assertIn('run_step "PHP CodeSniffer" run_lint_php .bitbucket/lint-php.sh phpcs', text)
+        self.assertIn('run_step "PHP Mess Detector" run_lint_php .bitbucket/lint-php.sh phpmd', text)
+        self.assertNotIn("EXCL_", text)
+        again = run("sync", cwd=self.d)[1]
+        self.assertIn("lint.phpcs-standard: PSR2 (left as is)", again)
+        self.assertIn(".bitbucket/lint-php.sh: unchanged", again)
+
+    def test_existing_standard_is_never_overwritten_and_default_is_psr12(self):
+        self.project(lint={"phpcs-standard": "PSR1"}, spec={"x": 1})
+        cfg = json.load(open(os.path.join(self.d, ".oro-ai", "config.json")))
+        self.assertEqual(cfg["lint"]["phpcs-standard"], "PSR1")
+        self.assertEqual(cfg["spec"], {"x": 1})
+        other = CI_WHOLE_TREE.replace(" --standard=PSR2", "")
+        os.remove(os.path.join(self.d, ".oro-ai", "config.json"))
+        os.remove(self.hook())
+        self.put("bitbucket-pipelines.yml", other)
+        run("sync", cwd=self.d)
+        self.assertEqual(json.load(open(os.path.join(self.d, ".oro-ai", "config.json")))["lint"]["phpcs-standard"], "PSR12")
+
+    def test_standard_comes_from_the_old_hook_when_ci_has_none(self):
+        subprocess.run(["git", "-C", self.d, "config", "core.hooksPath", ".githooks"], check=True)
+        self.put(".githooks/pre-commit", "#!/bin/sh\nphpcs ./src --standard=PSR2\n")
+        self.put("bitbucket-pipelines.yml", CI_WHOLE_TREE.replace(" --standard=PSR2", ""))
+        run("sync", cwd=self.d)
+        self.assertEqual(json.load(open(os.path.join(self.d, ".oro-ai", "config.json")))["lint"]["phpcs-standard"], "PSR2")
+
+    def test_ci_calling_the_script_keeps_the_hook_on_it_and_unmanaged_script_is_left_alone(self):
+        ci = "pipelines:\n  default:\n    - step:\n        script:\n          - bash .bitbucket/lint-php.sh\n"
+        self.put("bitbucket-pipelines.yml", ci)
+        self.put(".bitbucket/lint-php.sh", "#!/bin/bash\necho mine\n")
+        out = run("sync", cwd=self.d)[1]
+        self.assertIn("not managed by aaxis-oro", out)
+        self.assertEqual(open(self.script).read(), "#!/bin/bash\necho mine\n")
+        self.assertIn("run_lint_php .bitbucket/lint-php.sh phpcs", open(self.hook()).read())
+
+    def test_outdated_script_is_repaired_by_sync_and_reported_by_status(self):
+        self.project()
+        with open(self.script, "a") as fh:
+            fh.write("# drift\n")
+        self.assertIn("lint-script       .bitbucket/lint-php.sh outdated", run("status", cwd=self.d)[1])
+        self.assertIn(".bitbucket/lint-php.sh: updated", run("sync", cwd=self.d)[1])
+        self.assertNotIn("# drift", open(self.script).read())
+
+    def test_fallback_directories_per_ci_system(self):
+        self.put(".gitlab-ci.yml", "job:\n  script:\n    - phpcs ./src --standard=PSR2\n")
+        self.assertEqual(precommit.lint_script_rel(self.d, precommit.from_ci(self.d)), ".gitlab/lint-php.sh")
+
+    def test_hook_runs_the_script_with_standard_ignores_parallel_and_git_dir_cache(self):
+        self.project()
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        cs = self.php_args("squizlabs")
+        self.assertIn("--standard=PSR2", cs)
+        self.assertIn("--ignore=*/node_modules/*,*/node_modules$,*/src/OroLab/*,*/src/OroLab$,*/lib/*,*/lib$,*/*.min.css/*,*/*.min.css$", cs)
+        self.assertIn("--cache=%s" % os.path.join(os.path.realpath(self.d), ".git", "phpcs.cache"), cs)
+        self.assertEqual(len([a for a in cs if a.startswith("--parallel=")]), 1)
+        self.assertFalse([a for a in cs if "AppBundle" in a], "git-ignored paths are linted, never auto-excluded")
+        md = self.php_args("phpmd")
+        self.assertIn("error_reporting=E_ALL & ~E_DEPRECATED", md)
+        self.assertIn("*/node_modules/*,*/src/OroLab/*,*/lib/*,*/*.min.css/*,*/*.min.css", md)
+        self.assertIn(os.path.join(os.path.realpath(self.d), ".git", "phpmd.result-cache.php"), md)
+        self.assertIn("content", md)
+
+    def test_in_ci_the_caches_stay_under_home(self):
+        self.project()
+        code, out = self.run_hook(CI="true")
+        self.assertEqual(code, 0, out)
+        self.assertIn("--cache=%s/.phpcs-cache/phpcs.cache" % self.d, self.php_args("squizlabs"))
+        self.assertIn("%s/.phpmd-cache/result-cache.php" % self.d, self.php_args("phpmd"))
+        self.assertTrue(os.path.isdir(os.path.join(self.d, ".phpcs-cache")))
+
+    def test_negation_or_unsupported_line_fails_loudly_everywhere(self):
+        self.project()
+        self.put(".stylelintignore", IGNORES + "!src/OroLab/keep\nsrc/a[b]\n")
+        p = subprocess.run(["bash", self.script, "phpcs"], cwd=self.d, capture_output=True, text=True, env=self.hook_env())
+        self.assertEqual(p.returncode, 1)
+        self.assertIn(".stylelintignore:6: unsupported pattern '!src/OroLab/keep'", p.stderr)
+        self.assertIn(".stylelintignore:7:", p.stderr)
+        self.assertIsNone(self.argv("php"))
+        code, out = self.run_hook()
+        self.assertEqual(code, 1)
+        self.assertIn("unsupported lines", out)
+        self.assertIsNone(self.argv("npm"))
+
+    def test_eslint_gets_quoted_patterns_that_the_shell_never_expands(self):
+        self.project()
+        os.makedirs(os.path.join(self.d, "lib"))
+        self.put(".stylelintignore", "src/*\n")
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        args = self.argv("npm")
+        self.assertIn("src/*", args)
+        self.assertNotIn("src/Buckman", args)
+        self.assertEqual(args[args.index("src/*") - 1], "--ignore-pattern")
+
+    def test_stylelint_gets_no_ignore_arguments(self):
+        self.project()
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        npm_calls = open("%s.npm" % self.log).read().split("run\n")
+        style = [c for c in npm_calls if c.startswith("stylelint")]
+        self.assertTrue(style)
+        self.assertNotIn("--ignore-pattern", style[0])
+
+    def test_missing_script_fails_the_step_with_a_pointer(self):
+        self.project()
+        os.remove(self.script)
+        code, out = self.run_hook()
+        self.assertEqual(code, 1)
+        self.assertIn("is missing", out)
+        self.assertIn("xxx PHP CodeSniffer FAILED", out)
+
+    def test_missing_config_standard_is_a_failure_not_a_default(self):
+        self.project()
+        os.remove(os.path.join(self.d, ".oro-ai", "config.json"))
+        p = subprocess.run(["bash", self.script, "phpcs"], cwd=self.d, capture_output=True, text=True, env=self.hook_env())
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("phpcs-standard", p.stderr)
+
+    def test_precommit_exclude_is_reported_as_retired(self):
+        out = self.project(precommit={"exclude": ["src/Legacy"]})
+        self.assertIn("precommit.exclude is no longer used", out)
+
+
+class ProjectRootTest(RepoCase):
+    def test_subdirectory_resolves_to_the_config_root_then_git_toplevel_then_itself(self):
+        sys.path.insert(0, os.path.join(ROOT, "lib"))
+        import projroot
+        sub = os.path.join(self.d, "src", "B", "Tests")
+        os.makedirs(sub)
+        top = os.path.realpath(self.d)
+        self.assertEqual(os.path.realpath(projroot.resolve(sub)), top)
+        self.put(".oro-ai/config.json", "{}")
+        nested = self.put("src/B/.oro-ai/note", "x")
+        self.assertEqual(projroot.resolve(sub), self.d)
+        with tempfile.TemporaryDirectory() as plain:
+            self.assertEqual(projroot.resolve(plain), os.path.abspath(plain))
+        self.assertTrue(os.path.exists(nested))
+
+    def test_shell_scripts_and_setup_default_to_the_project_root(self):
+        sub = os.path.join(self.d, "src", "B", "Tests")
+        os.makedirs(sub)
+        self.put(".oro-ai/config.json", "{}")
+        common = os.path.join(ROOT, "scripts", "local-env", "lib", "common.sh")
+        p = subprocess.run(["bash", "-c", 'source "%s"; le_default_project' % common], cwd=sub, capture_output=True, text=True)
+        self.assertEqual(os.path.realpath(p.stdout.strip()), os.path.realpath(self.d))
+        env = dict(os.environ, HOME=self.d, AAXIS_ORO_NO_TOOL_INSTALL="1")
+        p = subprocess.run([sys.executable, BIN, "setup", "sync", "--dry-run"], cwd=sub, capture_output=True, text=True, env=env)
+        self.assertIn("CLAUDE_project.md", p.stdout)
+        self.assertFalse(os.path.exists(os.path.join(sub, ".oro-ai")))
 
 
 class OldHookInventoryTest(RepoCase):
