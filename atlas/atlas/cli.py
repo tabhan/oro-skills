@@ -7,7 +7,7 @@ import sys
 import os
 
 from . import build, extractors, index, migrate, notesindex, rollup, store
-from .common import AtlasError, Context, MissingShard, atlas_dir, find_project_root
+from .common import AtlasError, Context, MissingShard, NotOroProject, atlas_dir, require_project_root
 
 # subcommand -> shard filename stem
 SHARDS = {
@@ -328,7 +328,7 @@ def main(argv=None, out=None):
     args.cmd = CANONICAL.get(args.cmd, args.cmd)
     code = 0
     try:
-        root = find_project_root(args.project)
+        root = require_project_root(args.project)
         out_dir = atlas_dir(root)
         if args.cmd == "migrate":
             return migrate.run(root, out)
@@ -349,4 +349,7 @@ def main(argv=None, out=None):
     except AtlasError as exc:
         sys.stderr.write("atlas: %s\n" % exc)
         code = 1
+    except NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+        code = 64
     return code

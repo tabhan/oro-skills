@@ -18,8 +18,14 @@ JUNIT = """<testsuites><testsuite><testcase class="App\\Tests\\Functional\\Total
 LIST = """<tests><testCaseClass name="App\\Tests\\Functional\\TotalsTest"><testCaseMethod id="App\\Tests\\Functional\\TotalsTest::testSum#0" name="testSum" groups="default,spec:CART:AC-2"/></testCaseClass></tests>"""
 
 
-def spec(*args):
-    return subprocess.run([sys.executable, CLI, "spec", *args], capture_output=True, text=True)
+def spec(*args, cwd=None):
+    return subprocess.run([sys.executable, CLI, "spec", *args], capture_output=True, text=True, cwd=cwd)
+
+
+def mkroot(d):
+    os.makedirs(os.path.join(d, "bin"), exist_ok=True)
+    open(os.path.join(d, "bin", "console"), "w").close()
+    open(os.path.join(d, "composer.lock"), "w").write("{}")
 
 
 class CoverageTest(unittest.TestCase):
@@ -43,6 +49,7 @@ class CoverageTest(unittest.TestCase):
 
     def test_orphan_tag_and_uncovered(self):
         with tempfile.TemporaryDirectory() as d:
+            mkroot(d)
             os.makedirs(os.path.join(d, "src", "Tests", "E2e"))
             os.makedirs(os.path.join(d, "spec"))
             with open(os.path.join(d, "src", "Tests", "E2e", "a.feature"), "w") as fh:
@@ -56,10 +63,32 @@ class CoverageTest(unittest.TestCase):
 
     def test_spec_without_id_is_ignored(self):
         with tempfile.TemporaryDirectory() as d:
+            mkroot(d)
             os.makedirs(os.path.join(d, "spec"))
             with open(os.path.join(d, "spec", "spec-official.md"), "w") as fh:
                 fh.write("---\ntitle: Official\n---\n### AC-1: x\n")
             self.assertEqual(spec("coverage", "--root", d).returncode, 0)
+
+
+class RootGateTest(unittest.TestCase):
+    def test_outside_a_project_exits_64_and_creates_nothing(self):
+        for sub in (["coverage"], ["report", "--e2e", "x.json"]):
+            with tempfile.TemporaryDirectory() as d:
+                r = spec(*sub, cwd=d)
+                self.assertEqual(r.returncode, 64, r.stdout + r.stderr)
+                self.assertIn("no Oro project found from", r.stderr)
+                self.assertEqual(os.listdir(d), [])
+
+    def test_non_root_project_exits_64(self):
+        with tempfile.TemporaryDirectory() as d:
+            for sub in ("coverage", "report"):
+                r = spec(sub, "--root", d)
+                self.assertEqual(r.returncode, 64, r.stderr)
+                self.assertIn("is not an Oro application root", r.stderr)
+
+    def test_root_found_from_subdirectory(self):
+        r = spec("coverage", cwd=os.path.join(FIX, "ok", "spec"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
 class ReportTest(unittest.TestCase):

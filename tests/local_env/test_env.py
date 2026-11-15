@@ -117,5 +117,15 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(p.stdout.strip(), "4,5,6,7")
 
 
+class SwitchRootGateTest(unittest.TestCase):
+    def test_switch_target_must_be_an_oro_root(self):
+        import tempfile
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts", "local-env", "switch.sh")
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run(["bash", script, os.path.relpath(d, "/opt/projects")], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 64, r.stdout + r.stderr)
+            self.assertIn("is not an Oro application root", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

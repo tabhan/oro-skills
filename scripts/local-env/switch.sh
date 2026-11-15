@@ -14,6 +14,7 @@ fi
 [ -n "${1:-}" ] || { echo "Error: Missing project name." >&2; exit 64; }
 TARGET_DIR=/opt/projects/$1
 [ -d "$TARGET_DIR" ] || { echo "Error: Folder $TARGET_DIR doesn't exist." >&2; exit 1; }
+python3 "$HERE/../../lib/projroot.py" --project "$TARGET_DIR" >/dev/null || exit 64
 if [ -n "${CLAUDECODE:-}" ]; then echo "SUDO-NEEDED: aaxis-oro env switch $1"; exit 10; fi
 
 NVMRC=$(tr -d ' \n' < "$TARGET_DIR/.nvmrc" 2>/dev/null)

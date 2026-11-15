@@ -250,6 +250,7 @@ class SetupTest(unittest.TestCase):
             os.makedirs(os.path.join(tmp, "bin"))
             os.makedirs(os.path.join(tmp, ".claude"))
             open(os.path.join(tmp, "bin", "console"), "w").close()
+            open(os.path.join(tmp, "composer.lock"), "w").write("{}")
             path = os.path.join(tmp, ".claude", "settings.local.json")
             legacy = "python3 /x/oro-skills/oro-atlas/hooks/pretooluse_edit.py"
             with open(path, "w") as fh:
@@ -297,6 +298,19 @@ class PrecommitTest(Base):
         self.assertEqual(p.returncode, 1)
         self.assertIn("config/D.php", p.stderr)
         self.assertIn("Do not decorate 'foo.mgr'", p.stderr)
+
+
+class OutsideProjectTest(unittest.TestCase):
+    def test_every_hook_is_silent_and_exits_0_outside_an_oro_root(self):
+        import tempfile
+        payload = json.dumps({"cwd": "", "tool_name": "Bash", "tool_input": {"command": "ls"}, "session_id": "t"})
+        with tempfile.TemporaryDirectory() as d:
+            for name in sorted(os.listdir(HOOKS)):
+                if name.endswith(".py") and not name.startswith("_"):
+                    r = subprocess.run([sys.executable, os.path.join(HOOKS, name)], input=payload.replace('"cwd": ""', '"cwd": "%s"' % d),
+                                       cwd=d, capture_output=True, text=True)
+                    self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""), name)
+            self.assertEqual(os.listdir(d), [])
 
 
 if __name__ == "__main__":

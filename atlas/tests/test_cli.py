@@ -79,3 +79,37 @@ class CliTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RootGateTest(unittest.TestCase):
+    """Every atlas entry point shares lib/projroot.py: no root -> exit 64 with its message, nothing created."""
+    EXE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bin", "aaxis-oro")
+
+    def run_cli(self, cwd, *args):
+        import subprocess
+        import sys
+        return subprocess.run([sys.executable, self.EXE, "atlas", *args], cwd=cwd, capture_output=True, text=True)
+
+    def test_outside_a_project_exits_64_and_creates_nothing(self):
+        import tempfile
+        for args in (["status"], ["service", "x"], ["notes"], ["build"], ["build", "--incremental"], ["migrate"], ["setup"]):
+            with tempfile.TemporaryDirectory() as d:
+                r = self.run_cli(d, *args)
+                self.assertEqual(r.returncode, 64, "%s: %s" % (args, r.stdout + r.stderr))
+                self.assertIn("no Oro project found from", r.stderr)
+                self.assertEqual(os.listdir(d), [], args)
+
+    def test_non_root_project_exits_64(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            for args in (["status"], ["service", "x"], ["build"]):
+                r = self.run_cli(d, *args, "--project", d)
+                self.assertEqual(r.returncode, 64, "%s: %s" % (args, r.stdout + r.stderr))
+                self.assertIn("is not an Oro application root", r.stderr)
+            self.assertEqual(os.listdir(d), [])
+
+    def test_root_and_subdirectory_resolve(self):
+        sub = os.path.join(_project({}), "sub", "deep")
+        r = self.run_cli(sub, "status")
+        self.assertIn(r.returncode, (0, 2), r.stdout + r.stderr)
+        self.assertIn("oro/platform", r.stdout)

@@ -5,7 +5,7 @@ import sys
 import time
 
 from . import extractors, index, raw, store
-from .common import AtlasError, Context, ensure_ignored, find_project_root
+from .common import AtlasError, Context, NotOroProject, ensure_ignored, require_project_root
 
 
 def _pid_alive(pid):
@@ -129,7 +129,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     code = 0
     try:
-        ctx = Context(find_project_root(args.project), refresh_raw=args.refresh_raw)
+        ctx = Context(require_project_root(args.project), refresh_raw=args.refresh_raw)
         only = [n for n in (args.only or "").split(",") if n]
         t0 = time.time()
         if args.incremental and only:
@@ -139,4 +139,7 @@ def main(argv=None):
     except AtlasError as exc:
         sys.stderr.write("atlas build: %s\n" % exc)
         code = 1
+    except NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+        code = 64
     return code

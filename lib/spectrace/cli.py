@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 
+import projroot
 from . import coverage, model, report
 
 HELP = """usage: aaxis-oro spec <coverage|report> [options]
@@ -18,13 +19,13 @@ Exit: 0 ok, 1 gaps or failures, 64 usage.
 
 
 def paths(a):
-    root = os.path.abspath(a.root)
+    root = projroot.require(a.root)
     return root, a.spec_dir or os.path.join(root, "spec"), getattr(a, "tests", None) or os.path.join(root, "src")
 
 
 def parser(prog):
     p = argparse.ArgumentParser(prog=prog, add_help=False)
-    p.add_argument("--root", default=".")
+    p.add_argument("--root", default=None, help="Oro application root (default: nearest root above the cwd)")
     p.add_argument("--spec-dir")
     p.add_argument("--ids")
     return p
@@ -96,6 +97,9 @@ def main(argv):
     try:
         return cmds[argv[0]](argv[1:])
     except SystemExit:
+        return 64
+    except projroot.NotOroProject as e:
+        sys.stderr.write("aaxis-oro: %s\n" % e)
         return 64
     except (OSError, ValueError, KeyError) as e:
         sys.stderr.write("spec %s: %s\n" % (argv[0], e))

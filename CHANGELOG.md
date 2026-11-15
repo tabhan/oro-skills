@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.5
+
+- Every project-scoped entry point is now root-gated. Root cause: 0.28.4 gated `env|test|setup|task|review|version|memory|dev refresh` but `atlas` still resolved its root through `find_project_root` (outside a root it exited 1, and an explicit `--project` was never checked, so a non-root directory got a MISSING-filled status with exit 0/2), and `spec coverage|report` took `--root` (default `.`) without any check.
+- `atlas` (queries, `status`, `notes`, `migrate`, `build`, `setup`) uses `projroot.require`: outside a project exit 64 with "no Oro project found from <dir> (need bin/console and composer.lock); cd into one or pass --project", and a non-root `--project` exits 64 "is not an Oro application root". `spec coverage|report` default `--root` to the nearest root above the cwd and gate it the same way; `env switch <name>` refuses a target that is not a root (64). Real roots and worktrees behave as before; hooks still resolve with the non-raising `projroot.find`, so they stay silent with exit 0 outside a project (now covered by a test). `dev lint`, `atlas adoption` and the bare `atlas precommit` no-op operate on no project and stay ungated.
+
 ## 0.28.4
 
 - Project root is detected from the fixed Oro application layout, not from where `.oro-ai/` exists. Root cause: 0.28.3 `lib/projroot.py` took the nearest ancestor holding `.oro-ai/config.json`, else the git toplevel, else the cwd, so a stray `.oro-ai/` under `src/` (or any non-Oro directory) could still become the root and receive `.oro-ai/local-env/`. The root is now the nearest ancestor holding `bin/console` and `composer.lock` (the pair atlas and the hooks already used; neither exists below the root, and git worktrees carry both, so each worktree is its own root). With no such ancestor, `aaxis-oro env|test|setup|task|review|version|memory|dev refresh` exit 64 with a clear message and create nothing; there is no cwd fallback. `--project` is kept and must itself be an Oro root.

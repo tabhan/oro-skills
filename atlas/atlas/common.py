@@ -6,6 +6,11 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib"))
+import projroot  # noqa: E402
+
+NotOroProject = projroot.NotOroProject
+
 OUT_SUBDIR = os.path.join(".oro-ai", "atlas")
 # Index locations of earlier versions; atlas/migrate.py rebuilds into OUT_SUBDIR and then removes them.
 LEGACY_SUBDIRS = (os.path.join(".claude", "atlas"), os.path.join("var", "atlas"))
@@ -59,6 +64,11 @@ def find_project_root(start=None):
             "no Oro project found (need bin/console and composer.lock); use --project"
         )
     return found
+
+
+def require_project_root(explicit=None):
+    """The Oro root for a CLI entry point: `explicit` must itself be a root; raises NotOroProject (exit 64)."""
+    return projroot.require(explicit)
 
 
 def read_text(path):

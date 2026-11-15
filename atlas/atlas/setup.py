@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 from . import build, legacy
+from .common import NotOroProject, require_project_root
 
 GIT_HOOKS = ("post-checkout", "post-merge", "post-rewrite")
 MARK = "# oro-atlas: refresh index"
@@ -26,9 +27,12 @@ def main(argv):
     args = [x for x in argv if not x.startswith("--")]
     project = os.path.abspath(args[0]) if args else ""
     cleanup_only = "--cleanup-only" in argv
-    if not cleanup_only and not os.path.isfile(os.path.join(project, "bin", "console")):
-        sys.stderr.write("usage: aaxis-oro atlas setup [--cleanup-only] [--no-build] <oro-project-root>\n")
-        return 2
+    if not cleanup_only:
+        try:
+            project = require_project_root(args[0] if args else None)
+        except NotOroProject as exc:
+            sys.stderr.write("aaxis-oro: %s\nusage: aaxis-oro atlas setup [--cleanup-only] [--no-build] <oro-project-root>\n" % exc)
+            return 64
     for path in legacy.cleanup_all(project):
         print("removed legacy atlas hooks from %s (the aaxis-oro plugin provides them)" % path)
     if cleanup_only:
