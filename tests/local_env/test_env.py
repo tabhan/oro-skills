@@ -62,6 +62,9 @@ class MigrateTest(unittest.TestCase):
     def setUp(self):
         self.proj = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.proj, True)
+        os.makedirs(os.path.join(self.proj, "bin"))
+        open(os.path.join(self.proj, "bin", "console"), "w").close()
+        open(os.path.join(self.proj, "composer.lock"), "w").write("{}")
         os.makedirs(os.path.dirname(env.old_path(self.proj)))
         shutil.copy(os.path.join(FIX, "env-legacy.yml"), env.old_path(self.proj))
 

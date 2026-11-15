@@ -353,12 +353,16 @@ def apply_rules(root, plan_path, dry):
 def main(argv):
     ap = argparse.ArgumentParser(prog="aaxis-oro setup", usage=ASK)
     ap.add_argument("action", choices=("status", "sync", "rules", "apply-rules"))
-    ap.add_argument("--project", default=projroot.resolve())
+    ap.add_argument("--project")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--plan")
     a = ap.parse_args(argv)
-    root = os.path.abspath(a.project)
+    try:
+        root = projroot.require(a.project)
+    except projroot.NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+        return 64
     try:
         if a.action == "status":
             return status(root, a.json)

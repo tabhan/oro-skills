@@ -160,22 +160,30 @@ def baseline_key(project):
 
 
 
-def _default_project():
-    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+def _require_project(explicit):
+    """Validated Oro root, or None after printing why not."""
     lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "lib")
     if lib not in sys.path:
         sys.path.insert(0, lib)
     import projroot
-    return projroot.resolve()
+    root = None
+    try:
+        root = projroot.require(explicit)
+    except projroot.NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+    return root
+
 
 def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("plan", "gate", "record", "baseline-key"))
-    ap.add_argument("--project", default=_default_project())
+    ap.add_argument("--project")
     ap.add_argument("--target", choices=("local", "local-test"))
     ap.add_argument("--all", action="store_true")
     a = ap.parse_args(argv)
-    project = os.path.abspath(a.project)
+    project = _require_project(a.project)
+    if project is None:
+        return 64
     if a.cmd == "record":
         cur = compute(project)
         if cur is None:

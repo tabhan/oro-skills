@@ -15,10 +15,19 @@ from oroversion import Constraint, ConstraintError, detect, parse_version  # noq
 CLI = os.path.join(ROOT, "bin", "aaxis-oro")
 
 
+def make_console(d):
+    os.makedirs(os.path.join(d, "bin"), exist_ok=True)
+    open(os.path.join(d, "bin", "console"), "w").close()
+
+
 def project(fixture):
     d = tempfile.mkdtemp()
+    make_console(d)
     if fixture:
         shutil.copy(os.path.join(HERE, "fixtures", fixture + ".lock.json"), os.path.join(d, "composer.lock"))
+    else:
+        with open(os.path.join(d, "composer.lock"), "w") as fh:
+            fh.write('{"packages": []}')
     return d
 
 

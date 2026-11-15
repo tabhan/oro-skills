@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.4
+
+- Project root is detected from the fixed Oro application layout, not from where `.oro-ai/` exists. Root cause: 0.28.3 `lib/projroot.py` took the nearest ancestor holding `.oro-ai/config.json`, else the git toplevel, else the cwd, so a stray `.oro-ai/` under `src/` (or any non-Oro directory) could still become the root and receive `.oro-ai/local-env/`. The root is now the nearest ancestor holding `bin/console` and `composer.lock` (the pair atlas and the hooks already used; neither exists below the root, and git worktrees carry both, so each worktree is its own root). With no such ancestor, `aaxis-oro env|test|setup|task|review|version|memory|dev refresh` exit 64 with a clear message and create nothing; there is no cwd fallback. `--project` is kept and must itself be an Oro root.
+- One implementation for every entry point: `atlas`, the hooks, `version`, `review`, `task`, `memory`, `setup`, `env`, `test` and `dev refresh` all call `lib/projroot.py`. The SessionStart version hook now resolves the root (it used the raw cwd for its marker file), the legacy-cleanup hook uses the root for project settings, and the staged pre-commit review is a no-op outside an Oro checkout.
+
 ## 0.28.3
 
 - `.stylelintignore` is now the only exclusion list for every linter; the hook no longer builds exclusions from git-ignored and untracked paths. Root cause: the hook turned every ignored path into `--ignore-pattern "dir/**"`, and Oro's stylelint proxy (`oro-stylelint-proxy.mjs`) respawns stylelint with `shell:true` unescaped, so `/bin/sh` expanded the patterns into real directories and stylelint linted about 460k files (OOM). It also wrongly skipped the git-ignored `src/Aaxis/Bundle/AppBundle`. Stylelint now gets no ignore arguments (it reads `.stylelintignore` itself); ESLint gets the entries as quoted `--ignore-pattern` arguments; a negation or unsupported line fails loudly. `precommit.exclude` is retired (sync prints a note).

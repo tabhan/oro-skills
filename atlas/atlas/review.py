@@ -276,17 +276,22 @@ def render(root, found, notes, nfiles, verbose=False, limit=CONSOLE_CAP, clip=24
 
 
 
-def _default_project():
-    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+def _require_project(explicit):
     lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib")
     if lib not in sys.path:
         sys.path.insert(0, lib)
     import projroot
-    return projroot.resolve()
+    root = None
+    try:
+        root = projroot.require(explicit)
+    except projroot.NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+    return root
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="aaxis-oro review check", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--project", default=_default_project())
+    ap.add_argument("--project")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--staged", action="store_true", help="the staged diff (default)")
     g.add_argument("--range", metavar="A..B")
@@ -299,7 +304,9 @@ def main(argv=None):
         a = ap.parse_args(argv)
     except SystemExit as exc:
         return 64 if exc.code else 0
-    root = project_root(a.project)
+    root = _require_project(a.project)
+    if root is None:
+        return 64
     scope, arg = ("range", a.range) if a.range else ("files", a.files) if a.files else ("staged", None)
     found, notes, n = run(root, scope, arg, a.plan, a.message)
     code = 3

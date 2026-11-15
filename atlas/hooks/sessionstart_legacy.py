@@ -7,10 +7,14 @@ import sys
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "..", "lib"))
+
+import projroot  # noqa: E402
 from atlas import legacy  # noqa: E402
 
 def decide(payload):
-    legacy.cleanup_all(os.path.abspath(payload.get("cwd") or os.getcwd()))
+    cwd = os.path.abspath(payload.get("cwd") or os.getcwd())
+    legacy.cleanup_all(projroot.find(cwd) or cwd)
     return None
 
 

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 
 OUT_SUBDIR = os.path.join(".oro-ai", "atlas")
 # Index locations of earlier versions; atlas/migrate.py rebuilds into OUT_SUBDIR and then removes them.
@@ -47,21 +48,16 @@ class MissingShard(AtlasError):
 
 
 def find_project_root(start=None):
-    """Walk up from `start` until a dir holding composer.lock and bin/console."""
-    cur = os.path.abspath(start or os.getcwd())
-    found = None
-    while found is None:
-        if os.path.isfile(os.path.join(cur, "composer.lock")) and os.path.isfile(
-            os.path.join(cur, "bin", "console")
-        ):
-            found = cur
-        else:
-            parent = os.path.dirname(cur)
-            if parent == cur:
-                raise AtlasError(
-                    "no Oro project found (need composer.lock + bin/console); use --project"
-                )
-            cur = parent
+    """Nearest ancestor of `start` with the Oro application layout (see lib/projroot.py)."""
+    lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import projroot
+    found = projroot.find(start)
+    if found is None:
+        raise AtlasError(
+            "no Oro project found (need bin/console and composer.lock); use --project"
+        )
     return found
 
 

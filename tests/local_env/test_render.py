@@ -43,6 +43,8 @@ class RenderBase(unittest.TestCase):
         self.project = os.path.join(self.tmp, "proj")
         self.nginx = os.path.join(self.tmp, "nginx")
         os.makedirs(self.nginx)
+        write(os.path.join(self.project, "composer.lock"), "{}")
+        write(os.path.join(self.project, "bin", "console"), "")
         write(os.path.join(self.project, ".nvmrc"), "24\n")
         write(os.path.join(self.project, ".env-app"), ENV_APP)
         write(os.path.join(self.project, ".env-app.local"), ENV_LOCAL)

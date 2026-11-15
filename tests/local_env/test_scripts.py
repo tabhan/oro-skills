@@ -41,6 +41,8 @@ class Base(unittest.TestCase):
         shutil.copy(os.path.join(FIX, "env-ok.yml"), os.path.join(self.project, ".oro-ai", "local-env", "env.yml"))
         with open(os.path.join(self.project, "composer.lock"), "w") as fh:
             fh.write("{}")
+        os.makedirs(os.path.join(self.project, "bin"), exist_ok=True)
+        open(os.path.join(self.project, "bin", "console"), "w").close()
         self.stubdir = os.path.join(self.tmp, "stub")
         os.makedirs(self.stubdir)
         self.log = os.path.join(self.tmp, "stub.log")
@@ -309,7 +311,7 @@ class OroTest(Base):
         self.assertNotIn("phpunit", self.calls())
 
     def test_phpunit_runs_with_explicit_env_and_short_summary(self):
-        os.makedirs(os.path.join(self.project, "bin"))
+        os.makedirs(os.path.join(self.project, "bin"), exist_ok=True)
         stub = os.path.join(self.project, "bin", "phpunit")
         write(stub, "#!/usr/bin/env bash\necho \"ORO_ENV=$ORO_ENV\" >> \"$STUB_LOG\"\nseq 1 400\necho 'OK (3 tests, 5 assertions)'\n")
         os.chmod(stub, 0o755)
@@ -600,6 +602,9 @@ class Syntax(unittest.TestCase):
         proj = os.path.join(tmp, "p")
         logs = os.path.join(proj, ".oro-ai", "local-env", "logs")
         os.makedirs(logs)
+        os.makedirs(os.path.join(proj, "bin"))
+        write(os.path.join(proj, "bin", "console"), "")
+        write(os.path.join(proj, "composer.lock"), "{}")
         shutil.copy(os.path.join(FIX, "env-ok.yml"), os.path.join(proj, ".oro-ai", "local-env", "env.yml"))
         for i in range(15):
             write(os.path.join(logs, "workers-2020010100%02d00.log" % i), "")
@@ -633,7 +638,7 @@ class NodePhp(unittest.TestCase):
 
 class E2eConsumer(Base):
     def test_consumer_restarts_and_dies_with_the_run(self):
-        os.makedirs(os.path.join(self.project, "bin"))
+        os.makedirs(os.path.join(self.project, "bin"), exist_ok=True)
         marker = os.path.join(self.tmp, "consume.count")
         console = os.path.join(self.project, "bin", "console")
         write(console, """#!/usr/bin/env bash

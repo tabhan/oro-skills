@@ -32,6 +32,8 @@ class SetupTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.d = self.tmp.name
         subprocess.run(["git", "init", "-q", self.d], check=True)
+        self.put("composer.lock", "{}")
+        self.put("bin/console", "")
 
     def tearDown(self):
         self.tmp.cleanup()

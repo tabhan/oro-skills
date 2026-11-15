@@ -201,24 +201,31 @@ def init(root, key):
 
 
 
-def _default_project():
-    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+def _require_project(explicit):
     lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib")
     if lib not in sys.path:
         sys.path.insert(0, lib)
     import projroot
-    return projroot.resolve()
+    root = None
+    try:
+        root = projroot.require(explicit)
+    except projroot.NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+    return root
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="aaxis-oro task", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("action", choices=("init", "check"))
     ap.add_argument("key", nargs="?", help="ticket key; default: from the branch name")
-    ap.add_argument("--project", default=_default_project())
+    ap.add_argument("--project")
     try:
         a = ap.parse_args(argv)
     except SystemExit as exc:
         return 64 if exc.code else 0
-    root = git(a.project, "rev-parse", "--show-toplevel") or os.path.abspath(a.project)
+    root = _require_project(a.project)
+    if root is None:
+        return 64
     key = a.key or branch_key(root)
     if not key:
         sys.stderr.write("aaxis-oro task: no ticket key given or in the branch name\n")

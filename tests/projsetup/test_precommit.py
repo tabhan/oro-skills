@@ -70,9 +70,21 @@ class RepoCase(unittest.TestCase):
     def hook(self):
         return precommit.hook_path(self.d)
 
+    def oro_layout(self):
+        self.put("composer.lock", "{}")
+        self.put("bin/console", "")
+
+    def drop_console(self):
+        os.remove(os.path.join(self.d, "bin", "console"))
+
 
 class PrecommitTest(RepoCase):
+    def setUp(self):
+        super().setUp()
+        self.oro_layout()
+
     def test_ci_steps_in_tool_order_without_installs_or_sonar(self):
+        self.drop_console()
         self.put("bitbucket-pipelines.yml", BITBUCKET)
         st = precommit.steps(self.d)
         self.assertEqual([s[0] for s in st], ["phpcs", "phpunit", "eslint", "yamllint"])
@@ -80,6 +92,7 @@ class PrecommitTest(RepoCase):
         self.assertIn('--ignore-pattern "src/OroLab/**"', st[2][2])
 
     def test_github_run_lines_and_vendor_defaults(self):
+        self.drop_console()
         self.put(".github/workflows/ci.yml", WORKFLOW)
         self.put("vendor/bin/phpmd", "")
         self.put("phpmd.xml", "<x/>")
@@ -93,6 +106,7 @@ class PrecommitTest(RepoCase):
         self.assertEqual(st["yamllint"][3], ".yamllint")
 
     def test_package_scripts_need_config_and_skip_and_atlas_options(self):
+        self.drop_console()
         self.put("package.json", json.dumps({"scripts": {"eslint": "eslint", "stylelint": "stylelint"}}))
         self.put(".eslintrc.yml", "")
         self.assertEqual([s[0] for s in precommit.steps(self.d)], ["eslint"])
@@ -198,6 +212,8 @@ class HookRunBase(RepoCase):
         self.bin = os.path.join(self.d, ".stubs")
         self.log = os.path.join(self.d, ".stublog")
         os.makedirs(self.bin)
+        self.put("composer.lock", "{}")
+        self.put("bin/console", "")
         for tool in ("npm", "yamllint", "php"):
             self.stub(os.path.join(self.bin, tool))
 
@@ -302,6 +318,7 @@ class SchemaDriftTest(HookRunBase):
         run("sync", cwd=self.d)
 
     def test_step_added_for_oro_projects_with_console_and_opt_out_via_skip(self):
+        self.drop_console()
         self.assertNotIn("schema-drift", [s[0] for s in precommit.steps(self.d)])
         self.put("bin/console", "")
         self.assertIn("schema-drift", [s[0] for s in precommit.steps(self.d)])
@@ -523,34 +540,79 @@ class LintScriptTest(HookRunBase):
 
 
 class ProjectRootTest(RepoCase):
-    def test_subdirectory_resolves_to_the_config_root_then_git_toplevel_then_itself(self):
+    def setUp(self):
+        super().setUp()
+        self.oro_layout()
         sys.path.insert(0, os.path.join(ROOT, "lib"))
         import projroot
-        sub = os.path.join(self.d, "src", "B", "Tests")
-        os.makedirs(sub)
-        top = os.path.realpath(self.d)
-        self.assertEqual(os.path.realpath(projroot.resolve(sub)), top)
-        self.put(".oro-ai/config.json", "{}")
-        nested = self.put("src/B/.oro-ai/note", "x")
-        self.assertEqual(projroot.resolve(sub), self.d)
+        self.projroot = projroot
+        self.sub = os.path.join(self.d, "src", "B", "Bundle", "Tests")
+        os.makedirs(self.sub)
+        self.root = os.path.realpath(self.d)
+
+    def test_nested_cwd_resolves_to_the_application_root(self):
+        self.assertEqual(os.path.realpath(self.projroot.require(start=self.sub)), self.root)
+        self.assertEqual(os.path.realpath(self.projroot.find(self.sub)), self.root)
+
+    def test_stray_oro_ai_dir_under_src_is_never_the_root(self):
+        self.put("src/B/.oro-ai/config.json", "{}")
+        self.put("src/B/Bundle/Tests/.oro-ai/local-env/env.yml", "x: 1\n")
+        self.assertEqual(os.path.realpath(self.projroot.require(start=self.sub)), self.root)
+        self.assertEqual(os.path.realpath(self.projroot.find(os.path.join(self.d, "src", "B"))), self.root)
+
+    def test_git_worktree_is_a_root_of_its_own(self):
+        self.git_commit_all()
+        wt = os.path.join(self.tmp.name + "-wt")
+        self.addCleanup(shutil.rmtree, wt, True)
+        subprocess.run(["git", "-C", self.d, "worktree", "add", "-q", "-b", "wt-branch", wt], check=True, capture_output=True)
+        deep = os.path.join(wt, "src", "B", "Bundle", "Tests")
+        os.makedirs(deep, exist_ok=True)
+        self.assertEqual(os.path.realpath(self.projroot.require(start=deep)), os.path.realpath(wt))
+
+    def test_non_oro_directory_errors_and_creates_nothing(self):
         with tempfile.TemporaryDirectory() as plain:
-            self.assertEqual(projroot.resolve(plain), os.path.abspath(plain))
-        self.assertTrue(os.path.exists(nested))
+            with self.assertRaises(self.projroot.NotOroProject):
+                self.projroot.require(start=plain)
+            self.assertIsNone(self.projroot.find(plain))
+            for argv in (["env", "setup"], ["test", "local-test", "verify"], ["task", "check"], ["setup", "sync"],
+                         ["version"], ["memory", "inventory"], ["review", "check"], ["dev", "refresh"]):
+                p = subprocess.run([sys.executable, BIN] + argv, cwd=plain, capture_output=True, text=True,
+                                   env=dict(os.environ, HOME=plain, AAXIS_ORO_NO_TOOL_INSTALL="1"))
+                self.assertEqual(p.returncode, 64, (argv, p.stdout, p.stderr))
+                self.assertIn("no Oro project found", p.stdout + p.stderr)
+            self.assertEqual(os.listdir(plain), [])
+
+    def test_explicit_project_must_itself_be_a_root(self):
+        self.assertEqual(self.projroot.require(self.d), os.path.abspath(self.d))
+        with self.assertRaises(self.projroot.NotOroProject):
+            self.projroot.require(self.sub)
 
     def test_shell_scripts_and_setup_default_to_the_project_root(self):
-        sub = os.path.join(self.d, "src", "B", "Tests")
-        os.makedirs(sub)
         self.put(".oro-ai/config.json", "{}")
         common = os.path.join(ROOT, "scripts", "local-env", "lib", "common.sh")
-        p = subprocess.run(["bash", "-c", 'source "%s"; le_default_project' % common], cwd=sub, capture_output=True, text=True)
-        self.assertEqual(os.path.realpath(p.stdout.strip()), os.path.realpath(self.d))
+        p = subprocess.run(["bash", "-c", 'source "%s"; le_default_project' % common], cwd=self.sub, capture_output=True, text=True)
+        self.assertEqual(os.path.realpath(p.stdout.strip()), self.root)
         env = dict(os.environ, HOME=self.d, AAXIS_ORO_NO_TOOL_INSTALL="1")
-        p = subprocess.run([sys.executable, BIN, "setup", "sync", "--dry-run"], cwd=sub, capture_output=True, text=True, env=env)
+        p = subprocess.run([sys.executable, BIN, "setup", "sync", "--dry-run"], cwd=self.sub, capture_output=True, text=True, env=env)
         self.assertIn("CLAUDE_project.md", p.stdout)
-        self.assertFalse(os.path.exists(os.path.join(sub, ".oro-ai")))
+        self.assertFalse(os.path.exists(os.path.join(self.sub, ".oro-ai", "local-env")))
+
+    def test_env_setup_from_a_subdirectory_writes_only_under_the_root(self):
+        env = dict(os.environ, HOME=self.d, AAXIS_ORO_NO_TOOL_INSTALL="1")
+        subprocess.run([sys.executable, BIN, "env", "check"], cwd=self.sub, capture_output=True, text=True, env=env)
+        self.assertFalse(os.path.exists(os.path.join(self.sub, ".oro-ai")))
+        self.assertTrue(os.path.isdir(os.path.join(self.d, ".oro-ai", "local-env")))
+
+    def git_commit_all(self):
+        for args in (["add", "-A"], ["-c", "user.email=t@example.test", "-c", "user.name=t", "commit", "-qm", "init"]):
+            subprocess.run(["git", "-C", self.d, *args], check=True, capture_output=True)
 
 
 class OldHookInventoryTest(RepoCase):
+    def setUp(self):
+        super().setUp()
+        self.oro_layout()
+
     def test_sync_lists_old_hook_steps_that_have_no_managed_equivalent(self):
         self.put("bitbucket-pipelines.yml", BITBUCKET)
         subprocess.run(["git", "-C", self.d, "config", "core.hooksPath", ".githooks"], check=True)

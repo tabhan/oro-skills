@@ -21,6 +21,8 @@ def diff(*args):
 def lock(version):
     d = tempfile.mkdtemp()
     os.makedirs(os.path.join(d, ".oro-ai"))
+    os.makedirs(os.path.join(d, "bin"))
+    open(os.path.join(d, "bin", "console"), "w").close()
     write_lock(d, version)
     return d
 

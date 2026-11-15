@@ -8,6 +8,7 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
+import projroot  # noqa: E402
 from oroversion import detect, parse_version  # noqa: E402
 from oroversion import diff as D  # noqa: E402
 
@@ -26,7 +27,9 @@ def record(marker, version):
 
 
 def decide(payload, root=ROOT):
-    project = os.path.abspath(payload.get("cwd") or os.getcwd())
+    project = projroot.find(payload.get("cwd") or os.getcwd())
+    if project is None:
+        return None
     res = detect(project, write_cache=False)
     if not res.known:
         return None

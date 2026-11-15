@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "hooks"))
 
 import _decorates  # noqa: E402
+from .common import AtlasError  # noqa: E402
 
 EXTS = (".yml", ".yaml", ".xml", ".php")
 DIRS = ("src/", "config/")
@@ -33,7 +34,11 @@ def reasons(root):
 
 def main(argv=None):
     from . import review
-    root = git(os.getcwd(), "rev-parse", "--show-toplevel").strip() or os.getcwd()
+    from .common import find_project_root
+    try:
+        root = find_project_root(os.getcwd())
+    except AtlasError:
+        return 0  # not an Oro checkout: nothing to review
     found, notes, n = review.run(root, "staged")
     code = 0
     if found is not None:

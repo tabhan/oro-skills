@@ -233,24 +233,36 @@ def init(project, name=None):
 
 
 
-def _default_project():
-    """Project root from any subdirectory (nearest .oro-ai/config.json, else git toplevel), never the bare cwd."""
+def _require_project(explicit):
+    """Validated Oro root, or None after printing why not."""
     lib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "lib")
     if lib not in sys.path:
         sys.path.insert(0, lib)
     import projroot
-    return projroot.resolve()
+    root = None
+    try:
+        root = projroot.require(explicit)
+    except projroot.NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+    return root
+
 
 def main(argv):
     if not argv or argv[0] not in ("validate", "migrate", "get", "path", "init", "asks"):
         sys.stderr.write(__doc__)
         return 64
     cmd, rest = argv[0], argv[1:]
-    project = _default_project()
+    explicit = None
     if "--project" in rest:
         i = rest.index("--project")
-        project = rest[i + 1] if i + 1 < len(rest) else project
+        explicit = rest[i + 1] if i + 1 < len(rest) else None
         rest = rest[:i] + rest[i + 2:]
+    if cmd == "validate":
+        project = None
+    else:
+        project = _require_project(explicit)
+        if project is None:
+            return 64
     if cmd == "migrate":
         return migrate(project)
     if cmd == "path":

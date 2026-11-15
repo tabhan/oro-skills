@@ -8,6 +8,9 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib"))
+
+import projroot  # noqa: E402
 from atlas import cli, index, store  # noqa: E402
 from atlas.common import atlas_dir, new_atlas_dir  # noqa: E402
 
@@ -29,13 +32,7 @@ def log_decision(session_id, tool, file, verdict, **extra):
 
 def project_root(path):
     """Oro project containing `path`, or None."""
-    cur = os.path.abspath(path) if os.path.isdir(path) else os.path.dirname(os.path.abspath(path))
-    found = None
-    while found is None and cur != os.path.dirname(cur):
-        if os.path.isfile(os.path.join(cur, "composer.lock")) and os.path.isfile(os.path.join(cur, "bin", "console")):
-            found = cur
-        cur = os.path.dirname(cur)
-    return found
+    return projroot.find(path)
 
 
 STATE_DIR = os.path.expanduser("~/.claude/atlas-hook-state")

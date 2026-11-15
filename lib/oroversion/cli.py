@@ -53,14 +53,19 @@ def version_main(argv):
     if argv[:1] == ["applies"]:
         return applies_main(argv[1:])
     ap = argparse.ArgumentParser(prog="aaxis-oro version", description=VERSION_DOC)
-    ap.add_argument("--project", default=projroot.resolve())
+    ap.add_argument("--project")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-cache", action="store_true", help="ignore and do not write .oro-ai/version.json")
     try:
         args = ap.parse_args(argv)
     except SystemExit as exc:
         return 64 if exc.code else 0
-    r = detect(os.path.abspath(args.project), use_cache=not args.no_cache, write_cache=not args.no_cache)
+    try:
+        project = projroot.require(args.project)
+    except projroot.NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+        return 64
+    r = detect(project, use_cache=not args.no_cache, write_cache=not args.no_cache)
     if args.json:
         print(json.dumps(r.as_dict(), indent=2))
     elif r.known:
@@ -79,7 +84,7 @@ UNKNOWN_LINE = "Oro version unknown; only version-neutral rules are active, vers
 def applies_main(argv):
     ap = argparse.ArgumentParser(prog="aaxis-oro version applies", description=APPLIES_DOC, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("targets", nargs="*")
-    ap.add_argument("--project", default=projroot.resolve())
+    ap.add_argument("--project")
     ap.add_argument("--root", default=ROOT, help="where topics are searched (default: the plugin)")
     ap.add_argument("--list-active", metavar="DIR")
     ap.add_argument("--list-inactive", metavar="DIR")
@@ -95,7 +100,12 @@ def applies_main(argv):
     if sum(modes) != 1:
         sys.stderr.write("aaxis-oro version applies: give exactly one of <path-or-topic>..., --list-active, --list-inactive, --check\n")
         return 64
-    det = detect(os.path.abspath(a.project))
+    try:
+        project = projroot.require(a.project)
+    except projroot.NotOroProject as exc:
+        sys.stderr.write("aaxis-oro: %s\n" % exc)
+        return 64
+    det = detect(project)
     version = det.version
     unknown = version is None
     if unknown:

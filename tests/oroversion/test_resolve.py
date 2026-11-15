@@ -17,11 +17,16 @@ SKILL = os.path.join(HERE, "fixtures", "skill")
 REGISTRY = os.path.join(HERE, "fixtures", "checks.yml")
 
 
+def make_console(d):
+    os.makedirs(os.path.join(d, "bin"), exist_ok=True)
+    open(os.path.join(d, "bin", "console"), "w").close()
+
+
 def project(version):
     d = tempfile.mkdtemp()
-    if version:
-        with open(os.path.join(d, "composer.lock"), "w") as fh:
-            json.dump({"packages": [{"name": "oro/platform", "version": version}]}, fh)
+    make_console(d)
+    with open(os.path.join(d, "composer.lock"), "w") as fh:
+        json.dump({"packages": [{"name": "oro/platform", "version": version}] if version else []}, fh)
     return d
 
 
