@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Print the e2e worker count for this host: max(1, min(floor(cpus/4), floor((ram_gb-4)/3))).
 # Usage: workers.sh [--write] [--project P]   (--write stores it in env.yml unless workers_source is user)
 # Env overrides for tests: LE_CPUS, LE_RAM_GB. Exit: 0 ok, 64 usage.

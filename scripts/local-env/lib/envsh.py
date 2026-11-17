@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 """Shell bridge to env.yml for the local-env scripts.
 
   envsh.py shell --project P            print KEY='value' assignments (validated; exit 1 invalid, 3 guard violation)

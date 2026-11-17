@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Bring derived state (vendor, caches, schema, translations, routes dump, assets) up to date after a branch switch
 # or pull, for both stacks, running only the steps the changed inputs need. State: .oro-ai/local-env/refresh.json.
 # Usage: refresh.sh [--all] [--project P] [--dry-run]    (--all or no record: every step)

@@ -10,7 +10,7 @@ import re
 from .constraint import Constraint, ConstraintError, DEFAULT_RANGE, Version
 
 # With an unknown project version only version-neutral ranges (no upper bound, lower bound <= this) stay active.
-NEUTRAL_FLOOR = Version(7, 0, 0)
+NEUTRAL_FLOOR = Version(6, 1, 0)
 
 ACTIVE, INACTIVE = "active", "inactive"
 

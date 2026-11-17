@@ -1,5 +1,5 @@
 <?php
-// oro: ">=7.0.0"
+// oro: ">=6.1.0"
 // Usage: ORO_ENV=<env> php import-attachments.php <project-root> <dir containing attachments/>
 // Writes every file into the app's `attachments` Gaufrette filesystem (GridFS when configured) through
 // FileManager, skipping names already stored. Never touches public/media. Exit 1 when any file fails.

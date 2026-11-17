@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Team-facing name for the host switch; the implementation is `aaxis-oro env switch`.
 HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 if [ "${1:-}" = "--install" ]; then

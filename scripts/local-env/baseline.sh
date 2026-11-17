@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Build the test baseline (PG template + Mongo private baseline) from a fresh oro:install, or no-op when the
 # baseline_key (composer.lock + Migrations + data fixtures hash) is unchanged. Touches only oro_test* names.
 # Usage: baseline.sh [--refresh] [--project P] [--dry-run] [--verbose]   (a rebuild takes ~8 minutes)

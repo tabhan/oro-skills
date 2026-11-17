@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Repair drift found by check.sh. Items: params (config/parameters.yml is generated, so it is rewritten in place
 # without backup: Node paths from env.yml node_pin or .nvmrc via nvm, GridFS adapters; also strips Redis cache
 # DSNs from the test stack dotenv files, which are backed up to var/backups/oro-local-env/), vhost (create the

@@ -1,51 +1,51 @@
-# Hook-check registry read by `aaxis-oro version applies --check <id>`; a missing `oro` means ">=7.0.0".
+# Hook-check registry read by `aaxis-oro version applies --check <id>`; a missing `oro` means ">=6.1.0".
 checks:
   # Deny edits that add `decorates:` on a service others typehint (pretooluse_edit.py)
   - id: decorates-unsafe-target
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
     topic: decorates-unsafe-target
   # Deny extension-file edits while the atlas index is stale/missing or its build failed (pretooluse_edit.py)
   - id: atlas-index-fresh
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # Deny extension-file edits before any `atlas <sub>` query ran this session (pretooluse_edit.py)
   - id: atlas-query-first
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # `aaxis-oro review check`: cited atlas entries in a plan must exist
   - id: review-atlas-citations
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # No AppBundle/ path in the diff or commit (git-ignored spike bundle)
   - id: review-no-appbundle
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # No project-namespace `use` under src/Aaxis/ (Aaxis bundles are project-independent)
   - id: review-no-project-namespace
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # Direct disk I/O in touched src is a warning only
   - id: review-direct-io
     severity: warn
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # Added test skips/disables and removed assertions in test files (warning only)
   - id: review-test-weakening
     severity: warn
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # Setup project, ticket branch: staged extension-point change needs .oro-ai/task/<KEY>/architect-gate.md approved/skipped
   - id: review-ticket-gate
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # Setup project, ticket branch: STATUS.md and e2e feature/steps on the branch (warning only)
   - id: review-ticket-evidence
     severity: warn
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # Setup project, ticket branch with committed code: `git push` needs .oro-ai/task/<KEY>/review.md approved/skipped covering HEAD
   - id: review-ticket-push
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"
   # Same condition at Stop once the tree has no uncommitted code: block the main session's stop once per chain (stop.py)
   - id: review-ticket-stop
     severity: deny
-    oro: ">=7.0.0"
+    oro: ">=6.1.0"

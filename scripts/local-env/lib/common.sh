@@ -1,4 +1,4 @@
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Shared helpers for the local-env scripts (sourced, not executed).
 # Exit codes: 0 ok, 1 failure, 2 drift (check), 3 guard abort, 10 sudo needed, 64 usage.
 LE_LIB=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

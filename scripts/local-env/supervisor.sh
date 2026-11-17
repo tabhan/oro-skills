@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Process control for the host stack (nginx, fpm, ws, mc, optional mc_test) under supervisord. Every action needs
 # sudo, so by default this only prints the exact command (SUDO-NEEDED, exit 10) for the user to run or approve.
 # Usage: supervisor.sh status|start|stop|restart <program...> | reload-nginx   [--run]

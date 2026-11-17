@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Run phpunit, e2e or a console command against an EXPLICIT target after verifying what that target really
 # resolves to (db, search prefix, MQ vhost, Mongo dbs, session db) against env.yml. No default target.
 # Usage: aaxis-oro test [--project P] <local|local-test> <phpunit|e2e|console|verify> [args...]

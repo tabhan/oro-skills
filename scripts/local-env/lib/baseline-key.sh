@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Prints sha256(composer.lock + every Migrations/DataFixtures dir under src/ and vendor/, path+content). Usage: baseline-key.sh <project>
 cd "${1:?project}" || exit 64
 { sha256sum composer.lock | cut -d' ' -f1

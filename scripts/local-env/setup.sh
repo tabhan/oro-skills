@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Set up all gitignored local config for this clone: migrate/create env.yml, ask for the values that are never
 # defaulted (domains, certificates, project namespace), size e2e workers, render the managed files, set the Node and
 # GridFS keys in parameters.yml, scaffold the POC scratch bundle, and print the sudo steps (SUDO-NEEDED).

@@ -21,7 +21,7 @@ release's pre-releases (`8.0.0-beta1` satisfies `^8.0`, not `^7.0`); `<8.0.0` ex
 `>=8.0.0` does not match `8.0.0-beta1` (write `>=8.0.0-beta` to include it).
 
 In a markdown table cell the pipe must be escaped, so write OR as `^7.0 or ^8.0` (preferred) or `^7.0 \|\| ^8.0`. A unit with no `oro:` applies as
-`oro: ">=7.0.0"` (the default range; everything shipped today applies to all 7.x).
+`oro: ">=6.1.0"` (the default range; everything shipped today applies to 6.1 — the oldest supported LTS line — and all 7.x).
 
 ## Detection
 
@@ -60,8 +60,8 @@ aaxis-oro version applies --project P --check <id>           # hook-check gate: 
 ```
 
 Higher-version content is inactive on lower projects. Unknown version: only version-neutral content stays active
-(default range or unannotated, i.e. no upper bound and no lower bound above 7.0.0, such as `>=7.0.0`); everything
-version-specific (`v7/`, `v8/`, `<8`, `>=8.0.0`, `==7.0.5`) is inactive and listed, never applied. stderr says
+(default range or unannotated, i.e. no upper bound and no lower bound above 6.1.0, such as `>=6.1.0`); everything
+version-specific (`v7/`, `v8/`, `<8`, `>=7.0.0`, `>=8.0.0`, `==7.0.5`) is inactive and listed, never applied. stderr says
 "Oro version unknown; only version-neutral rules are active, version-specific rules are inactive (advisory)".
 `--check` follows the same rule: a version-neutral check runs, a version-specific one is `skip`, and every `deny`
 check (annotated or not) that runs is downgraded to `warn` (never block on unknown); exit stays 4. An unclosed, nested or stray `<!-- oro -->` marker prints a

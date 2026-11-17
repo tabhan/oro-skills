@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 """Render the gitignored local config from env/templates and env.yml.
 
   render.py check|diff|write --project P

@@ -5,7 +5,7 @@ right lever, the tempting wrong move, and the `aaxis-oro atlas` query that confi
 you write code. Run `aaxis-oro atlas` from the project root (it prints a STALE line if `composer.lock`
 changed; rebuild with `aaxis-oro atlas build`). Source file is cited per row.
 
-The `Oro` column holds a version range (blank = default `>=7.0.0`, see docs/VERSIONING.md); `Topic` groups same-topic variants.
+The `Oro` column holds a version range (blank = default `>=6.1.0`, see docs/VERSIONING.md); `Topic` groups same-topic variants.
 
 Rows already covered in SKILL.md (service override via interceptor, `getDefault*()`, entity-config
 seeding, jsonb, workflow data serialization, asset version, datagrid cache) are not repeated.

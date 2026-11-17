@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Render the gitignored local config (docker-compose.override.yml, .env-app.local merge, .env-app.behat_test.local,
 # .env-app.test.local, nginx server block and optional supervisor program staged under .oro-ai/local-env/rendered/)
 # from env/templates and env.yml. Replaced files are backed up to var/backups/oro-local-env/.

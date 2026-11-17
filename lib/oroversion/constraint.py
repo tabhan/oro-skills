@@ -6,7 +6,8 @@ A missing constraint means DEFAULT_RANGE.
 """
 import re
 
-DEFAULT_RANGE = ">=7.0.0"
+# 6.1 is the oldest supported LTS line; every unit audited for it (see docs/VERSIONING.md).
+DEFAULT_RANGE = ">=6.1.0"
 
 
 class ConstraintError(ValueError):

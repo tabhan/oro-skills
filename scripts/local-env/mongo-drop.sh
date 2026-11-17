@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Drop one test-stack Mongo database (name must start with oro_test_).
 # Usage: mongo-drop.sh <name> [--project P] [--dry-run]
 # Exit: 0 ok or already absent, 3 guard abort, 64 usage.

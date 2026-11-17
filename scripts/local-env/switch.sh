@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Switch the host to a project: /oroapp symlink, PHP (from composer.json require.php), Node (from .nvmrc, via nvm),
 # docker stack and the Node paths in config/parameters.yml. Same name and behaviour as the team tool, but Node and
 # PHP come from the project files instead of NODE_VERSION/PHP_VERSION in .env-app.local.

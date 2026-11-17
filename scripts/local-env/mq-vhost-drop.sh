@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Delete one test-stack RabbitMQ vhost (name must start with oro_test and equal local_test.mq_vhost).
 # Usage: mq-vhost-drop.sh <name> [--project P] [--dry-run]
 # Exit: 0 ok or already absent, 3 guard abort, 64 usage.

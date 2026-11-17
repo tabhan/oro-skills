@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Reset the local test stack to its baseline: PG clone from template, Mongo restore, ES indices, test session
 # Redis db, behat_test log, MQ queues, search reindex. Touches only oro_test* names; never the local data stack.
 # Usage: reset.sh [--skip-reindex] [--project P] [--dry-run] [--verbose]

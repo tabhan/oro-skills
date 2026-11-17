@@ -1,4 +1,4 @@
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Test-stack primitives shared by reset.sh, baseline.sh and the drop scripts. Requires common.sh + le_init.
 
 pg_exists() { le_ident "$1"; [ "$(pg -c "select 1 from pg_database where datname='$1'")" = 1 ]; }

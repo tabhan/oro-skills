@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Replace the LOCAL data db (local.db, never oro_test*) with the qa dump, clear the prod cache, then import
 # attachments. Destructive for local data, so it needs --yes.
 # Usage: restore-local.sh --yes [--dump <file-or-url>] [--attachments <file-or-url>] [--skip-attachments] [--project P] [--dry-run]

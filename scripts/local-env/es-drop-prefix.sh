@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Delete the Elasticsearch indices under a test prefix, by name.
 # Usage: es-drop-prefix.sh <prefix> [--project P] [--dry-run] [--verbose]
 # Exit: 0 ok or nothing to delete, 3 prefix/index outside local_test.es_prefix, 1 ES unreachable, 64 usage.

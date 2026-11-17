@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Import qa attachments (var/data archive or an extracted dir) into the app's attachments filesystem via Oro's
 # FileManager (GridFS when configured). Skips files already stored. Never touches public/media (it is a cache).
 # Usage: import-attachments.sh <archive.tgz|dir> [--env prod] [--project P] [--dry-run]

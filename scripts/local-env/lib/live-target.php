@@ -1,5 +1,5 @@
 <?php
-// oro: ">=7.0.0"
+// oro: ">=6.1.0"
 // Usage: ORO_ENV=<env> ORO_DEBUG=0 php live-target.php <project-root> <env>
 // Boots the kernel of <env> and prints what it really resolves to, one key=value per line: current_database
 // (live query) plus the resolved container parameters for search prefixes, MQ transport, GridFS and sessions.

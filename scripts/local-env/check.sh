@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oro: ">=7.0.0"
+# oro: ">=6.1.0"
 # Read-only drift check of the local and local-test environment against env.yml, .nvmrc and composer.json.
 # Prints drifted items only (--verbose: every item), then one summary line.
 # Usage: check.sh [--json] [--verbose] [--project P]

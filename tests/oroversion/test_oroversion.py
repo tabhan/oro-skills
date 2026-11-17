@@ -40,7 +40,7 @@ class ConstraintTest(unittest.TestCase):
             self.assertFalse(c.matches(v), "%s should not match %s" % (rng, v))
 
     def test_default_when_missing(self):
-        self.check(None, yes=["7.0.0", "8.1.2"], no=["6.1.9"])
+        self.check(None, yes=["6.1.0", "6.1.9", "7.0.0", "8.1.2"], no=["6.0.9", "5.1.0"])
 
     def test_patch_granularity(self):
         self.check(">=7.0.5", yes=["7.0.5", "7.0.6", "8.0.0"], no=["7.0.4"])

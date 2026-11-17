@@ -62,7 +62,7 @@ class ActiveSetTest(unittest.TestCase):
         self.assertEqual(files[os.path.join(SKILL, "references", "table.md")], [])
 
     def test_unknown_policy(self):
-        # only version-neutral content (no upper bound, lower bound <= 7.0.0) is active; v7/ and v8/ are both inactive.
+        # only version-neutral content (no upper bound, lower bound <= 6.1.0) is active; v7/ and v8/ are both inactive.
         files = rel(R.active_files(SKILL, None))
         self.assertNotIn("references/v8/workflow.md", files)
         self.assertNotIn("references/v7/workflow.md", files)
@@ -70,7 +70,7 @@ class ActiveSetTest(unittest.TestCase):
         self.assertIn("scripts/plain.sh", files)
 
     def test_unknown_neutrality(self):
-        for rng, active in ((">=7.0.0", True), ("^7.0 or >=8.0", False), (">=7.0.0 or >=9", True), (">=7.0.0 <8", False), ("<8", False),
+        for rng, active in ((">=6.1.0", True), (">=7.0.0", False), ("^7.0 or >=8.0", False), (">=6.1.0 or >=9", True), (">=6.1.0 <8", False), ("<8", False),
                             (">=8.0.0", False), ("==7.0.5", False), ("^7.0", False), (">=7.0.5", False), (">=6.0", True)):
             self.assertEqual(R.status(rng, None) == R.ACTIVE, active, rng)
 
