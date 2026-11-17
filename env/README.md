@@ -18,7 +18,9 @@ Machine-readable schema: `schema/env.schema.json`. Every script loads the file t
 | `qa_server` | `url`, `db_dump`, `attachments` (var/data archive only; public/media is cache, never synced) |
 | `local` | `domain`, `tls_cert`, `tls_key`, `db` (default `oro`) |
 | `local_test` | test stack: `domain`, `tls_cert`, `tls_key`, `db` (`oro_test`), `db_baseline`, `es_prefix`, `mq_vhost`, `redis_dbs`, `mongo_public`, `mongo_private`, `mongo_private_baseline`, `baseline_key`, `workers`, `workers_source` (`auto`/`user`), `admin` |
-| `services.mongo` | `port` (27017), `cache_gb` (0.5), `mem_limit` (2g) |
+| `services.mongo` | `enabled` (true; false = no Mongo/GridFS: no mongodb service, no `ORO_MONGODB_*` DSNs, file storage stays on local disk), `port` (27017), `cache_gb` (0.5), `mem_limit` (2g) |
+| `services.rabbitmq` | `image` (optional; overrides the image detected from `docker-compose.yml` when that one is custom or unrecognisable) |
+| `test_only` | `false`; `true` (set by `setup --test-only`) manages only the test stack: `.env-app.behat_test.local`, `.env-app.test.local` and nginx-test — `.env-app.local`, the compose override and `parameters.yml` are never touched |
 
 Rules enforced by `validate`: the test db and RabbitMQ vhost must start with `oro_test`, the baseline db and ES prefix with `oro_test_`,
 Mongo test names with `oro_test_` (the destructive scripts rely on this guard), and `local_test.db` differs from `local.db`.
@@ -70,7 +72,7 @@ Exit codes: 0 ok, 1 failure, 2 drift (`check.sh`), 3 guard abort, 10 sudo needed
 
 | Script | Purpose |
 |---|---|
-| `env setup [--set k=v]` (`setup.sh`) | migrate or create env.yml, ask for domains/certs/namespace (`ask:` lines, exit 64, rerun with `--set`), `workers --write`, render, `repair --only params` when `parameters.yml` exists, scaffold the POC bundle, print `SUDO-NEEDED` steps and `NEXT: docker compose up -d ...`; idempotent |
+| `env setup [--set k=v] [--test-only]` (`setup.sh`) | migrate or create env.yml, ask for domains/certs/namespace (`ask:` lines, exit 64, rerun with `--set`), `workers --write`, render, `repair --only params` when `parameters.yml` exists, scaffold the POC bundle, print `SUDO-NEEDED` steps and `NEXT: docker compose up -d ...`; idempotent. `--test-only` persists `test_only: true` and manages just the test stack (asks only `local_test.*`, no params repair) |
 | `env render [--check\|--diff]` (`render.sh`) | render the managed files from `env/templates/`; `--check`/`--diff`/`--dry-run` are read-only; replaced files are backed up to `var/backups/oro-local-env/` and appended to `.git/info/exclude` when not already ignored (`.gitignore` is never edited) |
 | `env check [--json]` (`check.sh`) | read-only drift report: Node (`.nvmrc` vs `parameters.yml` vs shell), PHP vs `composer.json`, Mongo port and cache flag, nginx/fpm, `/etc/hosts`, test DBs, vhost and the test MQ user's permissions on it, baseline key |
 | `repair.sh [--only params\|vhost\|hosts\|templates]` | fixes what check reports: `parameters.yml` keys, test vhost (created if missing, and the MQ user from the test stack `ORO_MQ_DSN` is always granted on it; `baseline` ensures the same before `oro:install`), sudo steps for `/etc/hosts`; dotenv files it edits are backed up to `var/backups/oro-local-env/` |

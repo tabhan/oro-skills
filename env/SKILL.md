@@ -18,6 +18,7 @@ env.yml (or the template, in oro-skills) and rerun. `check` detects drift by ren
 | Situation | Command |
 |---|---|
 | New clone, or first run of this plugin on a project | `aaxis-oro env setup` (asks for what it cannot default, see below) |
+| Project keeps its own dev env, only wants the e2e/test stack | `aaxis-oro env setup --test-only` (manages only the test dotenvs + nginx-test; never touches `.env-app.local`, the compose override or `parameters.yml`) |
 | Something feels off (ports, Node, PHP, vhost, baseline, config drift) | `aaxis-oro env check` (exit 2 = drift, lists items) |
 | What would setup/repair change? | `aaxis-oro env render --diff` (or `--check`); read-only |
 | check reported drift | `aaxis-oro env repair [--only params\|vhost\|hosts\|templates]` |

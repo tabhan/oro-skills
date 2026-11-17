@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.29.0
+
+- Oro 6.1 support: the default guidance range widens from `>=7.0.0` to `>=6.1.0` after a per-unit audit against a 6.1.5 enterprise project (no shipped skill/env/e2e content uses a 7.0-only API). The 23 script headers and 12 hook checks widen with it; `NEUTRAL_FLOOR` moves to 6.1.0, so `>=7.0.0` is now a version-specific range (inactive on unknown versions). The dialog-forms ESM code samples are topic-split: `^6.1` gets AMD variants (6.1 writes new JS modules as CommonJS/AMD; native ESM becomes the default in 7.0), with the 6.1 `widget-form-component` vendor source quoted verbatim.
+- bash 3.2 (macOS) compatibility for every shell script: `mapfile` → while-read, `${k^^}` → `tr`, `$EPOCHREALTIME` → `le_now()` with a whole-second fallback, and install.sh no longer aborts under `set -u` on an empty `git_auth_args`.
+- macOS support: CPU/RAM probing falls back to `sysctl`/`sysconf` when `/proc` is absent (workers.sh, render.py); `nginx_dir()` derives the include dir from `nginx -V --conf-path` when `/etc/nginx/conf.d` does not exist (homebrew `servers/`); install.sh legacy-symlink cleanup worked around BSD readlink having no `-m` (no legacy link was ever removed on macOS); repair.sh uses `perl -ni` instead of GNU-only `sed -i`.
+- RabbitMQ image detection: `services.rabbitmq.image` in env.yml wins; a plain `rabbitmq:<tag>` still gets the `-management` transform; a custom/tagless image containing `rabbitmq` (e.g. `heidiks/rabbitmq-delayed-message-exchange`) is kept verbatim instead of aborting the whole render.
+- `services.mongo.enabled: false` makes the Mongo/GridFS stack optional: no mongodb service, no `ORO_MONGODB_*` DSNs (an existing `ORO_MONGODB_SERVER` is removed from `.env-app.local`), gaufrette stays on local disk, mongo phases of check/repair/baseline/reset/mongo-drop become no-ops or guards.
+- `env setup --test-only` (persisted as `test_only: true` in env.yml): manages only `.env-app.behat_test.local`, `.env-app.test.local` and nginx-test for projects that keep their own dev environment; asks only `local_test.*`, skips the params repair, and check/repair skip the unmanaged items.
+
 ## 0.28.5
 
 - Every project-scoped entry point is now root-gated. Root cause: 0.28.4 gated `env|test|setup|task|review|version|memory|dev refresh` but `atlas` still resolved its root through `find_project_root` (outside a root it exited 1, and an explicit `--project` was never checked, so a non-root directory got a MISSING-filled status with exit 0/2), and `spec coverage|report` took `--root` (default `.`) without any check.
