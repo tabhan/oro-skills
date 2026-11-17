@@ -1,5 +1,10 @@
 # Merged into .env-app.local: KEY=value lines are enforced in place, !KEY lines are removed, every other line is kept.
 PROJECT_NAME={{project}}
+{{#if mongo_on}}
 ORO_MONGODB_SERVER=mongodb://127.0.0.1:{{services.mongo.port}}
+{{/if}}
+{{#if mongo_off}}
+!ORO_MONGODB_SERVER
+{{/if}}
 !NODE_VERSION
 !COMPOSE_PROFILES

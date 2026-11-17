@@ -26,11 +26,16 @@ if [ -f "$PROJECT/.nvmrc" ] || [ -n "$NODE_PIN" ]; then
     fi
 else bad node ".nvmrc missing"; fi
 
-# parameters.yml is generated: GridFS adapters per topology, and no Redis app-cache DSNs in the test stack's dotenv
+# parameters.yml is generated: GridFS adapters per topology (local disk when mongo is disabled),
+# and no Redis app-cache DSNs in the test stack's dotenv
 for k in public private; do
     got=$(python3 "$LE_LIB/nodephp.py" get-param "$PROJECT/config/parameters.yml" "gaufrette_adapter.$k" 2>/dev/null)
     K=$(printf '%s' "$k" | tr '[:lower:]' '[:upper:]')
-    if [ "$got" = "gridfs:%env(ORO_MONGODB_DSN_${K})%" ]; then ok "gaufrette-$k"; else bad "gaufrette-$k" "parameters.yml gaufrette_adapter.$k is '${got:-unset}', expected the GridFS adapter (repair.sh --only params)"; fi
+    if [ "$MONGO_ENABLED" = 1 ]; then
+        if [ "$got" = "gridfs:%env(ORO_MONGODB_DSN_${K})%" ]; then ok "gaufrette-$k"; else bad "gaufrette-$k" "parameters.yml gaufrette_adapter.$k is '${got:-unset}', expected the GridFS adapter (repair.sh --only params)"; fi
+    else
+        case $got in gridfs:*) bad "gaufrette-$k" "mongo is disabled (services.mongo.enabled) but gaufrette_adapter.$k is still '$got'; restore the local adapter in parameters.yml" ;; *) ok "gaufrette-$k" "${got:-local}" ;; esac
+    fi
 done
 shadow=$(media_shadow_files | wc -l)
 if [ "$shadow" -gt 0 ]; then bad media-shadow "$shadow stale file(s) in public/media/js shadow the gridfs-served routes/translation dump (repair.sh --only media)"; else ok media-shadow; fi
@@ -49,10 +54,12 @@ else
 fi
 
 # services
-if docker inspect "$(cname mongodb)" >/dev/null 2>&1; then
-    if docker port "$(cname mongodb)" 27017/tcp 2>/dev/null | grep -q ":$MONGO_PORT\$"; then ok mongo-port "$MONGO_PORT"; else bad mongo-port "mongodb is not published on fixed host port $MONGO_PORT"; fi
-    if docker inspect -f '{{join .Config.Cmd " "}}' "$(cname mongodb)" 2>/dev/null | grep -Eq -- "--wiredTigerCacheSizeGB[ =]$MONGO_CACHE"; then ok mongo-cache "$MONGO_CACHE"; else bad mongo-cache "mongod lacks --wiredTigerCacheSizeGB $MONGO_CACHE"; fi
-else bad mongo-port "mongodb container $(cname mongodb) not running"; fi
+if [ "$MONGO_ENABLED" = 1 ]; then
+    if docker inspect "$(cname mongodb)" >/dev/null 2>&1; then
+        if docker port "$(cname mongodb)" 27017/tcp 2>/dev/null | grep -q ":$MONGO_PORT\$"; then ok mongo-port "$MONGO_PORT"; else bad mongo-port "mongodb is not published on fixed host port $MONGO_PORT"; fi
+        if docker inspect -f '{{join .Config.Cmd " "}}' "$(cname mongodb)" 2>/dev/null | grep -Eq -- "--wiredTigerCacheSizeGB[ =]$MONGO_CACHE"; then ok mongo-cache "$MONGO_CACHE"; else bad mongo-cache "mongod lacks --wiredTigerCacheSizeGB $MONGO_CACHE"; fi
+    else bad mongo-port "mongodb container $(cname mongodb) not running"; fi
+fi
 if pgrep -x nginx >/dev/null && pgrep -f php-fpm >/dev/null; then ok web "nginx+fpm running"; else bad web "nginx or php-fpm not running"; fi
 for d in "$LOCAL_DOMAIN" "$TEST_DOMAIN"; do
     [ -n "$d" ] || { bad hosts "domain not set in env.yml (setup asks)"; continue; }
@@ -71,7 +78,9 @@ if vhost_exists "$MQ_VHOST"; then
     elif mq_user_has_access "$MQ_VHOST" "$mqu"; then ok mq-vhost-access "$mqu"
     else bad mq-vhost-access "user '$mqu' lacks configure/write/read on vhost $MQ_VHOST (repair.sh --only vhost)"; fi
 else bad mq-vhost "vhost $MQ_VHOST missing"; fi
-if dx mongodb mongosh --quiet --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d=>print(d.name))' 2>/dev/null | grep -qx "$MONGO_BASE"; then ok mongo-baseline "$MONGO_BASE"; else bad mongo-baseline "mongo db $MONGO_BASE missing"; fi
+if [ "$MONGO_ENABLED" = 1 ]; then
+    if dx mongodb mongosh --quiet --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d=>print(d.name))' 2>/dev/null | grep -qx "$MONGO_BASE"; then ok mongo-baseline "$MONGO_BASE"; else bad mongo-baseline "mongo db $MONGO_BASE missing"; fi
+fi
 [ "$(dx redis redis-cli -n "$SESSION_DB" ping 2>/dev/null)" = PONG ] && ok redis "db $SESSION_DB" || bad redis "redis db $SESSION_DB unreachable"
 key=$("$LE_LIB/baseline-key.sh" "$PROJECT" 2>/dev/null)
 if [ -z "$BASELINE_KEY" ]; then bad baseline-key "no baseline built yet (baseline.sh)"

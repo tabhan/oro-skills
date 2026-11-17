@@ -23,7 +23,8 @@ MAP = (
     ("WORKERS", "local_test.workers"), ("WORKERS_SOURCE", "local_test.workers_source"),
     ("ADMIN_LANG", "local_test.admin.language"), ("ADMIN_FIRST", "local_test.admin.first"),
     ("ADMIN_LAST", "local_test.admin.last"),
-    ("NODE_PIN", "node_pin"), ("MONGO_PORT", "services.mongo.port"), ("MONGO_CACHE", "services.mongo.cache_gb"), ("MONGO_MEM", "services.mongo.mem_limit"),
+    ("NODE_PIN", "node_pin"), ("MONGO_ENABLED", "services.mongo.enabled"), ("MONGO_PORT", "services.mongo.port"),
+    ("MONGO_CACHE", "services.mongo.cache_gb"), ("MONGO_MEM", "services.mongo.mem_limit"),
 )
 
 
@@ -70,6 +71,8 @@ def main(argv):
         return 3 if guard else 1
     for name, key in MAP:
         value = env.lookup(data, key)
+        if isinstance(value, bool):
+            value = "1" if value else "0"
         print("%s=%s" % (name, shlex.quote("" if value is None else str(value))))
     session = (data["local_test"].get("session_redis_db"))
     if session is None:

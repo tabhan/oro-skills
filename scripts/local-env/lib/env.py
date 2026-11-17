@@ -38,7 +38,7 @@ DEFAULTS = {
         "mongo_private_baseline": "oro_test_private_baseline", "workers_source": "auto",
         "admin": {"first": "John", "last": "Doe", "language": "en_US"},
     },
-    "services": {"mongo": {"port": 27017, "cache_gb": 0.5, "mem_limit": "2g"}},
+    "services": {"mongo": {"enabled": True, "port": 27017, "cache_gb": 0.5, "mem_limit": "2g"}},
 }
 ASKS = ("local.domain", "local.tls_cert", "local.tls_key", "local_test.domain", "local_test.tls_cert",
         "local_test.tls_key", "project_namespace")

@@ -11,7 +11,7 @@ phase() { local n=$1; shift; "$@" || fail "$n (log: $LOG)"; lap "$n"; }
 
 pg_exists "$TEST_BASE" || fail "baseline $TEST_BASE missing; run baseline.sh"
 phase pg-clone pg_clone "$TEST_BASE" "$TEST_DB"
-phase mongo-restore mongo_copy "$MONGO_BASE" "$MONGO_PRIV"
+[ "$MONGO_ENABLED" != 1 ] || phase mongo-restore mongo_copy "$MONGO_BASE" "$MONGO_PRIV"
 phase es-drop es_drop_prefix "$ES_PREFIX"
 phase redis-session redis_flush_session
 truncate_test_log

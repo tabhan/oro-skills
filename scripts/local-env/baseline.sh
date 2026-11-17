@@ -8,7 +8,8 @@ source "$(dirname "$0")/lib/common.sh"; source "$LE_LIB/stack.sh"
 le_init baseline "$@"
 REFRESH=0; [[ " ${ARGS[*]:-} " == *" --refresh "* ]] && REFRESH=1
 key=$("$LE_LIB/baseline-key.sh" "$PROJECT") || fail "baseline key"
-if [ "$REFRESH" = 0 ] && [ "$key" = "$BASELINE_KEY" ] && pg_exists "$TEST_BASE" && mongo_list | grep -qx "$MONGO_BASE"; then
+mongo_baseline_ok() { [ "$MONGO_ENABLED" != 1 ] || mongo_list | grep -qx "$MONGO_BASE"; }
+if [ "$REFRESH" = 0 ] && [ "$key" = "$BASELINE_KEY" ] && pg_exists "$TEST_BASE" && mongo_baseline_ok; then
     say "baseline: up to date (${key:0:12})"; exit 0
 fi
 [ -f "$PROJECT/.env-app.behat_test.local" ] || [ "$DRY" = 1 ] || fail ".env-app.behat_test.local missing; run setup first"
@@ -20,7 +21,7 @@ pg_drop "$TEST_BASE" && pg_drop "$TEST_DB" || fail "pg drop"
 mut "create $TEST_DB" pg -c "CREATE DATABASE \"$TEST_DB\"" || fail "create db"
 mut "uuid-ossp in $TEST_DB" dx pgsql psql -U postgres -d "$TEST_DB" -qc 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"' || fail "extension"
 es_drop_prefix "$ES_PREFIX"; redis_flush_session; mq_ensure_vhost; mq_purge
-for m in "$MONGO_PUB" "$MONGO_PRIV" "$MONGO_BASE"; do mongo_drop "$m" || fail "mongo drop $m"; done
+if [ "$MONGO_ENABLED" = 1 ]; then for m in "$MONGO_PUB" "$MONGO_PRIV" "$MONGO_BASE"; do mongo_drop "$m" || fail "mongo drop $m"; done; fi
 lap prepare
 mut "oro:install --env=behat_test (slow)" console oro:install --env=behat_test --no-interaction --timeout=3000 \
     --language="$ADMIN_LANG" --formatting-code="$ADMIN_LANG" --organization-name="$org" \
@@ -29,7 +30,7 @@ mut "oro:install --env=behat_test (slow)" console oro:install --env=behat_test -
 lap install
 mut "close $TEST_DB sessions" pg -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$TEST_DB' AND pid<>pg_backend_pid()"
 mut "pg template $TEST_BASE" pg -c "CREATE DATABASE \"$TEST_BASE\" TEMPLATE \"$TEST_DB\"" || fail "template clone"
-mongo_copy "$MONGO_PRIV" "$MONGO_BASE" || fail "mongo baseline"
+[ "$MONGO_ENABLED" != 1 ] || mongo_copy "$MONGO_PRIV" "$MONGO_BASE" || fail "mongo baseline"
 [ "$DRY" = 1 ] || python3 "$LE_LIB/envsh.py" set --project "$PROJECT" local_test.baseline_key "$key" || fail "env.yml write"
 lap snapshot
 total "baseline ok"

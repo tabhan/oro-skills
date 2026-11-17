@@ -192,15 +192,17 @@ def items(project, data):
     flat = lambda target: context(project, data, target)  # noqa: E731
     p = lambda rel: os.path.join(project, rel)  # noqa: E731
     tmpl = lambda name: read(os.path.join(TEMPLATES, name))  # noqa: E731
+    mongo_on = bool(env.lookup(data, "services.mongo.enabled"))
+    flags = lambda extra=None: {"mongo_on": mongo_on, "mongo_off": not mongo_on, **(extra or {})}  # noqa: E731
     out = [("compose", "file", p("docker-compose.override.yml"),
-            expand(tmpl("docker-compose.override.yml.tmpl"), data, flat("local"), {}), None)]
-    merged = merge_dotenv(read(p(".env-app.local")), expand(tmpl("env-app.local.tmpl"), data, flat("local"), {}))
+            expand(tmpl("docker-compose.override.yml.tmpl"), data, flat("local"), flags()), None)]
+    merged = merge_dotenv(read(p(".env-app.local")), expand(tmpl("env-app.local.tmpl"), data, flat("local"), flags()))
     out.append(("env-local", "file", p(".env-app.local"), merged, None))
     for target in ("behat_test", "test"):
         out.append(("env-" + target, "file", p(".env-app.%s.local" % target),
-                    expand(tmpl("env-app.test-stack.local.tmpl"), data, flat(target), {target: True}), None))
+                    expand(tmpl("env-app.test-stack.local.tmpl"), data, flat(target), flags({target: True})), None))
     domain = data["local_test"].get("domain")
-    nginx = expand(tmpl("nginx-test.conf.tmpl"), data, flat("local"), {})
+    nginx = expand(tmpl("nginx-test.conf.tmpl"), data, flat("local"), flags())
     out.append(("nginx", "sudo", p(os.path.join(STAGE, "nginx-test.conf")), nginx,
                 (os.path.join(nginx_dir(), "%s.conf" % domain), "sudo nginx -t && sudo supervisorctl signal HUP nginx")))
     if data["local_test"].get("supervisor_consumer"):

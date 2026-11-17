@@ -7,5 +7,6 @@ source "$(dirname "$0")/lib/common.sh"; source "$LE_LIB/stack.sh"
 le_init mongo-drop "$@"
 LE_USAGE="mongo-drop.sh <name>"
 [ ${#ARGS[@]} -eq 1 ] || usage_exit
+[ "$MONGO_ENABLED" = 1 ] || { say "mongo: disabled (services.mongo.enabled); nothing to drop"; exit 0; }
 le_guard oro_test_ "${ARGS[0]}"
 if mongo_list | grep -qx "${ARGS[0]}"; then mongo_drop "${ARGS[0]}" && say "mongo: dropped ${ARGS[0]}" || fail "mongo drop ${ARGS[0]}"; else say "mongo: nothing to drop (${ARGS[0]} absent)"; fi

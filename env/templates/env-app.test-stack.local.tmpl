@@ -13,8 +13,10 @@ ORO_DB_URL=postgres://{{pg_user}}:{{pg_password}}@127.0.0.1:5432/{{local_test.db
 ORO_DB_DSN=postgres://{{pg_user}}:{{pg_password}}@127.0.0.1:5432/{{local_test.db}}?sslmode=disable&charset=utf8&serverVersion={{pg_server_version}}
 ORO_SEARCH_ENGINE_DSN={{search_url}}?prefix={{local_test.es_prefix}}search
 ORO_WEBSITE_SEARCH_ENGINE_DSN={{search_url}}?prefix={{local_test.es_prefix}}website_search
+{{#if mongo_on}}
 ORO_MONGODB_DSN_PUBLIC=mongodb://127.0.0.1:{{services.mongo.port}}/{{local_test.mongo_public}}
 ORO_MONGODB_DSN_PRIVATE=mongodb://127.0.0.1:{{services.mongo.port}}/{{local_test.mongo_private}}
+{{/if}}
 E2E_WORKERS={{workers}}
 {{#if test}}
 ORO_ADMIN_USERNAME=admin

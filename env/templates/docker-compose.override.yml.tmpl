@@ -37,12 +37,14 @@ services:
             - '1025:1025'
             - '1080:1080'
         restart: on-failure
+{{#if mongo_on}}
     # Fixed host port (the dotenv files point at it) and a capped WiredTiger cache so mongod cannot OOM the host.
     mongodb:
         command: ['--wiredTigerCacheSizeGB', '{{services.mongo.cache_gb}}']
         mem_limit: {{services.mongo.mem_limit}}
         ports: !override
             - '{{services.mongo.port}}:27017'
+{{/if}}
     gotenberg:
         ports:
             - '3000:3000'

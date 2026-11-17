@@ -28,11 +28,15 @@ if want_item params; then
         [ -n "$want" ] && [ "$want" != "N/A" ] || fail "params: node version did not resolve"
         bindir=${NVM_DIR:-$HOME/.nvm}/versions/node/$want/bin
         mut "set node paths -> $bindir" python3 "$LE_LIB/nodephp.py" set-node "$PROJECT/config/parameters.yml" "$bindir" || fail "parameters.yml rewrite"
-        for k in public private; do
-            K=$(printf '%s' "$k" | tr '[:lower:]' '[:upper:]')
-            mut "gaufrette_adapter.$k" python3 "$LE_LIB/nodephp.py" set-param "$PROJECT/config/parameters.yml" "gaufrette_adapter.$k" "'gridfs:%env(ORO_MONGODB_DSN_${K})%'" || fail "parameters.yml rewrite"
-        done
-        [ "$DRY" = 1 ] || say "params: parameters.yml node paths -> $want, GridFS adapters set"
+        if [ "$MONGO_ENABLED" = 1 ]; then
+            for k in public private; do
+                K=$(printf '%s' "$k" | tr '[:lower:]' '[:upper:]')
+                mut "gaufrette_adapter.$k" python3 "$LE_LIB/nodephp.py" set-param "$PROJECT/config/parameters.yml" "gaufrette_adapter.$k" "'gridfs:%env(ORO_MONGODB_DSN_${K})%'" || fail "parameters.yml rewrite"
+            done
+            [ "$DRY" = 1 ] || say "params: parameters.yml node paths -> $want, GridFS adapters set"
+        else
+            [ "$DRY" = 1 ] || say "params: parameters.yml node paths -> $want (mongo disabled: gaufrette adapters left on local disk)"
+        fi
     fi
     for f in .env-app.test.local .env-app.behat_test.local; do
         if grep -qE '^ORO_REDIS_(CACHE|DOCTRINE|LAYOUT)_DSN=' "$PROJECT/$f" 2>/dev/null; then
