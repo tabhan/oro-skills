@@ -16,7 +16,9 @@ case $ONLY in ""|params|vhost|hosts|templates|media) ;; *) LE_USAGE="repair.sh [
 want_item() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 backup() { local dst=$PROJECT/var/backups/oro-local-env; mut "backup $1" bash -c 'mkdir -p "$1" && cp -p "$2" "$1/$(basename "$2").$(date +%Y%m%d-%H%M%S)"' _ "$dst" "$1"; }
 
-if want_item params; then
+if want_item params && [ "$TEST_ONLY" = 1 ]; then
+    say "params: skipped (test-only: parameters.yml is not managed)"
+elif want_item params; then
     want=$(nvm_version)
     if [ -z "$want" ] || [ "$want" = "N/A" ]; then
         pin=${NODE_PIN:-$(tr -d ' \n' < "$PROJECT/.nvmrc" 2>/dev/null)}
@@ -60,7 +62,8 @@ if want_item media; then
 fi
 want_item vhost && mq_ensure_vhost
 if want_item hosts; then
-    for d in "$LOCAL_DOMAIN" "$TEST_DOMAIN"; do
+    domains=("$LOCAL_DOMAIN" "$TEST_DOMAIN"); [ "$TEST_ONLY" = 1 ] && domains=("$TEST_DOMAIN")
+    for d in "${domains[@]}"; do
         [ -n "$d" ] && ! grep -Eq "(^|[[:space:]])$d([[:space:]]|\$)" /etc/hosts && sudo_needed "echo '127.0.0.1 $d' | sudo tee -a /etc/hosts"
     done
 fi

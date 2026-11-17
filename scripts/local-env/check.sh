@@ -17,18 +17,24 @@ if [ -f "$PROJECT/.nvmrc" ] || [ -n "$NODE_PIN" ]; then
     if [ "$want" = "N/A" ]; then bad node ".nvmrc $(cat "$PROJECT/.nvmrc") not installed in nvm"
     else
         shellv=$(node -v 2>/dev/null)
-        paths=(); while IFS= read -r p; do paths+=("$p"); done < <(python3 "$LE_LIB/nodephp.py" node-paths "$PROJECT/config/parameters.yml" 2>/dev/null)
-        wrong=""
-        for p in "${paths[@]:-}"; do case $p in *"/$want/bin/"*) ;; *) wrong=1 ;; esac; done
-        if [ -n "$wrong" ] || [ ${#paths[@]} -ne 3 ] || [ -z "${paths[0]}" ] || [ -z "${paths[1]}" ] || [ -z "${paths[2]}" ]; then bad node "parameters.yml oro_asset node/npm/pnpm paths are not all under $want (repair.sh --only node)"
-        elif [ "$shellv" != "$want" ]; then bad node "shell node is ${shellv:-missing}, .nvmrc resolves to $want"
-        else ok node "$want"; fi
+        if [ "$TEST_ONLY" = 1 ]; then
+            # test-only: parameters.yml is not managed, only the shell node matters
+            if [ "$shellv" != "$want" ]; then bad node "shell node is ${shellv:-missing}, .nvmrc resolves to $want"; else ok node "$want"; fi
+        else
+            paths=(); while IFS= read -r p; do paths+=("$p"); done < <(python3 "$LE_LIB/nodephp.py" node-paths "$PROJECT/config/parameters.yml" 2>/dev/null)
+            wrong=""
+            for p in "${paths[@]:-}"; do case $p in *"/$want/bin/"*) ;; *) wrong=1 ;; esac; done
+            if [ -n "$wrong" ] || [ ${#paths[@]} -ne 3 ] || [ -z "${paths[0]}" ] || [ -z "${paths[1]}" ] || [ -z "${paths[2]}" ]; then bad node "parameters.yml oro_asset node/npm/pnpm paths are not all under $want (repair.sh --only node)"
+            elif [ "$shellv" != "$want" ]; then bad node "shell node is ${shellv:-missing}, .nvmrc resolves to $want"
+            else ok node "$want"; fi
+        fi
     fi
 else bad node ".nvmrc missing"; fi
 
 # parameters.yml is generated: GridFS adapters per topology (local disk when mongo is disabled),
 # and no Redis app-cache DSNs in the test stack's dotenv
 for k in public private; do
+    [ "$TEST_ONLY" = 1 ] && break   # test-only: parameters.yml is not managed
     got=$(python3 "$LE_LIB/nodephp.py" get-param "$PROJECT/config/parameters.yml" "gaufrette_adapter.$k" 2>/dev/null)
     K=$(printf '%s' "$k" | tr '[:lower:]' '[:upper:]')
     if [ "$MONGO_ENABLED" = 1 ]; then
@@ -61,7 +67,8 @@ if [ "$MONGO_ENABLED" = 1 ]; then
     else bad mongo-port "mongodb container $(cname mongodb) not running"; fi
 fi
 if pgrep -x nginx >/dev/null && pgrep -f php-fpm >/dev/null; then ok web "nginx+fpm running"; else bad web "nginx or php-fpm not running"; fi
-for d in "$LOCAL_DOMAIN" "$TEST_DOMAIN"; do
+domains=("$LOCAL_DOMAIN" "$TEST_DOMAIN"); [ "$TEST_ONLY" = 1 ] && domains=("$TEST_DOMAIN")
+for d in "${domains[@]}"; do
     [ -n "$d" ] || { bad hosts "domain not set in env.yml (setup asks)"; continue; }
     if grep -Eq "(^|[[:space:]])$d([[:space:]]|\$)" /etc/hosts; then ok hosts "$d"; else bad hosts "$d missing from /etc/hosts (sudo)"; fi
 done

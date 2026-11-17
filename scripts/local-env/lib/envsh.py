@@ -24,7 +24,7 @@ MAP = (
     ("ADMIN_LANG", "local_test.admin.language"), ("ADMIN_FIRST", "local_test.admin.first"),
     ("ADMIN_LAST", "local_test.admin.last"),
     ("NODE_PIN", "node_pin"), ("MONGO_ENABLED", "services.mongo.enabled"), ("MONGO_PORT", "services.mongo.port"),
-    ("MONGO_CACHE", "services.mongo.cache_gb"), ("MONGO_MEM", "services.mongo.mem_limit"),
+    ("MONGO_CACHE", "services.mongo.cache_gb"), ("MONGO_MEM", "services.mongo.mem_limit"), ("TEST_ONLY", "test_only"),
 )
 
 

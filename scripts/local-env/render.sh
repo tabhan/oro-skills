@@ -8,25 +8,26 @@
 # Exit: 0 clean or applied, 1 error (unset value named), 2 drift (--check), 10 sudo steps printed, 64 usage.
 source "$(dirname "$0")/lib/common.sh"
 le_init render "$@"
-mode=write
+mode=write TEST_ONLY=()
 for a in "${ARGS[@]:-}"; do
     case $a in
         --check) mode=check ;;
         --diff) mode=diff ;;
+        --test-only) TEST_ONLY=(--test-only) ;;
         "") ;;
-        *) LE_USAGE="render.sh [--check|--diff|--dry-run]"; usage_exit ;;
+        *) LE_USAGE="render.sh [--check|--diff|--dry-run] [--test-only]"; usage_exit ;;
     esac
 done
 [ "$DRY" = 1 ] && [ "$mode" = write ] && mode=check
 if [ "$mode" != write ]; then
-    out=$(python3 "$LE_LIB/render.py" "$mode" --project "$PROJECT" 2>&1); rc=$?
+    out=$(python3 "$LE_LIB/render.py" "$mode" --project "$PROJECT" ${TEST_ONLY[@]+"${TEST_ONLY[@]}"} 2>&1); rc=$?
     printf '%s\n' "$out" >> "$LOG"
     [ -z "$out" ] || { [ "$DRY" = 1 ] && printf '%s\n' "$out" | sed 's/^/would: /' || printf '%s\n' "$out"; }
     [ "$mode" = diff ] && exit "$rc"
     [ "$rc" -ne 1 ] || exit 1
     exit "$rc"
 fi
-out=$(python3 "$LE_LIB/render.py" write --project "$PROJECT" 2>&1) || { printf '%s\n' "$out" | head -5; printf '%s\n' "$out" >> "$LOG"; exit 1; }
+out=$(python3 "$LE_LIB/render.py" write --project "$PROJECT" ${TEST_ONLY[@]+"${TEST_ONLY[@]}"} 2>&1) || { printf '%s\n' "$out" | head -5; printf '%s\n' "$out" >> "$LOG"; exit 1; }
 printf '%s\n' "$out" >> "$LOG"
 while IFS= read -r line; do
     case $line in

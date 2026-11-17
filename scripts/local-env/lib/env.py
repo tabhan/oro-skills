@@ -42,6 +42,8 @@ DEFAULTS = {
 }
 ASKS = ("local.domain", "local.tls_cert", "local.tls_key", "local_test.domain", "local_test.tls_cert",
         "local_test.tls_key", "project_namespace")
+# `setup --test-only` renders only the test stack: the local domain/cert and the POC namespace are never needed.
+TEST_ONLY_ASKS = tuple(a for a in ASKS if a.startswith("local_test."))
 
 
 def new_path(project):
@@ -133,8 +135,8 @@ def lookup(data, dotted):
     return node
 
 
-def missing_asks(data):
-    return [a for a in ASKS if not lookup(data, a)]
+def missing_asks(data, test_only=False):
+    return [a for a in (TEST_ONLY_ASKS if test_only else ASKS) if not lookup(data, a)]
 
 
 def validate(data):
@@ -271,7 +273,8 @@ def main(argv):
     if cmd == "init":
         return init(project, rest[0] if rest else None)
     if cmd == "asks":
-        print("\n".join(missing_asks(with_defaults(load(new_path(project))))))
+        test_only = "--test-only" in rest
+        print("\n".join(missing_asks(with_defaults(load(new_path(project))), test_only=test_only)))
         return 0
     if cmd == "get":
         if len(rest) != 1 or not os.path.exists(new_path(project)):

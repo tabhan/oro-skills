@@ -2,10 +2,12 @@
 # oro: ">=6.1.0"
 """Render the gitignored local config from env/templates and env.yml.
 
-  render.py check|diff|write --project P
+  render.py check|diff|write --project P [--test-only]
 
 check  list drift only (one line each), exit 2 when any; diff  unified diffs; write  apply, backing up replaced files
 to var/backups/oro-local-env/ and printing SUDO-NEEDED lines for files outside the project (nginx, supervisor).
+--test-only manages only the test-stack files (.env-app.behat_test.local, .env-app.test.local, nginx-test):
+.env-app.local, the compose override, obsolete files and the POC bundle are left untouched.
 Exit: 0 clean/applied, 1 error (invalid env.yml, unset value: the message names the key), 2 drift.
 Templates: {{dotted.key}} values, {{#if flag}}..{{/if}} blocks on their own lines. Merge templates (.env-app.local)
 enforce KEY=value lines in place, drop !KEY lines and keep everything else.
@@ -233,11 +235,19 @@ def installed(path):
         return None, False
 
 
-def plan(project, data):
+# Test-only mode (`setup --test-only`): only the test-stack files are managed, so a project that keeps its own
+# dev environment can adopt the e2e stack without .env-app.local, compose or parameters.yml being touched.
+TEST_ONLY_IDS = ("env-behat_test", "env-test", "nginx")
+
+
+def plan(project, data, test_only=False):
     """List of dicts: id, dest, status (ok|missing|differs|obsolete|poc), content, old, sudo."""
     rel = lambda path: os.path.relpath(path, project)  # noqa: E731
     out = []
-    for iid, kind, dest, content, extra in items(project, data):
+    managed = items(project, data)
+    if test_only:
+        managed = [i for i in managed if i[0] in TEST_ONLY_IDS]
+    for iid, kind, dest, content, extra in managed:
         old = read(dest)
         status = "ok" if old == content else "missing" if old is None else "differs"
         out.append({"id": iid, "dest": dest, "name": rel(dest), "status": status, "content": content, "old": old, "sudo": None})
@@ -246,6 +256,8 @@ def plan(project, data):
             if readable and inst != content:
                 out.append({"id": iid + "-installed", "dest": extra[0], "name": extra[0], "status": "missing" if inst is None else "differs",
                             "content": content, "old": inst, "sudo": "sudo cp %s %s && %s" % (dest, extra[0], extra[1])})
+    if test_only:
+        return out
     for rel_path in OBSOLETE:
         if os.path.exists(os.path.join(project, rel_path)):
             out.append({"id": "obsolete", "dest": os.path.join(project, rel_path), "name": rel_path, "status": "obsolete", "content": None, "old": read(os.path.join(project, rel_path)), "sudo": None})
@@ -303,6 +315,8 @@ def write(project, steps):
 
 
 def main(argv):
+    test_only = "--test-only" in argv
+    argv = [a for a in argv if a != "--test-only"]
     if len(argv) != 3 or argv[0] not in ("check", "diff", "write") or argv[1] != "--project":
         sys.stderr.write(__doc__)
         return 64
@@ -316,8 +330,9 @@ def main(argv):
     if errors:
         sys.stderr.write("".join("error: %s\n" % e for e in errors))
         return 1
+    test_only = test_only or bool(env.lookup(data, "test_only"))
     try:
-        steps = plan(project, data)
+        steps = plan(project, data, test_only=test_only)
     except RenderError as exc:
         sys.stderr.write("render: %s\n" % exc)
         return 1
