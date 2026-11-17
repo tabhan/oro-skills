@@ -78,11 +78,21 @@ def dotenv(project):
     return values
 
 
-def compose_rabbit_image(project):
-    m = re.search(r"image:\s*(\S*rabbitmq:[^\s'\"]*?)(-management)?(-alpine)?\s*$", read(os.path.join(project, "docker-compose.yml")) or "", re.M)
-    if not m:
-        raise RenderError("docker-compose.yml: no rabbitmq image found")
-    return "%s-management%s" % (m.group(1), m.group(3) or "")
+def compose_rabbit_image(project, data):
+    """env.yml services.rabbitmq.image wins; else the compose image, upgraded to -management when it is the
+    plain `rabbitmq:<tag>` form. A custom/tagless rabbitmq image (e.g. heidiks/rabbitmq-delayed-message-exchange)
+    is kept verbatim: there is no management variant to guess, and aborting the render would block every file."""
+    override = env.lookup(data, "services.rabbitmq.image")
+    if override:
+        return str(override)
+    text = read(os.path.join(project, "docker-compose.yml")) or ""
+    m = re.search(r"image:\s*(\S*rabbitmq:[^\s'\"]*?)(-management)?(-alpine)?\s*$", text, re.M)
+    if m:
+        return "%s-management%s" % (m.group(1), m.group(3) or "")
+    m = re.search(r"""image:\s*['"]?(\S*rabbitmq[^\s'"]*)""", text, re.M)
+    if m:
+        return m.group(1)
+    raise RenderError("docker-compose.yml: no rabbitmq image found; set services.rabbitmq.image in env.yml")
 
 
 def _ram_gb():
@@ -121,7 +131,7 @@ def context(project, data, target):
         "search_url": search if search.startswith("elastic-search://") else "elastic-search://127.0.0.1:9200",
         "admin_email": t["admin"].get("email") or current.get("ORO_TEST_INSTALL_USER_EMAIL") or "admin@example.com",
         "admin_org": current.get("ORO_TEST_INSTALL_ORGANIZATION_NAME") or "Oro",
-        "rabbitmq_image": compose_rabbit_image(project),
+        "rabbitmq_image": compose_rabbit_image(project, data),
     }
     return flat
 
