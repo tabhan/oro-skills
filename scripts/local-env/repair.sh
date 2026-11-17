@@ -37,7 +37,8 @@ if want_item params; then
     for f in .env-app.test.local .env-app.behat_test.local; do
         if grep -qE '^ORO_REDIS_(CACHE|DOCTRINE|LAYOUT)_DSN=' "$PROJECT/$f" 2>/dev/null; then
             backup "$PROJECT/$f"
-            mut "strip redis cache dsns from $f" sed -i -E '/^ORO_REDIS_(CACHE|DOCTRINE|LAYOUT)_DSN=/d' "$PROJECT/$f" || fail "strip $f"
+            # perl -ni edits in place on GNU and BSD alike (sed -i takes a mandatory suffix arg on macOS).
+            mut "strip redis cache dsns from $f" perl -ni -e 'print unless /^ORO_REDIS_(CACHE|DOCTRINE|LAYOUT)_DSN=/' "$PROJECT/$f" || fail "strip $f"
             [ "$DRY" = 1 ] || say "params: removed Redis cache DSNs from $f"
         fi
     done

@@ -36,7 +36,24 @@ class RenderError(Exception):
 
 
 def nginx_dir():
-    return os.environ.get("LE_NGINX_DIR", "/etc/nginx/conf.d")
+    """LE_NGINX_DIR, else /etc/nginx/conf.d, else the include dir next to `nginx -V --conf-path` (macOS/homebrew)."""
+    env_dir = os.environ.get("LE_NGINX_DIR")
+    if env_dir:
+        return env_dir
+    default = "/etc/nginx/conf.d"
+    if os.path.isdir(default):
+        return default
+    try:
+        out = subprocess.run(["nginx", "-V"], capture_output=True, text=True).stderr
+    except OSError:
+        return default
+    m = re.search(r"--conf-path=(\S+)", out or "")
+    if m:
+        base = os.path.dirname(m.group(1))
+        for sub in ("conf.d", "servers"):
+            if os.path.isdir(os.path.join(base, sub)):
+                return os.path.join(base, sub)
+    return default
 
 
 def supervisor_dir():
@@ -68,10 +85,23 @@ def compose_rabbit_image(project):
     return "%s-management%s" % (m.group(1), m.group(3) or "")
 
 
+def _ram_gb():
+    """Total RAM in whole GiB: /proc/meminfo on Linux, sysconf elsewhere (macOS has no /proc)."""
+    meminfo = read("/proc/meminfo")
+    if meminfo:
+        m = re.search(r"MemTotal:\s+(\d+)", meminfo)
+        if m:
+            return int(m.group(1)) // 1048576
+    try:
+        return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // (1024 ** 3))
+    except (ValueError, OSError, AttributeError):
+        return 0
+
+
 def workers_auto():
     """Same formula as workers.sh, so a render before `workers --write` already shows the final value."""
     cpus = int(os.environ.get("LE_CPUS") or os.cpu_count() or 1)
-    ram = int(os.environ.get("LE_RAM_GB") or int(re.search(r"MemTotal:\s+(\d+)", read("/proc/meminfo") or "MemTotal: 0").group(1)) // 1048576)
+    ram = int(os.environ.get("LE_RAM_GB") or _ram_gb())
     return max(1, min(cpus // 4, (ram - 4) // 3))
 
 

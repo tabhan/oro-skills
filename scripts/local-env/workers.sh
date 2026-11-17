@@ -5,8 +5,13 @@
 # Env overrides for tests: LE_CPUS, LE_RAM_GB. Exit: 0 ok, 64 usage.
 source "$(dirname "$0")/lib/common.sh"
 le_init workers "$@"
-cpus=${LE_CPUS:-$(nproc)}
-ram=${LE_RAM_GB:-$(awk '/MemTotal/{print int($2/1048576)}' /proc/meminfo)}
+# nproc//proc/meminfo are Linux-only; macOS answers through sysctl.
+cpus=${LE_CPUS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu)}
+if [ -z "${LE_RAM_GB:-}" ]; then
+    if [ -r /proc/meminfo ]; then LE_RAM_GB=$(awk '/MemTotal/{print int($2/1048576)}' /proc/meminfo)
+    else LE_RAM_GB=$(($(sysctl -n hw.memsize) / 1073741824)); fi
+fi
+ram=$LE_RAM_GB
 by_cpu=$((cpus / 4)); by_ram=$(((ram - 4) / 3))
 n=$((by_cpu < by_ram ? by_cpu : by_ram)); [ "$n" -ge 1 ] || n=1
 if [[ " ${ARGS[*]:-} " == *" --write "* ]]; then

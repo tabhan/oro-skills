@@ -51,8 +51,9 @@ remove_legacy_links() {
   local dir="$1" pattern="$2" link target
   for link in "$dir"/$pattern; do
     [ -L "$link" ] || continue
-    # -m tolerates dangling links whose parent dirs are gone; -f would fail and abort under set -e.
-    target="$(readlink -m "$link" 2>/dev/null || true)"
+    # Must tolerate dangling links whose parent dirs are gone. GNU readlink -m does, but macOS/BSD readlink
+    # has no -m (it fails, the || true left target empty and no legacy link was ever removed on macOS).
+    target="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$link" 2>/dev/null || true)"
     case "$target" in
       "$SCRIPT_DIR"/*)
         if rm -f "$link"; then echo "  removed $link"; else FAILED+=("rm $link"); fi ;;
