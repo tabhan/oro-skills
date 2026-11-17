@@ -27,12 +27,12 @@ if [ "$DRY" = 1 ]; then run "$LE_DIR/render.sh" --dry-run --project "$PROJECT"; 
 for kv in "${SETS[@]:-}"; do
     [ -z "$kv" ] || python3 "$LE_LIB/envsh.py" set --project "$PROJECT" "${kv%%=*}" "${kv#*=}" || fail "--set $kv"
 done
-mapfile -t missing < <(python3 "$LE_LIB/env.py" asks --project "$PROJECT" | grep .)
+missing=(); while IFS= read -r m; do missing+=("$m"); done < <(python3 "$LE_LIB/env.py" asks --project "$PROJECT" | grep .)
 for key in "${missing[@]:-}"; do
     [ -n "$key" ] && [ "$INTERACTIVE" = 1 ] || continue
     read -r -p "$key: " val && [ -n "$val" ] && python3 "$LE_LIB/envsh.py" set --project "$PROJECT" "$key" "$val"
 done
-mapfile -t missing < <(python3 "$LE_LIB/env.py" asks --project "$PROJECT" | grep .)
+missing=(); while IFS= read -r m; do missing+=("$m"); done < <(python3 "$LE_LIB/env.py" asks --project "$PROJECT" | grep .)
 if [ ${#missing[@]} -gt 0 ] && [ -n "${missing[0]}" ]; then
     for key in "${missing[@]}"; do say "ask: $key"; done
     say "setup: ${#missing[@]} value(s) needed; ask the user, then rerun with --set key=value"

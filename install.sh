@@ -107,7 +107,8 @@ if [ "$UPDATE" -eq 1 ] && [ -d "$SCRIPT_DIR/.git" ]; then
     echo "  (origin is HTTPS ($origin) and no ORO_SKILLS_TOKEN/GITHUB_TOKEN is set --" >&2
     echo "   this pull will fail unless git already has cached credentials for it)" >&2
   fi
-  git -C "$SCRIPT_DIR" "${git_auth_args[@]}" pull --ff-only
+  # ${arr[@]+...} keeps bash 3.2 (macOS) with `set -u` from treating an empty array as unbound.
+  git -C "$SCRIPT_DIR" ${git_auth_args[@]+"${git_auth_args[@]}"} pull --ff-only
 fi
 
 # Legacy symlinks would duplicate every skill and agent next to the plugin's copy.

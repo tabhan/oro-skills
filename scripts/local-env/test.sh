@@ -84,7 +84,7 @@ verify_env() { # env expected_db web
     fi
 }
 
-T0=$EPOCHREALTIME
+T0=$(le_now)
 if [ "$TARGET" = local-test ]; then
     desc="db=$TEST_DB es=$ES_PREFIX* mq=$MQ_VHOST mongo=$MONGO_PUB,$MONGO_PRIV session=$SESSION_DB"
 else
@@ -109,7 +109,7 @@ else
         exit 3
     fi
     [ -n "$MARK" ] && printf '%s' "$PROJECT|$desc" > "$MARK"
-    say "test: $TARGET verified ($desc) in $(awk -v a="$T0" -v b="$EPOCHREALTIME" 'BEGIN{printf "%.1fs", b-a}')"
+    say "test: $TARGET verified ($desc) in $(awk -v a="$T0" -v b="$(le_now)" 'BEGIN{printf "%.1fs", b-a}')"
 fi
 [ "$ACTION" = verify ] && exit 0
 

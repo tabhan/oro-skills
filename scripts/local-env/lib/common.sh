@@ -52,11 +52,13 @@ le_init() {
     if [ $rc -ne 0 ]; then head -3 "$LOG.err" >&2; cat "$LOG.err" >> "$LOG"; rm -f "$LOG.err"; exit $rc; fi
     rm -f "$LOG.err"
     eval "$out"
-    LE_T0=$EPOCHREALTIME; LE_T=$LE_T0
+    LE_T0=$(le_now); LE_T=$LE_T0
 }
 
-lap() { local n=$EPOCHREALTIME; say "$(awk -v a="$LE_T" -v b="$n" -v l="$1" 'BEGIN{printf "%-18s %5.1fs", l, b-a}')"; LE_T=$n; }
-total() { say "$(awk -v a="$LE_T0" -v b="$EPOCHREALTIME" -v l="$1" 'BEGIN{printf "%s %.1fs", l, b-a}')"; }
+# bash < 5 (macOS ships 3.2) has no EPOCHREALTIME; fall back to whole seconds.
+le_now() { printf '%s' "${EPOCHREALTIME:-$(date +%s)}"; }
+lap() { local n; n=$(le_now); say "$(awk -v a="$LE_T" -v b="$n" -v l="$1" 'BEGIN{printf "%-18s %5.1fs", l, b-a}')"; LE_T=$n; }
+total() { say "$(awk -v a="$LE_T0" -v b="$(le_now)" -v l="$1" 'BEGIN{printf "%s %.1fs", l, b-a}')"; }
 
 # Run a mutating command: output to the log; in --dry-run only print what would happen.
 mut() {

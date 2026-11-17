@@ -56,11 +56,11 @@ say "refresh: $(wc -l <<< "$STEPS") steps since $SINCE"
 for s in $STEPS; do
     fn=step_${s//-/_}; [ "$s" = baseline-stale ] && fn=step_baseline
     if [ "$DRY" = 1 ]; then say "refresh: would run $s ($(grep -P "^$s\t" <<< "$PLAN" | cut -f2))"; continue; fi
-    t0=$EPOCHREALTIME
+    t0=$(le_now)
     out=$(mktemp)
     if "$fn" > "$out" 2>&1; then r=ok; else r=FAIL; fi
     cat "$out" >> "$LOG"
-    say "$(awk -v a="$t0" -v b="$EPOCHREALTIME" -v s="$s" -v r="$r" 'BEGIN{printf "refresh: %-14s %-4s %5.1fs", s, r, b-a}')"
+    say "$(awk -v a="$t0" -v b="$(le_now)" -v s="$s" -v r="$r" 'BEGIN{printf "refresh: %-14s %-4s %5.1fs", s, r, b-a}')"
     if [ $r = ok ] && [ "$s" = data-load ]; then
         fx=$(sed -nE 's/^ *> *(loading |Loading )?([A-Za-z_][A-Za-z0-9_]*(\\[A-Za-z0-9_]+)+).*/\2/p' "$out" | sed 's/.*\\//' | paste -sd, -)
         say "refresh: data fixtures loaded: ${fx:-none}"

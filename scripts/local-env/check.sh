@@ -17,7 +17,7 @@ if [ -f "$PROJECT/.nvmrc" ] || [ -n "$NODE_PIN" ]; then
     if [ "$want" = "N/A" ]; then bad node ".nvmrc $(cat "$PROJECT/.nvmrc") not installed in nvm"
     else
         shellv=$(node -v 2>/dev/null)
-        mapfile -t paths < <(python3 "$LE_LIB/nodephp.py" node-paths "$PROJECT/config/parameters.yml" 2>/dev/null)
+        paths=(); while IFS= read -r p; do paths+=("$p"); done < <(python3 "$LE_LIB/nodephp.py" node-paths "$PROJECT/config/parameters.yml" 2>/dev/null)
         wrong=""
         for p in "${paths[@]:-}"; do case $p in *"/$want/bin/"*) ;; *) wrong=1 ;; esac; done
         if [ -n "$wrong" ] || [ ${#paths[@]} -ne 3 ] || [ -z "${paths[0]}" ] || [ -z "${paths[1]}" ] || [ -z "${paths[2]}" ]; then bad node "parameters.yml oro_asset node/npm/pnpm paths are not all under $want (repair.sh --only node)"
@@ -29,7 +29,8 @@ else bad node ".nvmrc missing"; fi
 # parameters.yml is generated: GridFS adapters per topology, and no Redis app-cache DSNs in the test stack's dotenv
 for k in public private; do
     got=$(python3 "$LE_LIB/nodephp.py" get-param "$PROJECT/config/parameters.yml" "gaufrette_adapter.$k" 2>/dev/null)
-    if [ "$got" = "gridfs:%env(ORO_MONGODB_DSN_${k^^})%" ]; then ok "gaufrette-$k"; else bad "gaufrette-$k" "parameters.yml gaufrette_adapter.$k is '${got:-unset}', expected the GridFS adapter (repair.sh --only params)"; fi
+    K=$(printf '%s' "$k" | tr '[:lower:]' '[:upper:]')
+    if [ "$got" = "gridfs:%env(ORO_MONGODB_DSN_${K})%" ]; then ok "gaufrette-$k"; else bad "gaufrette-$k" "parameters.yml gaufrette_adapter.$k is '${got:-unset}', expected the GridFS adapter (repair.sh --only params)"; fi
 done
 shadow=$(media_shadow_files | wc -l)
 if [ "$shadow" -gt 0 ]; then bad media-shadow "$shadow stale file(s) in public/media/js shadow the gridfs-served routes/translation dump (repair.sh --only media)"; else ok media-shadow; fi
