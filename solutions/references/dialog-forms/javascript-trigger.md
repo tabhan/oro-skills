@@ -60,6 +60,7 @@ On page bind, `widget-component`:
 Only write JS code when the trigger needs logic that the Twig macro can't
 express — e.g. closing a *previous* dialog before opening the new one:
 
+<!-- oro: ">=7.0.0" topic: dialog-trigger-thin-wrapper -->
 ```js
 // product-options-dialog-view.js
 import BaseView from 'oroui/js/app/views/base/view';
@@ -97,6 +98,59 @@ export default BaseView.extend({
     }
 });
 ```
+<!-- /oro -->
+
+<!-- oro: "^6.1" topic: dialog-trigger-thin-wrapper -->
+On Oro 6.1 new JS modules use CommonJS/AMD, not ES Modules (native ESM only
+becomes the default in 7.0) — same view, AMD form:
+
+```js
+// product-options-dialog-view.js
+define(function(require) {
+    'use strict';
+
+    const $ = require('jquery');
+    const BaseView = require('oroui/js/app/views/base/view');
+    const routing = require('routing');
+    const mediator = require('oroui/js/mediator');
+    const DialogWidget = require('oro/dialog-widget');
+    const __ = require('orotranslation/js/translator');
+
+    const CTA_CONFIGS = {
+        'get-quote':      {widget: 'cta-form-get-a-quote',      dialogClass: 'get-a-quote-drawer',      titleKey: 'acme.xyz.get_a_quote'},
+        'ask-question':   {widget: 'cta-form-contact-us',       dialogClass: 'ask-question-drawer',     titleKey: 'acme.xyz.ask_a_question'}
+    };
+
+    const ProductOptionsDialogView = BaseView.extend({
+        events: {
+            'click [data-action="get-quote"]':    'onCtaClick',
+            'click [data-action="ask-question"]': 'onCtaClick'
+        },
+
+        onCtaClick(e) {
+            e.preventDefault();
+            const cfg = CTA_CONFIGS[$(e.currentTarget).data('action')];
+            if (!cfg) {
+                return;
+            }
+
+            mediator.trigger('parent-dialog:close');   // close the currently-open dialog
+
+            new DialogWidget({
+                title: __(cfg.titleKey),
+                url: routing.generate('acme_xyz_form', {widgetName: cfg.widget}),
+                dialogOptions: {
+                    modal: true, resizable: false, draggable: false, autoResize: false,
+                    width: 476, dialogClass: 'acme-xyz-drawer ' + cfg.dialogClass
+                }
+            }).render();
+        }
+    });
+
+    return ProductOptionsDialogView;
+});
+```
+<!-- /oro -->
 
 **Rules of thumb:**
 

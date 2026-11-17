@@ -80,6 +80,7 @@ attributes. `parent_block_widget(block)` keeps the default rendering (the
 
 See `vendor/oro/customer-portal/src/Oro/Bundle/FrontendBundle/Resources/public/js/app/components/widget-form-component.js`:
 
+<!-- oro: ">=7.0.0" topic: widget-form-component-source -->
 ```js
 export default function(options) {
     if (options.savedId) {
@@ -93,6 +94,36 @@ export default function(options) {
     }
 }
 ```
+<!-- /oro -->
+
+<!-- oro: "^6.1" topic: widget-form-component-source -->
+On 6.1 the same component ships as an AMD module (same behaviour, plus a
+default flash message when `options.message` is unset):
+
+```js
+define(
+    ['oroui/js/widget-manager', 'oroui/js/messenger', 'oroui/js/mediator', 'orotranslation/js/translator', 'jquery'],
+    function(widgetManager, messenger, mediator, __, $) {
+        'use strict';
+
+        return function(options) {
+            if (options.savedId) {
+                widgetManager.getWidgetInstance(options._wid, function(widget) {
+                    if (!options.message) {
+                        options.message = __('oro_frontend.widget_form_component.save_flash_success');
+                    }
+                    messenger.notificationFlashMessage('success', options.message);
+                    mediator.trigger('widget_success:' + widget.getAlias(), options);
+                    mediator.trigger('widget_success:' + widget.getWid(), options);
+                    widget.trigger('formSave', options.savedId);
+                    widget.remove();
+                });
+            }
+        };
+    }
+);
+```
+<!-- /oro -->
 
 When the controller's POST response includes a non-null `savedId`, this
 component:
