@@ -594,7 +594,7 @@ class Syntax(unittest.TestCase):
         for n in names:
             p = subprocess.run(["bash", "-n", os.path.join(SCRIPTS, n)], capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, "%s: %s" % (n, p.stderr))
-            self.assertIn('# oro: ">=7.0.0"', "\n".join(read(os.path.join(SCRIPTS, n)).split("\n")[:15]))
+            self.assertIn('# oro: ">=6.1.0"', "\n".join(read(os.path.join(SCRIPTS, n)).split("\n")[:15]))
 
     def test_old_logs_are_rotated(self):
         tmp = tempfile.mkdtemp()
