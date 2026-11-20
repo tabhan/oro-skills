@@ -304,11 +304,13 @@ class OutsideProjectTest(unittest.TestCase):
     def test_every_hook_is_silent_and_exits_0_outside_an_oro_root(self):
         import tempfile
         payload = json.dumps({"cwd": "", "tool_name": "Bash", "tool_input": {"command": "ls"}, "session_id": "t"})
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as home:
+            # Own HOME: hooks that keep state under ~/.claude (update-check cache, logs) must never touch the real one.
+            env = dict(os.environ, HOME=home)
             for name in sorted(os.listdir(HOOKS)):
                 if name.endswith(".py") and not name.startswith("_"):
                     r = subprocess.run([sys.executable, os.path.join(HOOKS, name)], input=payload.replace('"cwd": ""', '"cwd": "%s"' % d),
-                                       cwd=d, capture_output=True, text=True)
+                                       cwd=d, capture_output=True, text=True, env=env)
                     self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""), name)
             self.assertEqual(os.listdir(d), [])
 

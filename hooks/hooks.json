@@ -10,6 +10,15 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/telemetry.py\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -62,6 +71,21 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/posttooluse_bash.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/telemetry.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/telemetry.py\"",
+            "timeout": 5
           }
         ]
       }
@@ -73,6 +97,11 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/userpromptsubmit.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/telemetry.py\"",
+            "timeout": 5
           }
         ]
       }
@@ -95,6 +124,17 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/stop.py\"",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/atlas/hooks/telemetry.py\"",
+            "timeout": 5
           }
         ]
       }

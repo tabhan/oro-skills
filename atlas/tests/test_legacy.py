@@ -129,8 +129,9 @@ class SessionStartHookTest(unittest.TestCase):
     def test_registered_in_plugin_hooks(self):
         with open(os.path.join(REPO, "hooks", "hooks.json")) as fh:
             groups = json.load(fh)["hooks"]["SessionStart"]
-        self.assertEqual(len(groups), 1)
-        self.assertIn("sessionstart.py", groups[0]["hooks"][0]["command"])
+        dispatcher = [g for g in groups if any("sessionstart.py" in h["command"] for h in g["hooks"])]
+        self.assertEqual(len(dispatcher), 1)  # telemetry.py has its own group (all sources)
+        self.assertIn("sessionstart.py", dispatcher[0]["hooks"][0]["command"])
 
 
 class InstallCleanupTest(unittest.TestCase):

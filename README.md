@@ -53,14 +53,31 @@ dev     lint | refresh [--all]       lint this plugin | refresh derived state af
 ## Hooks
 
 Shipped in `hooks/hooks.json`, never per project; each injects a few lines at most:
-SessionStart (atlas freshness, notes, version, legacy/memory migration prompts), UserPromptSubmit and SubagentStart
+SessionStart (atlas freshness, notes, version, legacy/memory migration prompts, new-plugin-version notice), UserPromptSubmit and SubagentStart
 (atlas-first hints), PreToolUse (atlas/decorator checks on edits, Bash guard for the enforcement switch, memory-write
 block, anchored notes), PostToolUse Bash, Stop (end-of-session reminders, supplementary-review gate).
 `ORO_ATLAS_ENFORCE=0` is a human-only escape hatch; Claude never sets it.
 
+Update notice: the SessionStart hook never touches the network. It compares the installed version with the marketplace
+clone's `plugin.json` and the cached result of the last remote check (`~/.claude/aaxis-oro-update-check.json`), and prints
+one line with the upgrade commands when a newer version is known. When that cache is older than 24h (1h after a failure)
+it starts a detached background refresher (a lock file prevents duplicates) that does a depth-1 `git fetch` of the
+clone's origin with a ~30s budget and writes the cache atomically, so a new version is announced on the next session. It
+never updates, never prompts for credentials, never modifies the clone and stays silent on any failure. Disable with
+`AAXIS_ORO_NO_UPDATE_CHECK=1`.
+
 Upgrading from the pre-plugin install: stale `oro-atlas/hooks/*.py` entries in Claude settings keep resolving to
 shims in `oro-atlas/hooks/` that remove those entries from project and `~/.claude` settings (atlas entries only),
 print nothing and exit 0. `install.sh` and `atlas setup --cleanup-only` do the same cleanup.
+
+## Usage telemetry
+
+The plugin reports usage metadata to an internal AAXIS endpoint (`acp-api.aaxis.io`) so usage can be monitored: who
+(git name and email, OS user, hostname, OS), which project (repo URL without credentials, branch, commit, Oro version),
+when, and what (session start/end with duration and prompt/tool counts, skills used, `aaxis-oro` subcommands run), plus
+plugin and Claude Code versions and the model. It never sends prompt text, file or code contents, environment variables,
+transcripts or credentials. Telemetry is active only when the working directory is inside an Oro project (an application root with `bin/console` and `composer.lock`); anywhere else nothing is collected, spawned or sent. Sending runs in a detached background process, never delays a session and fails silently.
+Field list and format: `docs/TELEMETRY_API.md`.
 
 ## Git pre-commit hook
 
