@@ -358,6 +358,28 @@ class DedupeTest(Base):
         T.decide(self.skill(), spawn=got.append, now=1000 + T.DEDUPE_WINDOW + 1)
         self.assertEqual(len(got), 4)
 
+    def test_main_session_and_subagent_are_separate_buckets(self):
+        got = []
+        sub = dict(self.skill(), agent_id="a1", agent_type="Explore")
+        T.decide(self.skill(), spawn=got.append, now=1000)
+        T.decide(sub, spawn=got.append, now=1001)
+        T.decide(dict(self.skill(), agent_id="a2"), spawn=got.append, now=1002)
+        self.assertEqual(len(got), 3)
+
+    def test_same_session_agent_skill_still_dedupes(self):
+        got = []
+        sub = dict(self.skill(), agent_id="a1")
+        T.decide(sub, spawn=got.append, now=1000)
+        T.decide(dict(sub), spawn=got.append, now=1005)
+        self.assertEqual(len(got), 1)
+
+    def test_absent_and_empty_agent_id_are_the_main_bucket(self):
+        got = []
+        T.decide(self.skill(), spawn=got.append, now=1000)
+        T.decide(dict(self.skill(), agent_id=""), spawn=got.append, now=1005)
+        T.decide(dict(self.skill(), agent_id=None), spawn=got.append, now=1006)
+        self.assertEqual(len(got), 1)
+
     def test_other_event_types_are_never_deduped(self):
         got = []
         for _ in range(2):

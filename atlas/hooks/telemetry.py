@@ -123,6 +123,7 @@ def build_job(payload, now=None):
             "occurred_at": datetime.fromtimestamp(time.time() if now is None else now).astimezone().isoformat(timespec="seconds"),
             "occurred_ts": time.time() if now is None else now, "cwd": payload.get("cwd") if isinstance(payload.get("cwd"), str) else None,
             "model": model if isinstance(model, str) else None,
+            "agent_id": payload.get("agent_id") if isinstance(payload.get("agent_id"), str) else "",  # "" = main session; dedupe key only
             "transcript_path": payload.get("transcript_path") if kind == "session_end" else None}
 
 
@@ -137,13 +138,15 @@ def spawn_sender(job):
 
 
 def duplicate_skill(job, now=None):
-    """True when this skill_used repeats one seen for the same session and skill within DEDUPE_WINDOW; else records it.
+    """True when this skill_used repeats one seen for the same session, agent and skill within DEDUPE_WINDOW; else records it.
 
     UserPromptSubmit (typed /aaxis-oro:x) and PostToolUse Skill (the model loading that skill) can both fire for one
-    invocation. A marker file per (session, skill) under the state dir, judged by its mtime, drops the second one.
+    invocation. A marker file per (session, agent, skill) under the state dir, judged by its mtime, drops the second one.
+    PostToolUse also fires inside subagents, whose input carries an agent_id; the main session has none (its own bucket),
+    so main and each subagent are counted separately.
     """
     now = time.time() if now is None else now
-    key = hashlib.sha1(("%s\0%s" % (job["session_id"], job["data"]["name"])).encode("utf-8")).hexdigest()[:20]
+    key = hashlib.sha1(("%s\0%s\0%s" % (job["session_id"], job.get("agent_id") or "", job["data"]["name"])).encode("utf-8")).hexdigest()[:20]
     marker = os.path.join(state_dir(), "skill-" + key)
     try:
         if now - os.path.getmtime(marker) < DEDUPE_WINDOW:
