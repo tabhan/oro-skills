@@ -72,8 +72,13 @@ verify_env() { # env expected_db web
     expect_eq "$e" database_dsn "$(live_get database_dsn | dsn_path)" "$want_db"
     if [ "$TARGET" = local-test ]; then
         for v in search_engine_dsn website_search_engine_dsn; do expect_pre "$e" "$v" "$(live_get $v | dsn_prefix)" "$ES_PREFIX"; done
-        expect_eq "$e" gaufrette.public "$(live_get gaufrette_adapter.public | sed "s/^gridfs://" | dsn_path)" "$MONGO_PUB"
-        expect_eq "$e" gaufrette.private "$(live_get gaufrette_adapter.private | sed "s/^gridfs://" | dsn_path)" "$MONGO_PRIV"
+        if [ "$MONGO_ENABLED" = 1 ]; then
+            expect_eq "$e" gaufrette.public "$(live_get gaufrette_adapter.public | sed "s/^gridfs://" | dsn_path)" "$MONGO_PUB"
+            expect_eq "$e" gaufrette.private "$(live_get gaufrette_adapter.private | sed "s/^gridfs://" | dsn_path)" "$MONGO_PRIV"
+        else
+            # Mongo disabled (services.mongo.enabled): storage is the local adapter; only guard against gridfs leftovers.
+            case $(live_get gaufrette_adapter.private) in gridfs:*) MISMATCH+=("$e mongo is disabled but gaufrette private is still gridfs") ;; esac
+        fi
         if [ "$web" = 1 ]; then
             expect_eq "$e" message_queue_transport_dsn "$(live_get message_queue_transport_dsn | dsn_path)" "$MQ_VHOST"
             expect_eq "$e" session_handler_dsn "$(live_get session_handler_dsn | dsn_path)" "$SESSION_DB"
