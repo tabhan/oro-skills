@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.29.0
+## 0.30.0
+
+- The managed pre-commit hook's ESLint step lints only the staged files its full scan would cover (SP-7425). Root cause: the step's gate fires on any staged `.js/.jsx/.mjs/.cjs/.ts/.tsx/.vue` file, but the command was always the full-tree scan (`npm run eslint src/`), so staging one `.ts` e2e step file surfaced every pre-existing error in `src/` (2,984 on the reporting project) — even though ESLint 8 without `--ext` or TS overrides never lints `.ts` at all. The hook's new `run_eslint` wrapper passes the staged (ACMR) files under the scan target that match the command's `--ext` list (else ESLint's directory default, `.js`); a staged lint config (`.eslint*`, `eslint.config.*`, `package.json`, `.stylelintignore`) still runs the full target, as do `AAXIS_ORO_PRECOMMIT_ALL=1` and an empty stage, and staged files ESLint does not cover lint nothing and pass. Only `npm/pnpm/yarn run eslint <target> [-- …]` and `eslint <target>` command shapes get staged-file mode; any other shape keeps today's full-scan rendering.
 
 - Oro 6.1 support: the default guidance range widens from `>=7.0.0` to `>=6.1.0` after a per-unit audit against a 6.1.5 enterprise project (no shipped skill/env/e2e content uses a 7.0-only API). The 23 script headers and 12 hook checks widen with it; `NEUTRAL_FLOOR` moves to 6.1.0, so `>=7.0.0` is now a version-specific range (inactive on unknown versions). The dialog-forms ESM code samples are topic-split: `^6.1` gets AMD variants (6.1 writes new JS modules as CommonJS/AMD; native ESM becomes the default in 7.0), with the 6.1 `widget-form-component` vendor source quoted verbatim.
 - bash 3.2 (macOS) compatibility for every shell script: `mapfile` → while-read, `${k^^}` → `tr`, `$EPOCHREALTIME` → `le_now()` with a whole-second fallback, and install.sh no longer aborts under `set -u` on an empty `git_auth_args`.
