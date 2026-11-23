@@ -10,7 +10,8 @@ set -o pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
 fail=0
-STAGED="$(git diff --cached --name-only --diff-filter=ACMRD)"
+# quotepath=off keeps non-ASCII paths literal; quoted ("src/th\303\251.js") they would defeat every gate's ERE.
+STAGED="$(git -c core.quotepath=off diff --cached --name-only --diff-filter=ACMRD)"
 
 # GATE (ERE, set per call) limits a step to commits that stage a matching file; unset, or nothing staged, runs it.
 run_step() {
@@ -38,6 +39,32 @@ fi
 while IFS= read -r entry; do
     [[ -n "$entry" ]] && ESLINT_IGN+=(--ignore-pattern "$entry")
 done <<<"$IGNORES"
+
+# ESLint lints only the staged files its full scan would cover: paths under the target that match the
+# extension filter (the command's --ext list, else ESLint's directory default). The full target still runs
+# when a lint config file is staged, AAXIS_ORO_PRECOMMIT_ALL=1 is set, or nothing is staged -- a config
+# change can alter every file's result. Staged files of other types (a .ts in a .js-only setup) lint
+# nothing and pass instead of triggering a whole-tree scan.
+run_eslint() {
+    local files_ere="$1" cfg_ere="$2" target="$3" scope f files=()
+    shift 3
+    if [[ -n "$STAGED" && -z "${AAXIS_ORO_PRECOMMIT_ALL:-}" ]] && ! grep -Eq -- "$cfg_ere" <<<"$STAGED"; then
+        scope="${target#./}"
+        scope="${scope%/}"
+        while IFS= read -r f; do
+            if [[ -z "$scope" || "$scope" == "." || "$f" == "$scope" || "$f" == "$scope/"* ]]; then
+                files+=("$f")
+            fi
+        done < <(git -c core.quotepath=off diff --cached --name-only --diff-filter=ACMR | grep -E -- "$files_ere")
+        if [[ ${#files[@]} -gt 0 ]]; then
+            "$@" "${files[@]}"
+            return
+        fi
+        echo "--- ESLint: skipped (no staged file it covers)"
+        return 0
+    fi
+    "$@" "$target"
+}
 
 # The generated CI lint script (PHPCS/PHPMD); a missing one is a hard failure, never a silent skip.
 run_lint_php() {

@@ -375,6 +375,179 @@ class SchemaDriftTest(HookRunBase):
         self.assertFalse(os.path.exists(self.log + ".php"))
 
 
+class EslintStagedModeTest(RepoCase):
+    """The ESLint step lints only the staged files it covers (SP-7425); the full scan stays for config changes."""
+
+    def test_split_extracts_the_target_from_the_supported_shapes(self):
+        self.assertEqual(precommit.eslint_split("npm run eslint src/"), ("npm run eslint", "src/"))
+        self.assertEqual(
+            precommit.eslint_split('npm run eslint src -- --ignore-pattern "src/OroLab/**"'),
+            ('npm run eslint -- --ignore-pattern "src/OroLab/**"', "src"))
+        self.assertEqual(precommit.eslint_split("yarn run eslint ./src"), ("yarn run eslint", "./src"))
+        self.assertEqual(precommit.eslint_split("eslint src"), ("eslint", "src"))
+        self.assertIsNone(precommit.eslint_split("composer run-script eslint"))
+        self.assertIsNone(precommit.eslint_split("npm run eslint src extra"))
+        self.assertIsNone(precommit.eslint_split("npm run eslint 'src/**/*.js'"))
+        self.assertIsNone(precommit.eslint_split("npm run eslint -c .eslintrc.yml src"))
+
+    def test_files_ere_is_eslints_own_directory_default_unless_ext_names_more(self):
+        self.assertEqual(precommit.eslint_files_ere("npm run eslint src/"), r"\.js$")
+        self.assertEqual(precommit.eslint_files_ere("npm run eslint src -- --ext .js,.vue"), r"\.(js|vue)$")
+        self.assertEqual(precommit.eslint_files_ere("eslint --ext=.ts src"), r"\.(ts)$")
+
+    def test_default_step_renders_the_staged_wrapper_with_target_and_filters(self):
+        self.put("package.json", json.dumps({"scripts": {"eslint": "eslint"}}))
+        self.put(".eslintrc.yml", "")
+        self.put("src/.keep", "")
+        text = precommit.render(self.d)
+        self.assertIn("run_eslint() {", text)
+        self.assertIn("""run_step "ESLint" run_eslint '\\.js$' """, text)
+        self.assertIn(' src/ npm run eslint -- "${ESLINT_IGN[@]}"', text)
+        self.assertEqual(subprocess.run(["bash", "-n"], input=text, text=True).returncode, 0)
+
+    def test_unsupported_shape_falls_back_to_the_full_scan_rendering(self):
+        self.put("composer.json", '{"require": {"oro/commerce": "7.0.*"}, "scripts": {"eslint": "x"}}')
+        text = precommit.render(self.d)
+        self.assertIn('run_step "ESLint" composer run-script eslint "${ESLINT_IGN[@]}"', text)
+        self.assertNotIn('run_step "ESLint" run_eslint', text)
+
+
+ESLINT_CI = """pipelines:
+  default:
+    - step:
+        script:
+          - npm run eslint src -- --ignore-pattern "src/OroLab/**"
+"""
+
+
+class EslintStagedRunTest(HookRunBase):
+    """run_eslint in the rendered hook: staged files only, config fallback, non-covered skip (SP-7425)."""
+
+    def project(self):
+        self.put("bitbucket-pipelines.yml", ESLINT_CI)
+        self.put("package.json", "{}")
+        run("sync", cwd=self.d)
+
+    def test_staged_js_is_linted_alone_never_the_whole_tree(self):
+        self.project()
+        self.put("src/app/new-view.js", "x\n")
+        self.put("src/app/untouched.js", "y\n")
+        self.git("add", "src/app/new-view.js")
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        args = self.argv("npm")
+        self.assertIn("src/app/new-view.js", args)
+        self.assertNotIn("src/app/untouched.js", args)
+        self.assertNotIn("src", args)
+        self.assertEqual(args[args.index("src/OroLab/**") - 1], "--ignore-pattern")
+
+    def test_staged_ts_in_a_js_only_setup_skips_the_scan_and_passes(self):
+        self.project()
+        self.put("src/e2e/sp7424-login-referer.steps.ts", "x\n")
+        self.git("add", "src/e2e/sp7424-login-referer.steps.ts")
+        code, out = self.run_hook(STUB_EXIT="1")
+        self.assertEqual(code, 0, out)
+        self.assertIsNone(self.argv("npm"))
+        self.assertIn("no staged file it covers", out)
+
+    def test_staged_lint_config_falls_back_to_the_full_target(self):
+        self.project()
+        self.git("add", "package.json")
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        self.assertIn("src", self.argv("npm"))
+
+    def test_staged_js_outside_the_target_lints_nothing(self):
+        self.project()
+        self.put("tools/build.js", "x\n")
+        self.git("add", "tools/build.js")
+        code, out = self.run_hook(STUB_EXIT="1")
+        self.assertEqual(code, 0, out)
+        self.assertIsNone(self.argv("npm"))
+        self.assertIn("no staged file it covers", out)
+
+    def test_staged_config_with_a_coverable_file_still_scans_the_full_target(self):
+        self.project()
+        self.put("src/a.js", "x\n")
+        self.git("add", "src/a.js", "package.json")
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        args = self.argv("npm")
+        self.assertIn("src", args)
+        self.assertNotIn("src/a.js", args)
+
+    def test_single_file_target_is_linted_when_it_is_the_staged_file(self):
+        self.put("bitbucket-pipelines.yml", ESLINT_CI.replace("eslint src --", "eslint src/index.js --"))
+        self.put("package.json", "{}")
+        self.put("src/index.js", "x\n")
+        self.git("add", "src/index.js")
+        run("sync", cwd=self.d)
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        self.assertIn("src/index.js", self.argv("npm"))
+
+    def test_non_ascii_staged_path_reaches_eslint_unquoted(self):
+        import unicodedata
+        self.project()
+        self.put("src/thé.js", "x\n")
+        self.git("add", "src/thé.js")
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        args = [unicodedata.normalize("NFC", a) for a in self.argv("npm")]
+        self.assertIn("src/thé.js", args)
+
+    def test_run_all_env_and_an_empty_stage_scan_the_full_target(self):
+        self.project()
+        self.put("src/a.js", "x\n")
+        self.git("add", "src/a.js")
+        code, out = self.run_hook(AAXIS_ORO_PRECOMMIT_ALL="1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("src", self.argv("npm"))
+        os.remove(self.log + ".npm")
+        self.git("reset", "-q", "src/a.js")
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        self.assertIn("src", self.argv("npm"))
+
+
+PIPED_CI = """pipelines:
+  default:
+    - step:
+        script:
+          - find src -name "*.scss" -o -name "*.css" | grep -v "src/OroLab/" | xargs npm run stylelint
+"""
+
+
+class PipedCommandTest(HookRunBase):
+    """A CI command with shell operators runs through one shell, never as a pipe on run_step itself."""
+
+    def test_render_wraps_the_piped_command_in_a_single_shell(self):
+        self.put("bitbucket-pipelines.yml", PIPED_CI)
+        text = precommit.render(self.d)
+        self.assertIn("""run_step "Stylelint" bash -c 'find src -name "*.scss" -o -name "*.css" | grep -v "src/OroLab/" | xargs npm run stylelint'""", text)
+
+    def test_gate_skip_prints_the_note_and_feeds_nothing_downstream(self):
+        self.put("bitbucket-pipelines.yml", PIPED_CI)
+        self.put("src/readme.md", "x\n")
+        self.git("add", "src/readme.md")
+        run("sync", cwd=self.d)
+        code, out = self.run_hook(STUB_EXIT="1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("Stylelint skipped", out)
+        self.assertIsNone(self.argv("npm"))
+
+    def test_staged_scss_runs_the_pipeline_as_written(self):
+        self.put("bitbucket-pipelines.yml", PIPED_CI)
+        self.put("src/theme/a.scss", "x\n")
+        self.git("add", "src/theme/a.scss")
+        run("sync", cwd=self.d)
+        code, out = self.run_hook()
+        self.assertEqual(code, 0, out)
+        args = self.argv("npm")
+        self.assertIn("stylelint", args)
+        self.assertIn("src/theme/a.scss", args)
+
+
 REAL_PHP = shutil.which("php") or "/usr/bin/php"
 # Logs argv like STUB but runs the real php for `php -r` (the lint script reads config.json that way).
 PHP_STUB = '#!/bin/sh\n[ "$1" = "-r" ] && exec %s "$@"\nprintf "%%s\\n" "$@" >> "$STUB_LOG.php"\nexit ${STUB_EXIT:-0}\n' % REAL_PHP

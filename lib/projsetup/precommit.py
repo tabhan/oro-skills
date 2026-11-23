@@ -57,10 +57,12 @@ DRIFT_LABEL = "Doctrine schema drift"
 _IGN = r"|(^|/)\.stylelintignore$"
 _PHP_GATE = r"\.(php|xml|neon|dist)$|(^|/)composer\.(json|lock)$"
 _LINT_GATE = _PHP_GATE + _IGN + r"|(^|/)lint-php\.sh$"
+# The ESLint gate's two halves, reused by run_eslint: files that may need linting, and the configs that can change every file's result.
+_ESLINT_CFG_GATE = r"(^|/)(\.eslint[^/]*|eslint\.config\.[^/]*|package\.json)$" + _IGN
 GATES = {
     "phpcs": _LINT_GATE, "php-cs-fixer": _PHP_GATE, "phpmd": _LINT_GATE, "phpstan": _PHP_GATE, "psalm": _PHP_GATE,
     "phpunit": _PHP_GATE,
-    "eslint": r"\.(js|jsx|mjs|cjs|ts|tsx|vue)$|(^|/)(\.eslint[^/]*|eslint\.config\.[^/]*|package\.json)$" + _IGN,
+    "eslint": r"\.(js|jsx|mjs|cjs|ts|tsx|vue)$|" + _ESLINT_CFG_GATE,
     "stylelint": r"\.(scss|sass|css)$|(^|/)(\.stylelint[^/]*|stylelint\.config\.[^/]*|package\.json)$",
     "yamllint": r"\.ya?ml$|(^|/)\.yamllint[^/]*$",
     DRIFT: r"/(Entity|Migrations)/.*\.php$|(^|/)entity_(extend|configs)\.yml$|(^|/)composer\.lock$",
@@ -236,11 +238,51 @@ def _flag_value(cmd, flag):
     return re.search(r"(?<=\s)%s(?:=|\s+)(\"[^\"]*\"|'[^']*'|\S+)" % re.escape(flag), cmd)
 
 
+# ESLint 8 expands directories to *.js only; --ext is the one way a command widens that.
+_ESLINT_DEFAULT_FILES_ERE = r"\.js$"
+# The command shapes whose single positional target run_eslint can swap for the staged files; anything else keeps the full scan.
+_ESLINT_TARGETED = re.compile(
+    r"^(?P<head>(?:(?:npm|pnpm|yarn)\s+run\s+)?(?:\S*/)?eslint)"
+    r"\s+(?P<target>(?:\./)?[A-Za-z0-9_][A-Za-z0-9_./-]*)"
+    r"(?:\s+(?P<tail>--(?:\s.*)?))?$")
+
+
+def eslint_files_ere(cmd):
+    """ERE for the staged files the command's full scan would lint: its --ext list, else ESLint's directory default (.js)."""
+    m = _flag_value(cmd, "--ext")
+    if not m:
+        return _ESLINT_DEFAULT_FILES_ERE
+    exts = [re.escape(e.strip().lstrip(".")) for e in m.group(1).strip("\"'").split(",") if e.strip(". \t")]
+    return r"\.(%s)$" % "|".join(exts) if exts else _ESLINT_DEFAULT_FILES_ERE
+
+
+def eslint_split(cmd):
+    """(command without the target, target) for the shapes staged-file linting understands; None keeps the full-scan rendering."""
+    m = _ESLINT_TARGETED.match(cmd.strip())
+    if not m:
+        return None
+    head, tail = m.group("head"), m.group("tail")
+    return ("%s %s" % (head, tail)) if tail else head, m.group("target")
+
+
+# run_step executes its arguments directly, so a CI command with shell operators must run through one shell of its
+# own -- rendered bare, the operators would apply to run_step itself (a pipe eats its skip message, for example).
+_SHELL_OPS = re.compile(r"[|;&<>]")
+
+
+def shell_wrapped(cmd):
+    return "bash -c %s" % shlex.quote(cmd) if _SHELL_OPS.search(cmd) else cmd
+
+
 def with_ignores(key, cmd):
     """ESLint gets the shared exclusion list (the hook's ESLINT_IGN array); every other command is rendered as written.
 
     PHPCS/PHPMD read .stylelintignore inside the generated script and stylelint reads it natively, so neither takes arguments.
+    An ESLint command with shell operators runs through its own shell instead and gets no exclusion arguments (an array
+    expansion cannot cross `bash -c` quoting); such a command manages its own exclusions.
     """
+    if _SHELL_OPS.search(cmd):
+        return shell_wrapped(cmd)
     if key == "eslint":
         sep = " --" if re.match(r"^npm\s+run\b", cmd) and not re.search(r"\s--(\s|$)", cmd) else ""
         return '%s%s "${ESLINT_IGN[@]}"' % (cmd, sep)
@@ -357,8 +399,14 @@ def render(root):
     for key, label, cmd, _ in st:
         gate = GATES.get(key)
         prefix = "GATE=%s " % shlex.quote(gate) if gate else ""
+        split = eslint_split(cmd) if key == "eslint" and not _SHELL_OPS.search(cmd) else None
         if key == "yamllint":
             lines.append('%srun_step "%s" run_yamllint %s' % (prefix, label, cmd[len("yamllint"):].strip()))
+        elif split:
+            rest, target = split
+            lines.append('%srun_step "%s" run_eslint %s %s %s %s' % (
+                prefix, label, shlex.quote(eslint_files_ere(cmd)), shlex.quote(_ESLINT_CFG_GATE),
+                shlex.quote(target), with_ignores(key, rest)))
         else:
             lines.append('%srun_step "%s" %s' % (prefix, label, with_ignores(key, cmd)))
     node = node_block(root, cfg) if any(k in NODE_TOOLS for k, *_ in st) else ""
