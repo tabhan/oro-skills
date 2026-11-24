@@ -88,8 +88,10 @@ class DispatcherTest(Base):
     def test_registered_once_with_all_three_sources(self):
         with open(os.path.join(HOOKS, "..", "..", "hooks", "hooks.json")) as fh:
             groups = json.load(fh)["hooks"]["SessionStart"]
-        self.assertEqual([g["matcher"] for g in groups], ["startup|resume|compact"])
-        self.assertEqual(len(groups[0]["hooks"]), 1)
+        dispatcher = [g for g in groups if any("sessionstart.py" in h["command"] for h in g["hooks"])]
+        self.assertEqual([g["matcher"] for g in dispatcher], ["startup|resume|compact"])
+        self.assertEqual(len(dispatcher[0]["hooks"]), 1)
+        self.assertEqual(len(groups), 2)  # the other group is telemetry.py, registered without a matcher (all sources)
 
 
 if __name__ == "__main__":
