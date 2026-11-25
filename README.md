@@ -81,7 +81,7 @@ Field list and format: `docs/TELEMETRY_API.md`.
 
 ## Git pre-commit hook
 
-`aaxis-oro setup sync` installs a managed `pre-commit` (template `templates/git-hooks/pre-commit.sh`, header
+`aaxis-oro setup sync` also enables the seven Oro plugins in the project's git-excluded `.claude/settings.local.json` (they are disabled globally). It installs a managed `pre-commit` (template `templates/git-hooks/pre-commit.sh`, header
 `aaxis-oro:managed-pre-commit`) running static/quality checks only: PHPCS, PHP-CS-Fixer, PHPMD, PHPStan, Psalm, PHPUnit,
 ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.yml`, `.gitlab-ci.yml`,
 `.github/workflows`; installs, Sonar and `pipe:` steps are ignored), else composer/package.json scripts, else

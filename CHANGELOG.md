@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.2
+
+- `aaxis-oro setup sync` enables the Oro plugins (`aaxis-oro` and the six `orocommerce-*`) in `<root>/.claude/settings.local.json` for projects where they are disabled globally: merges `enabledPlugins`, never sets false and warns on an explicit false, skips invalid JSON, adds the file to `.git/info/exclude` when not ignored.
+
 ## 0.29.1
 
 - Tighter `solutions/references` (incl. `dialog-forms/*` and `entities/*`): duplicated rules, history and rationale prose removed, one canonical home per rule, no rule or snippet lost; `dialog-forms/README.md` merged into `flow.md`.
