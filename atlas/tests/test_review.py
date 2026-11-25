@@ -328,6 +328,52 @@ class SmallChangeGateTest(ReviewBase):
             self.assertFalse(task.is_small_change(self.root, [risky]), risky)
         self.assertFalse(task.is_small_change(self.root, ["src/A.yml"], "+  decorates: x"))
 
+    def test_task_small_cli(self):
+        self.stage(("src/Foo/A.php", "<?php\n"))
+        r = self.task("small")
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "SMALL"))
+        self.stage(("src/Foo/Migrations/Schema/V1/M.php", "<?php\n"))
+        r = self.task("small")
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(r.stdout.startswith("not SMALL: risk path"), r.stdout)
+        self.assertEqual(r.stdout.count("not SMALL"), 1)
+        self.git("reset", "-q")
+        self.git("clean", "-fdq", "src")
+        self.stage(*[("src/Foo/F%d.php" % i, "<?php\n") for i in range(4)])
+        self.assertIn("files changed (max 3)", self.task("small").stdout)
+
+    def test_untracked_files_count_for_small(self):
+        self.write("src/Foo/Resources/config/services.yml", "services:\n  a:\n    decorates: foo.mgr\n")
+        self.assertIn("risk construct", self.task("small").stdout)
+        os.remove(os.path.join(self.root, "src/Foo/Resources/config/services.yml"))
+        self.write("src/Foo/Migrations/Schema/V1/M.php", "<?php\n")
+        r = self.task("small")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("risk path", r.stdout)
+        os.remove(os.path.join(self.root, "src/Foo/Migrations/Schema/V1/M.php"))
+        self.write(".gitignore", "ignored/\n")
+        self.write("ignored/x.yml", "decorates: y\n")
+        self.assertEqual(self.task("small").stdout.strip(), "SMALL")
+
+    def test_phase_timing(self):
+        import json
+        tf = os.path.join(self.root, ".oro-ai/task/BUC-8/timing.jsonl")
+        for a in (("build", "start"), ("build", "end"), ("review", "start")):
+            self.assertEqual(self.task("phase", "BUC-8", *a, "--note", "n").returncode, 0)
+        self.assertEqual(self.task("phase", "BUC-8", "build", "start").returncode, 0)
+        rows = [json.loads(l) for l in open(tf)]
+        self.assertEqual([(r["phase"], r["event"]) for r in rows], [("build", "start"), ("build", "end"), ("review", "start"), ("build", "start")])
+        self.assertTrue(rows[0]["ts"] and "head" in rows[0] and rows[0]["note"] == "n")
+        out = self.task("timing", "BUC-8")
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("build", out.stdout)
+        self.assertIn("no end", out.stdout)
+        self.assertIn("total", out.stdout)
+        bad = self.task("phase", "BUC-8", "build", "sideways")
+        self.assertEqual(bad.returncode, 0)
+        self.assertIn("warning", bad.stderr)
+        self.assertEqual(self.task("timing", "NOPE-1").returncode, 0)
+
     def test_gate_diff_and_record_only_regate_changed_sections(self):
         plan = ".oro-ai/task/BUC-8/plan.md"
         self.write(plan, "# plan\n\n## Extension points\nlistener A\n\n## Tests\nscenario 1\n")

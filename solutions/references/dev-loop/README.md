@@ -16,4 +16,4 @@ investigation, before reading `vendor/`: `aaxis-oro atlas <event|tag|service|gri
 ## After switching branch or pulling
 
 Run `aaxis-oro dev refresh` (`--dry-run` to preview): it maps the changed files to composer, cache, migration,
-entity, translation, routes-dump and asset steps for both stacks, and `aaxis-oro test` refuses a stale tree. See `env/README.md`.
+entity, translation, routes-dump and asset steps for both stacks (`--target local|local-test` limits it to one; the e2e gate suggests `--target local-test`), and `aaxis-oro test` refuses a stale tree. See `env/README.md`.

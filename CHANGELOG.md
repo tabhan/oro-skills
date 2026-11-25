@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.5
+
+- Consistency: `plan-rules.md` now carries the SMALL exemption from the architect-gate (as `process-rules.md` and `task.py` do); `/aaxis-oro:review` stops with "review already covers HEAD" when an approved review covers it; new `aaxis-oro task small [KEY]` prints `SMALL` or `not SMALL: <reason>` using `is_small_change`; review's opus grep verified identical to `task.RISK_PATH`/`RISK_CONTENT` and now points at them. Also: `aaxis-oro dev refresh --target local|local-test|both` (default both; the e2e gate now suggests `--target local-test`, and a target-only refresh leaves the other stack due), and `aaxis-oro task phase`/`task timing` for per-phase timing.
+
 ## 0.29.4
 
 - One CLI version: `install.sh` installs a `~/.local/bin/aaxis-oro` shim that runs the installed plugin's `bin/aaxis-oro` (user-scope install, else highest version; `ORO_SKILLS_DIR` overrides; the clone is a warned fallback) so CLI and hooks agree; e2e done-rule is related features only (full suite on demand); the atlas skill no longer asks for a synchronous rebuild of a stale-usable index; plugin tests no longer depend on a personal repo.

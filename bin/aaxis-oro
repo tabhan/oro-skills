@@ -21,7 +21,7 @@ HELP = """usage: aaxis-oro <group> [args]
   version  [diff|applies]                                      Oro version and which guidance applies
   spec     coverage|report                                     spec AC traceability: static coverage, run verification
   setup    <status|sync|rules|apply-rules>                     project setup parts of /aaxis-oro:setup
-  dev      lint | refresh [--all] [--dry-run]                  lint the plugin's guidance | refresh derived state after switch/pull
+  dev      lint | refresh [--all] [--target T] [--dry-run]           lint the plugin's guidance | refresh derived state after switch/pull
 """
 
 ENV_SCRIPTS = {
@@ -46,7 +46,7 @@ Refused (exit 3) while inputs changed since the last `aaxis-oro dev refresh`; --
 Exit: the command's own code; 3 target mismatch, stale tree or refused combination; 64 usage.
 """
 REVIEW_HELP = "usage: aaxis-oro review check [--project P] [--staged|--range A..B|--files F...] [--plan FILE] [--message TEXT] [--json] [--verbose]\nExit: 0 pass, 1 deny finding, 3 diff unreadable, 64 usage.\n"
-DEV_HELP = "usage: aaxis-oro dev lint [--root DIR] [PATH...]\n       aaxis-oro dev refresh [--project DIR] [--dry-run] [--all]\n"
+DEV_HELP = "usage: aaxis-oro dev lint [--root DIR] [PATH...]\n       aaxis-oro dev refresh [--project DIR] [--dry-run] [--all] [--target local|local-test|both]\n"
 HELPS = {"-h", "--help", "help"}
 
 

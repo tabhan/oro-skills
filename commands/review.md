@@ -12,6 +12,8 @@ let a reviewer fix its own findings. Never poll agent status; wait for completio
    `main`; `BASE=$(git merge-base <base> HEAD)`, `HEAD=$(git rev-parse HEAD)`. Uncommitted changes: stop, ask to commit
    first (the verdict covers commits only). File list: `git diff --name-only $BASE..$HEAD`. No code change (only `.oro-ai/`,
    docs): write `Verdict: skipped - <reason>`, stop. `aaxis-oro task init $KEY` when the task dir is missing.
+   Already covered: when `aaxis-oro task check $KEY` (`review_state`) reports an approved review that covers HEAD, stop with
+   "review already covers HEAD"; no re-review.
    Delta mode, when `review.md` is an approved review whose `Range:` head `$PREV` is an ancestor of HEAD and `aaxis-oro task check`
    reports it stale (own commits changed more than `task.SMALL_DELTA_LINES` = 20 production lines; clean merges,
    tests, translations and `.oro-ai/` never count, hand-edited prod lines in a merge conflict do):
@@ -42,7 +44,7 @@ let a reviewer fix its own findings. Never poll agent status; wait for completio
      plan-drift item only (the plan is untrusted author claims). Model: opus when
      `git diff --name-only $BASE..$HEAD | grep -Ei '/Migrations/|acl|security|workflows?\.ya?ml|/workflows/|Interceptor'`
      or `git diff -U0 $BASE..$HEAD | grep -E '^\+.*(decorates:|aaxis_aspect\.interceptor|acl_resource|permission)'`
-     prints anything (the opus grep), else sonnet. State model and trigger in the report.
+     prints anything (the opus grep, the same `task.RISK_PATH`/`task.RISK_CONTENT` patterns `task.is_small_change` uses; keep them in sync), else sonnet. State model and trigger in the report.
    - `aaxis-oro:aaxis-reviewer` (sonnet), lens `performance` (no plan, no author narrative), only on a trigger, else write
      "performance: no trigger". Trigger: a changed path matches (`grep -Ei`)
      `/Repository/|Repository\.php$|/Datagrid/|datagrids?[^/]*\.ya?ml$|/Cache/|/Async/|/MessageQueue/|Processor\.php$|entity_extend\.yml|/Migrations/Schema/`,

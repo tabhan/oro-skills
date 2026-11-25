@@ -80,7 +80,7 @@
  "sha256": {
   "process-rules": "60442eb458eaa660733c63e330e7ab63633f32c7ae458cc5fd2214e41c7d4e0d",
   "review-rules": "8634676d6445ca9028153b9f6d7191871d6f193581877956c1fa44eda9e6e966",
-  "plan-rules": "72bb67c941c6b795a42113ff8f291d0b84da20dcbdf60658bee2880b40b3952f"
+  "plan-rules": "ee065e31814e7dd229abaa2a4683feb9c4fbc590effd12f8832af4d07f4d036b"
  },
  "sha256_note": "Byte-stable on purpose: the blocks sit in every session's cached prompt prefix, so an edit invalidates the cache. Change them deliberately, then refresh these hashes."
 }

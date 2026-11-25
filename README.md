@@ -143,6 +143,8 @@ exists) on a branch whose name holds a ticket key (`[A-Z][A-Z0-9]+-<n>`); elsewh
   as empty) prints a warning without changing the exit code; features write `n/a - feature`.
 - `aaxis-oro task gate-diff [KEY]` lists `plan.md` sections changed/new/removed since the approval recorded by
   `task gate-record` (`Approved-Section:` lines in `architect-gate.md`); none recorded = whole plan.
+- `aaxis-oro task small [KEY]` prints `SMALL` (exit 0) or `not SMALL: <reason>` (exit 1): the deterministic check the gate and hooks use.
+- `aaxis-oro task phase <KEY> <name> start|end [--note T]` appends timing events to `.oro-ai/task/<KEY>/timing.jsonl`; `task timing <KEY>` prints per-phase durations and the total (both never fail the caller).
 - `review check --staged` (and so the `git commit` PreToolUse hook): `review-ticket-gate` denies a staged
   extension-point file (same list as the atlas edit hook) unless the change is SMALL (`task.is_small_change`: at most 3
   files outside `.oro-ai/`, no risk path or added `decorates:`/interceptor/ACL construct; `task check` agrees) or

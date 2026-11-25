@@ -255,14 +255,37 @@ def branch_added_text(root):
     return ""
 
 
+def untracked(root):
+    """(paths, added_text) of untracked, non-ignored files: their contents count as added lines (a new file is all additions)."""
+    paths = [x for x in (git(root, "ls-files", "-o", "--exclude-standard") or "").splitlines() if x]
+    text = []
+    for p in paths:
+        try:
+            with open(os.path.join(root, p), encoding="utf-8", errors="replace") as fh:
+                text.extend("+" + l for l in fh.read(200000).splitlines())
+        except OSError:
+            pass
+    return paths, "\n".join(text)
+
+
+def small_reason(root, paths, added_text=""):
+    """'' for a SMALL change, else why not: at most SMALL_FILES files (ignoring `.oro-ai/`), no risk path, no risk construct
+    in the added lines (`added_text`, the branch's committed diff, and untracked files, which count as paths and content)."""
+    up, ut = untracked(root)
+    files = sorted({p for p in list(paths) + up if not TASK_ONLY.match(p)})
+    if len(files) > SMALL_FILES:
+        return "%d files changed (max %d)" % (len(files), SMALL_FILES)
+    hit = [p for p in files if RISK_PATH.search(p)]
+    if hit:
+        return "risk path: %s" % hit[0]
+    if files and RISK_CONTENT.search(added_text + "\n" + branch_added_text(root) + "\n" + ut):
+        return "adds a risk construct (decorates:, aspect interceptor, acl_resource, permission)"
+    return ""
+
+
 def is_small_change(root, paths, added_text=""):
-    """True for a SMALL change: at most SMALL_FILES files (ignoring `.oro-ai/`), no risk path, no risk construct in the
-    added lines (`added_text` plus the branch's committed diff). SMALL changes are exempt from the architect-gate."""
-    files = {p for p in paths if not TASK_ONLY.match(p)}
-    small = len(files) <= SMALL_FILES and not any(RISK_PATH.search(p) for p in files)
-    if small and files:
-        small = not RISK_CONTENT.search(added_text + "\n" + branch_added_text(root))
-    return small
+    """True for a SMALL change (see small_reason); SMALL changes are exempt from the architect-gate."""
+    return not small_reason(root, paths, added_text)
 
 
 def is_prod(path):
@@ -330,10 +353,66 @@ def _require_project(explicit):
     return root
 
 
+def _timing_path(root, key):
+    return os.path.join(task_dir(root, key), "timing.jsonl")
+
+
+def phase_event(root, key, name, event, note=None):
+    """Append {phase, event, ts, head[, note]} to .oro-ai/task/<KEY>/timing.jsonl."""
+    import json
+    import time
+    rec = {"phase": name, "event": event, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "head": git(root, "rev-parse", "HEAD") or ""}
+    if note:
+        rec["note"] = note
+    os.makedirs(task_dir(root, key), exist_ok=True)
+    with open(_timing_path(root, key), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec) + "\n")
+
+
+def timing_report(root, key):
+    """Lines of per-phase total durations (repeated phases summed, an unterminated start counted to the last event) + total."""
+    import json
+    from datetime import datetime, timezone
+    events = []
+    for line in read_text(_timing_path(root, key)).splitlines():
+        try:
+            e = json.loads(line)
+            e["_t"] = datetime.strptime(e["ts"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+            events.append(e)
+        except (ValueError, KeyError, TypeError):
+            continue
+    if not events:
+        return ["task %s: no timing recorded" % key]
+    last = max(e["_t"] for e in events)
+    open_at, totals, runs, order, unfinished = {}, {}, {}, [], set()
+    for e in events:
+        n = e.get("phase")
+        if n not in totals:
+            totals[n], runs[n] = 0.0, 0
+            order.append(n)
+        if e.get("event") == "start":
+            if n in open_at:
+                unfinished.add(n)
+            open_at[n] = e["_t"]
+        elif e.get("event") == "end" and n in open_at:
+            totals[n] += e["_t"] - open_at.pop(n)
+            runs[n] += 1
+    for n, t0 in open_at.items():
+        totals[n] += last - t0
+        runs[n] += 1
+        unfinished.add(n)
+    fmt = lambda s: "%dm%02ds" % divmod(int(round(s)), 60)
+    out = ["%-20s %s x%d%s" % (n, fmt(totals[n]), runs[n], " (no end: counted to the last event)" if n in unfinished else "") for n in order]
+    out.append("%-20s %s (first to last event %s)" % ("total (phases)", fmt(sum(totals.values())), fmt(last - min(e["_t"] for e in events))))
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="aaxis-oro task", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("action", choices=("init", "check", "gate-diff", "gate-record"))
+    ap.add_argument("action", choices=("init", "check", "gate-diff", "gate-record", "small", "phase", "timing"))
     ap.add_argument("key", nargs="?", help="ticket key; default: from the branch name")
+    ap.add_argument("rest", nargs="*", help="phase: <name> start|end; timing: none")
+    ap.add_argument("--note")
     ap.add_argument("--project")
     try:
         a = ap.parse_args(argv)
@@ -341,8 +420,25 @@ def main(argv=None):
         return 64 if exc.code else 0
     root = _require_project(a.project)
     if root is None:
-        return 64
+        return 0 if a.action in ("phase", "timing") else 64
+    if a.action in ("phase", "timing"):  # never fail the caller
+        try:
+            key = a.key or branch_key(root)
+            if a.action == "timing":
+                print("\n".join(timing_report(root, key))) if key else sys.stderr.write("aaxis-oro task: no ticket key\n")
+            elif not key or len(a.rest) != 2 or a.rest[1] not in ("start", "end"):
+                sys.stderr.write("aaxis-oro task: warning: usage: task phase <KEY> <name> start|end [--note T]\n")
+            else:
+                phase_event(root, key, a.rest[0], a.rest[1], a.note)
+        except Exception as exc:
+            sys.stderr.write("aaxis-oro task: warning: %s\n" % exc)
+        return 0
     key = a.key or branch_key(root)
+    if a.action == "small":
+        staged = (git(root, "diff", "--cached", "--name-only") or "").splitlines()
+        why = small_reason(root, branch_files(root) + staged, git(root, "diff", "--cached", "-U0") or "")
+        print("not SMALL: " + why if why else "SMALL")
+        return 1 if why else 0
     if not key:
         sys.stderr.write("aaxis-oro task: no ticket key given or in the branch name\n")
         return 64
