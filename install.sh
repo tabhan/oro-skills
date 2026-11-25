@@ -7,7 +7,7 @@
 #   ./install.sh                 # update this checkout (git pull), remove legacy symlinks, install the plugin, link CLIs
 #   ./install.sh --no-update     # skip git pull
 #   ./install.sh --project DIR   # project whose .claude/settings*.json are cleaned of legacy atlas hooks, with ~/.claude/settings*.json (default: cwd)
-#   ./install.sh --uninstall     # remove the CLI symlink this script created
+#   ./install.sh --uninstall     # remove the CLI shim and legacy links this script created
 #
 # First-time install with SSH access to the repo:
 #   git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills
@@ -97,6 +97,9 @@ if [ "$UNINSTALL" -eq 1 ]; then
   remove_legacy_links "$SKILLS_DEST" 'oro-*'
   remove_legacy_links "$AGENTS_DEST" 'oro-*.md'
   remove_legacy_links "${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}" '*'
+  if grep -q 'aaxis-oro shim' "${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}/aaxis-oro" 2>/dev/null; then
+    rm -f "${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}/aaxis-oro"
+  fi
   exit 0
 fi
 
@@ -133,8 +136,47 @@ CLI_BIN_DIR="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}"
 mkdir -p "$CLI_BIN_DIR"
 remove_legacy_links "$CLI_BIN_DIR" 'atlas*'
 remove_legacy_links "$CLI_BIN_DIR" 'oro-*'
-ln -sfn "$SCRIPT_DIR/bin/aaxis-oro" "$CLI_BIN_DIR/aaxis-oro"
-echo "  $CLI_BIN_DIR/aaxis-oro -> $SCRIPT_DIR/bin/aaxis-oro"
+# A shim, not a symlink: the CLI must be the same version the hooks run (the installed plugin), not whichever
+# clone ran install.sh. ORO_SKILLS_DIR (plugin developers) overrides; the clone is only the no-plugin fallback.
+rm -f "$CLI_BIN_DIR/aaxis-oro"
+cat > "$CLI_BIN_DIR/aaxis-oro" <<SHIM
+#!/usr/bin/env python3
+# aaxis-oro shim (written by install.sh): runs bin/aaxis-oro of the installed aaxis-oro plugin.
+import json, os, re, sys
+
+FALLBACK = "$SCRIPT_DIR"
+
+
+def ver(v):
+    return tuple(int(n) for n in re.findall(r"\\d+", str(v))) or (0,)
+
+
+def plugin_dir():
+    try:
+        with open(os.path.join(os.path.expanduser("~"), ".claude", "plugins", "installed_plugins.json")) as fh:
+            plugins = json.load(fh).get("plugins", {})
+    except (OSError, ValueError):
+        return None
+    found = []
+    for key, entries in plugins.items():
+        if key.split("@")[0] != "aaxis-oro" or not isinstance(entries, list):
+            continue
+        for e in entries:
+            path = e.get("installPath") if isinstance(e, dict) else None
+            if path and os.access(os.path.join(path, "bin", "aaxis-oro"), os.X_OK):
+                found.append((e.get("scope") == "user", ver(e.get("version")), path))
+    return max(found)[2] if found else None
+
+
+root = os.environ.get("ORO_SKILLS_DIR") or plugin_dir()
+if not root:
+    root = FALLBACK
+    sys.stderr.write("aaxis-oro: no installed aaxis-oro plugin found, using the clone at %s\\n" % root)
+target = os.path.join(root, "bin", "aaxis-oro")
+os.execv(target, [target] + sys.argv[1:])
+SHIM
+chmod +x "$CLI_BIN_DIR/aaxis-oro"
+echo "  $CLI_BIN_DIR/aaxis-oro (shim -> installed plugin; ORO_SKILLS_DIR overrides; fallback $SCRIPT_DIR/bin/aaxis-oro)"
 case ":$PATH:" in
   *":$CLI_BIN_DIR:"*) ;;
   *) echo "  (add $CLI_BIN_DIR to PATH, or call $SCRIPT_DIR/bin/aaxis-oro directly)" >&2 ;;

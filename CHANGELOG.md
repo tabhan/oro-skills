@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.4
+
+- One CLI version: `install.sh` installs a `~/.local/bin/aaxis-oro` shim that runs the installed plugin's `bin/aaxis-oro` (user-scope install, else highest version; `ORO_SKILLS_DIR` overrides; the clone is a warned fallback) so CLI and hooks agree; e2e done-rule is related features only (full suite on demand); the atlas skill no longer asks for a synchronous rebuild of a stale-usable index; plugin tests no longer depend on a personal repo.
+
 ## 0.29.3
 
 - The SessionStart hook now updates the plugin itself instead of only announcing a new version (native Claude Code autoUpdate was spiked and rejected: interactive sessions only, after a random 0-10 min delay). When the remote check (every 6h, 1h after a failure) finds a newer version and the plugin is installed through the marketplace, the detached refresher runs `claude plugin marketplace update aaxis-oro`, then `claude plugin update aaxis-oro@aaxis-oro --scope S --json` for the user scope and for the current project's local/project scope (no prompts, `BatchMode` ssh, per-call timeout, lock-guarded, old version directories kept), records `{from,to,ok,ts,scopes}` in `~/.claude/aaxis-oro-update-check.json`, and the next session prints `[aaxis-oro] updated X->Y (restart to apply)` once. No `claude` binary, no marketplace install or a failed update falls back to the manual-upgrade notice. Skipped in subagents. Opt out of the update only: `AAXIS_ORO_NO_AUTO_UPDATE=1`; of everything: `AAXIS_ORO_NO_UPDATE_CHECK=1`.

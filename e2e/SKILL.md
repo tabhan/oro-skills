@@ -28,7 +28,7 @@ explicit target (`aaxis-oro test local-test e2e ...`), never a default. Browser 
 | Locators, env ids, debug flag, harness gotchas, test-cache clear, timeout consts | conventions.md |
 | Audit / Change History assertion times out | debugging-audit-mq.md |
 | Passes alone, fails in the full run | parallelism.md |
-| Done? | Full non-debug run green; checklist.md |
+| Done? | Related features green in a non-debug run; checklist.md |
 
 ## Never
 

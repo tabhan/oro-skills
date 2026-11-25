@@ -39,8 +39,8 @@ instead of grepping 14k services by hand. Details: [README.md](README.md).
   `decorates:` (a listed target takes an interceptor: solutions skill, `override-core-service.md`).
 - Reuse an OOTB hook when one exists; only add a new event/tag/extension point if the atlas has none.
 - A `STALE` line (`aaxis-oro atlas status` exits 2): queries still answer ("may be out of date") and hooks reindex
-  stale-usable src changes in the background at turn end. Otherwise run `aaxis-oro atlas build --incremental` (needs
-  the project's `php bin/console`) or ask the user to, before trusting results.
+  stale-usable src changes in the background at turn end; do not build synchronously. Only an unusable index
+  needs `aaxis-oro atlas build --incremental` (needs the project's `php bin/console`) or the user, before trusting results.
 - Run atlas before reading vendor/ (investigation too), not only before editing; the SubagentStart hook reminds subagents.
 - If `.oro-ai/atlas/` is missing, run `aaxis-oro atlas setup <root>` once (builds; plain
   rebuild: `aaxis-oro atlas build --project <root>`). Output is git-ignored.

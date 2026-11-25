@@ -7,12 +7,13 @@
 - **Resolve env-specific ids via harness helpers, never hardcode** — localization ids via the
   harness's localization map (e.g. `config.localizations[code]`), entity ids via the suite's
   entity-id resolver. Hardcoded ids break across environments.
-- **Iterate with the debug flag, then confirm with a full non-debug run.** Chase a failure with the
+- **Iterate with the debug flag, then confirm the related features with a non-debug run.** Chase a failure with the
   harness's debug flag + a grep on its tag to restrict the run to the impacted feature (debug mode
   usually means: stop on first failure, skip already-passed scenarios — check the project's harness
   for the exact flag names). Debug mode runs a *reduced, stop-on-first-fail* set, so its concurrency
-  mix differs from a real run and can hide a cross-feature parallel race. **Always finish with a full
-  run with the debug flag OFF** — a feature is only fixed once it is green in the full parallel suite.
+  mix differs from a real run and can hide a cross-feature parallel race. **Always finish with a run
+  of the related features (new/changed scenarios + features sharing the changed steps/fixtures) with the debug flag OFF**
+  — a feature is only fixed once it is green in the parallel lanes. The full suite is on demand or scheduled by the project.
 - **Harness gotchas.** `--grep <tag>` does NOT limit the serial lane: running any `@serial` feature drags the
   whole serial lane (use the parallel-only project selection for a single parallel feature). `cache:clear
   --env=test` with warmup can crash on generated test entities that do not exist yet: use `--no-warmup`.

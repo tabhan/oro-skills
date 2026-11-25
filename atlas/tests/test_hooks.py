@@ -186,10 +186,10 @@ class HookTest(Base):
         self.assertIsNone(self.prompt("decorate the price provider service", sid="m5"))
 
     def test_prompt_process_reminder_once_per_key_in_setup_projects(self):
-        self.assertIsNone(self.prompt("/tab-jira BUC-12", sid="p0"))
+        self.assertIsNone(self.prompt("/ticket-work BUC-12", sid="p0"))
         os.makedirs(os.path.join(self.root, ".oro-ai"), exist_ok=True)
         open(os.path.join(self.root, ".oro-ai", "config.json"), "w").close()
-        out = self.prompt("/tab-jira BUC-12", sid="p1")
+        out = self.prompt("/ticket-work BUC-12", sid="p1")
         self.assertIn("task init BUC-12", out["hookSpecificOutput"]["additionalContext"])
         self.assertIsNone(self.prompt("continue BUC-12", sid="p1"))
         self.assertIsNotNone(self.prompt("now BUC-13", sid="p1"))
