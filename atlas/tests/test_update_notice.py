@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -136,12 +137,12 @@ class SpawnTest(Base):
         self.assertEqual(self.calls, ["spawn"])
 
     def test_fresh_cache_does_not_spawn(self):
-        write(U.cache_path(), {"checked_at": 1_000_000.0 - DAY + 60, "ok": True, "latest": "0.28.6"})
+        write(U.cache_path(), {"checked_at": 1_000_000.0 - U.TTL + 60, "ok": True, "latest": "0.28.6"})
         self.assertIn("0.28.6", self.decide()["systemMessage"])
         self.assertEqual(self.calls, [])
 
     def test_stale_cache_spawns_but_still_notifies_from_it(self):
-        write(U.cache_path(), {"checked_at": 1_000_000.0 - DAY - 1, "ok": True, "latest": "0.28.6"})
+        write(U.cache_path(), {"checked_at": 1_000_000.0 - U.TTL - 1, "ok": True, "latest": "0.28.6"})
         self.assertIn("0.28.6", self.decide()["systemMessage"])
         self.assertEqual(self.calls, ["spawn"])
 
@@ -295,6 +296,239 @@ class ProcessTest(Base):
         p = subprocess.run([sys.executable, os.path.join(HOOKS, "sessionstart.py")], input=json.dumps({"source": "startup", "cwd": self.tmp.name}),
                            capture_output=True, text=True, env=dict(os.environ, HOME=self.home), timeout=30)
         self.assertEqual((p.returncode, p.stdout), (0, ""))
+
+
+class AutoUpdateBase(Base):
+    """The plugin is installed through the marketplace (user + local scope for self.proj) and a `claude` binary exists."""
+
+    def setUp(self):
+        super().setUp()
+        self.proj = os.path.join(self.tmp.name, "proj")
+        os.makedirs(self.proj)
+        self.record("0.28.5")
+        self._claude, self._noauto = U.find_claude, os.environ.pop("AAXIS_ORO_NO_AUTO_UPDATE", None)
+        U.find_claude = lambda: "/stub/claude"
+        self.runs = []
+
+    def tearDown(self):
+        U.find_claude = self._claude
+        os.environ.pop("AAXIS_ORO_NO_AUTO_UPDATE", None)
+        if self._noauto is not None:
+            os.environ["AAXIS_ORO_NO_AUTO_UPDATE"] = self._noauto
+        super().tearDown()
+
+    def record(self, version, scopes=("user", "local")):
+        entries = [{"scope": sc, "version": version, "installPath": "/x", **({"projectPath": self.proj} if sc == "local" else {})}
+                   for sc in scopes]
+        write(os.path.join(self.home, ".claude", "plugins", "installed_plugins.json"), {"version": 2, "plugins": {U.PLUGIN_ID: entries}})
+
+    def updater(self, to="0.29.0", ok=True):
+        def update(installed, cwd, now):
+            self.runs.append((installed, cwd))
+            return {"from": installed, "to": to if ok else installed, "ok": ok, "ts": now, "scopes": ["user"], "announced": False,
+                    **({} if ok else {"error": "boom"})}
+        return update
+
+    def go(self, fetch_version="0.29.0", now=1_000_000.0, **kw):
+        U.refresh(now=now, fetch=self.fetcher(fetch_version), cwd=self.proj, root=self.root, **kw)
+        self.calls.clear()  # the fetcher's own call is not what the decide tests count
+
+
+class AutoUpdateDecideTest(AutoUpdateBase):
+    def test_update_due_spawns_even_with_a_fresh_cache_and_stays_quiet(self):
+        write(U.cache_path(), {"checked_at": 1_000_000.0, "ok": True, "latest": "0.29.0"})
+        self.assertIsNone(self.decide())  # the background update will handle it: no notice
+        self.assertEqual(self.calls, ["spawn"])
+
+    def test_success_is_announced_once_with_restart_hint(self):
+        self.go(update=self.updater())
+        self.assertEqual(self.cache()["update"]["to"], "0.29.0")
+        msg = self.decide(now=1_000_100.0)["systemMessage"]
+        self.assertEqual(msg, "[aaxis-oro] updated 0.28.5\u21920.29.0 (restart to apply)")
+        self.assertIsNone(self.decide(now=1_000_200.0))  # told once, no notice either: restart pending
+        self.assertEqual(self.calls, [])
+
+    def test_no_restart_hint_when_this_session_already_runs_the_new_version(self):
+        self.go(update=self.updater())
+        write(os.path.join(self.root, ".claude-plugin", "plugin.json"), {"version": "0.29.0"})
+        self.assertEqual(self.decide(now=1_000_100.0)["systemMessage"], "[aaxis-oro] updated 0.28.5\u21920.29.0")
+
+    def test_failed_update_falls_back_to_the_manual_notice_and_retries_after_an_hour(self):
+        self.go(update=self.updater(ok=False))
+        self.assertFalse(self.cache()["ok"])
+        msg = self.decide(now=1_000_600.0)["systemMessage"]
+        self.assertIn("claude plugin marketplace update aaxis-oro", msg)
+        self.assertEqual(self.calls, [])
+        self.decide(now=1_000_000.0 + U.RETRY + 1)
+        self.assertEqual(self.calls, ["spawn"])
+
+    def test_opt_out_auto_update_keeps_the_notice_only(self):
+        os.environ["AAXIS_ORO_NO_AUTO_UPDATE"] = "1"
+        write(U.cache_path(), {"checked_at": 1_000_000.0, "ok": True, "latest": "0.29.0"})
+        self.assertIn("0.29.0", self.decide()["systemMessage"])
+        self.assertEqual(self.calls, [])
+        self.go(update=self.updater())
+        self.assertEqual(self.runs, [])
+        self.assertNotIn("update", self.cache())
+
+    def test_opt_out_update_check_does_nothing(self):
+        os.environ["AAXIS_ORO_NO_UPDATE_CHECK"] = "1"
+        try:
+            self.assertIsNone(self.decide())
+        finally:
+            del os.environ["AAXIS_ORO_NO_UPDATE_CHECK"]
+        self.assertEqual((self.calls, self.cache()), ([], {}))
+
+    def test_subagents_are_skipped(self):
+        write(U.cache_path(), {"checked_at": 0, "ok": True, "latest": "0.29.0"})
+        self.assertIsNone(self.decide(payload={"agent_id": "a1"}))
+        self.assertEqual(self.calls, [])
+
+    def test_missing_claude_binary_keeps_the_notice(self):
+        U.find_claude = lambda: None
+        write(U.cache_path(), {"checked_at": 1_000_000.0, "ok": True, "latest": "0.29.0"})
+        self.assertIn("0.29.0", self.decide()["systemMessage"])
+        self.assertEqual(self.calls, [])
+        self.go(update=self.updater())
+        self.assertEqual(self.runs, [])
+
+    def test_no_marketplace_install_keeps_the_notice(self):
+        os.remove(os.path.join(self.home, ".claude", "plugins", "installed_plugins.json"))
+        write(U.cache_path(), {"checked_at": 1_000_000.0, "ok": True, "latest": "0.29.0"})
+        self.assertIn("0.29.0", self.decide()["systemMessage"])
+
+
+class AutoUpdateRefreshTest(AutoUpdateBase):
+    def test_rate_limit(self):
+        up = {"ok": True, "to": "0.29.0", "ts": 1_000_000.0}
+        self.assertFalse(U.update_due({"update": up}, "0.29.0", "0.28.5", 1_000_100.0))  # already there
+        self.assertFalse(U.update_due({"update": up}, "0.29.1", "0.28.5", 1_000_100.0))  # newer, but inside the 6h window
+        self.assertTrue(U.update_due({"update": up}, "0.29.1", "0.28.5", 1_000_000.0 + U.TTL))
+        bad = {"ok": False, "ts": 1_000_000.0}
+        self.assertFalse(U.update_due({"update": bad}, "0.29.0", "0.28.5", 1_000_000.0 + 60))
+        self.assertTrue(U.update_due({"update": bad}, "0.29.0", "0.28.5", 1_000_000.0 + U.RETRY))
+        self.assertFalse(U.update_due({}, "0.28.5", "0.28.5", 1_000_000.0))  # nothing newer
+
+    def test_refresher_updates_once_and_not_again_inside_the_window(self):
+        self.go(update=self.updater())
+        self.go(fetch_version="0.29.0", now=1_000_000.0 + 60, update=self.updater())
+        self.assertEqual(self.runs, [("0.28.5", self.proj)])
+
+    def test_lock_blocks_a_second_update(self):
+        self.assertTrue(U.acquire_lock(1_000_000.0))
+        self.go(update=self.updater())
+        self.assertEqual((self.runs, self.cache()), ([], {}))
+        self.assertTrue(os.path.exists(U.lock_path()))
+
+    def test_check_failure_keeps_the_last_update_record(self):
+        self.go(update=self.updater())
+        U.refresh(now=1_000_000.0 + U.TTL + 5, fetch=self.fetcher(error=OSError("offline")), cwd=self.proj, root=self.root)
+        self.assertEqual(self.cache()["update"]["to"], "0.29.0")
+        self.assertFalse(self.cache()["ok"])
+
+    def test_current_clone_manifest_counts_as_target(self):
+        write(os.path.join(self.clone, ".claude-plugin", "plugin.json"), {"version": "0.29.0"})
+        self.go(fetch_version="0.28.5", update=self.updater())  # remote check lags, the clone already knows 0.29.0
+        self.assertEqual(len(self.runs), 1)
+
+
+class DoUpdateTest(AutoUpdateBase):
+    def stub(self, new="0.29.0", fail_on=None):
+        def run(claude, args, cwd=None):
+            self.runs.append((args, cwd))
+            if fail_on and args[0] == fail_on:
+                raise RuntimeError("x")
+            return {"newVersion": new} if args[0] == "update" else {}
+        return run
+
+    def test_marketplace_refresh_then_each_scope_with_its_project(self):
+        rec = U.do_update("0.28.5", os.path.join(self.proj, "sub"), 5.0, run=self.stub(), claude="/c")
+        self.assertEqual(self.runs, [(["marketplace", "update", "aaxis-oro"], None),
+                                     (["update", "aaxis-oro@aaxis-oro", "--scope", "user", "--json"], None),
+                                     (["update", "aaxis-oro@aaxis-oro", "--scope", "local", "--json"], self.proj)])
+        self.assertEqual((rec["ok"], rec["from"], rec["to"], rec["scopes"]), (True, "0.28.5", "0.29.0", ["user", "local"]))
+
+    def test_other_projects_local_scope_is_left_alone(self):
+        rec = U.do_update("0.28.5", self.tmp.name, 5.0, run=self.stub(), claude="/c")
+        self.assertEqual(rec["scopes"], ["user"])
+
+    def test_failures_are_recorded_not_raised(self):
+        self.assertFalse(U.do_update("0.28.5", self.proj, 5.0, run=self.stub(fail_on="marketplace"), claude="/c")["ok"])
+        rec = U.do_update("0.28.5", self.proj, 5.0, run=self.stub(fail_on="update"), claude="/c")
+        self.assertEqual((rec["ok"], rec["to"]), (False, "0.28.5"))
+        self.assertFalse(U.do_update("0.28.5", self.proj, 5.0, run=self.stub(new="0.28.5"), claude="/c")["ok"])
+
+    def test_claude_run_uses_no_prompt_no_stdin_and_a_timeout(self):
+        seen = {}
+
+        class R:
+            returncode, stdout = 0, 'noise\n{"outcome":"ok","newVersion":"0.29.0"}\n'
+
+        def fake(cmd, **kw):
+            seen.update(cmd=cmd, **kw)
+            return R()
+        real = subprocess.run
+        subprocess.run = fake
+        try:
+            info = U.claude_run("/c", ["update", "x"], cwd="/p")
+        finally:
+            subprocess.run = real
+        self.assertEqual(info["newVersion"], "0.29.0")
+        self.assertEqual((seen["cmd"], seen["cwd"], seen["stdin"], seen["timeout"]), (["/c", "plugin", "update", "x"], "/p", subprocess.DEVNULL, U.UPDATE_TIMEOUT))
+        self.assertEqual(seen["env"]["GIT_TERMINAL_PROMPT"], "0")
+        self.assertIn("BatchMode=yes", seen["env"]["GIT_SSH_COMMAND"])
+
+    def test_nonzero_exit_raises(self):
+        class R:
+            returncode, stdout = 1, ""
+        real = subprocess.run
+        subprocess.run = lambda *a, **k: R()
+        try:
+            with self.assertRaises(RuntimeError):
+                U.claude_run("/c", ["update", "x"])
+        finally:
+            subprocess.run = real
+
+
+class StubClaudeProcessTest(AutoUpdateBase):
+    """Real refresher process with a stub `claude` on PATH and a local git origin."""
+
+    def test_refresher_updates_through_the_stub_and_the_next_session_says_so(self):
+        origin = os.path.join(self.tmp.name, "origin")
+        os.makedirs(origin)
+        write(os.path.join(origin, ".claude-plugin", "plugin.json"), {"version": "0.29.0"})
+        genv = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        for cmd in (["init", "-q"], ["add", "."], ["commit", "-qm", "v"]):
+            subprocess.run(["git"] + cmd, cwd=origin, env=genv, check=True, capture_output=True)
+        subprocess.run(["git", "clone", "-q", origin, self.clone + "-tmp"], check=True, capture_output=True)
+        os.rmdir(self.clone)
+        os.rename(self.clone + "-tmp", self.clone)
+        bindir, log = os.path.join(self.tmp.name, "bin"), os.path.join(self.tmp.name, "calls.log")
+        os.makedirs(bindir)
+        stub = os.path.join(bindir, "claude")
+        with open(stub, "w") as fh:
+            fh.write("#!/bin/sh\necho \"$PWD|$*|$GIT_TERMINAL_PROMPT\" >> %s\n"
+                     "case \"$2\" in update) echo '{\"outcome\":\"ok\",\"newVersion\":\"0.29.0\"}';; *) echo '{\"outcome\":\"ok\"}';; esac\n" % log)
+        os.chmod(stub, 0o755)
+        env = dict(os.environ, HOME=self.home, PATH=bindir + os.pathsep + os.environ["PATH"])
+        for k in ("AAXIS_ORO_NO_UPDATE_CHECK", "AAXIS_ORO_NO_AUTO_UPDATE"):
+            env.pop(k, None)
+        script = os.path.join(HOOKS, "sessionstart_update.py")
+        root_script = os.path.join(self.root, "atlas", "hooks")
+        os.makedirs(root_script)
+        shutil.copy(script, root_script)
+        script = os.path.join(root_script, "sessionstart_update.py")
+        p = subprocess.run([sys.executable, script, "--refresh"], cwd=self.proj, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual((p.returncode, p.stdout, p.stderr), (0, "", ""))
+        with open(log) as fh:
+            calls = fh.read().splitlines()
+        self.assertEqual([c.split("|")[1] for c in calls], ["plugin marketplace update aaxis-oro", "plugin update aaxis-oro@aaxis-oro --scope user --json",
+                                                           "plugin update aaxis-oro@aaxis-oro --scope local --json"])
+        self.assertTrue(all(c.endswith("|0") for c in calls))
+        self.assertEqual(os.path.realpath(calls[2].split("|")[0]), os.path.realpath(self.proj))
+        self.assertTrue(self.cache()["update"]["ok"])
+        q = subprocess.run([sys.executable, script], input="{}", cwd=self.proj, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(json.loads(q.stdout)["systemMessage"], "[aaxis-oro] updated 0.28.5\u21920.29.0 (restart to apply)")
 
 
 if __name__ == "__main__":

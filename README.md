@@ -53,18 +53,19 @@ dev     lint | refresh [--all]       lint this plugin | refresh derived state af
 ## Hooks
 
 Shipped in `hooks/hooks.json`, never per project; each injects a few lines at most:
-SessionStart (atlas freshness, notes, version, legacy/memory migration prompts, new-plugin-version notice), UserPromptSubmit and SubagentStart
+SessionStart (atlas freshness, notes, version, legacy/memory migration prompts, new-plugin-version auto-update), UserPromptSubmit and SubagentStart
 (atlas-first hints), PreToolUse (atlas/decorator checks on edits, Bash guard for the enforcement switch, memory-write
 block, anchored notes), PostToolUse Bash, Stop (end-of-session reminders, supplementary-review gate).
 `ORO_ATLAS_ENFORCE=0` is a human-only escape hatch; Claude never sets it.
 
-Update notice: the SessionStart hook never touches the network. It compares the installed version with the marketplace
-clone's `plugin.json` and the cached result of the last remote check (`~/.claude/aaxis-oro-update-check.json`), and prints
-one line with the upgrade commands when a newer version is known. When that cache is older than 24h (1h after a failure)
-it starts a detached background refresher (a lock file prevents duplicates) that does a depth-1 `git fetch` of the
-clone's origin with a ~30s budget and writes the cache atomically, so a new version is announced on the next session. It
-never updates, never prompts for credentials, never modifies the clone and stays silent on any failure. Disable with
-`AAXIS_ORO_NO_UPDATE_CHECK=1`.
+Auto-update: the SessionStart hook never touches the network itself. When its cached remote check (every 6h, 1h after a
+failure, ~30s budget, lock-guarded) finds a newer version and the plugin is installed through the marketplace, a detached
+background refresher runs `claude plugin marketplace update aaxis-oro` and `claude plugin update aaxis-oro@aaxis-oro` for
+the user scope and the current project's local/project scope (no prompts, old version directories are kept), and the next
+session prints `[aaxis-oro] updated X->Y (restart to apply)` once. Without a `claude` binary, without a marketplace install
+or after a failed update it prints the manual upgrade notice instead (cache `~/.claude/aaxis-oro-update-check.json`). Not
+run in subagents. `AAXIS_ORO_NO_AUTO_UPDATE=1` keeps the notice only; `AAXIS_ORO_NO_UPDATE_CHECK=1` disables both.
+Versions up to 0.29.2 only announce updates: run once `claude plugin marketplace update aaxis-oro && claude plugin update aaxis-oro@aaxis-oro` to get 0.29.3, which then keeps itself current.
 
 Upgrading from the pre-plugin install: stale `oro-atlas/hooks/*.py` entries in Claude settings keep resolving to
 shims in `oro-atlas/hooks/` that remove those entries from project and `~/.claude` settings (atlas entries only),
