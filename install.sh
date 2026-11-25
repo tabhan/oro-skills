@@ -46,6 +46,81 @@ AGENTS_DEST="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 TOKEN="${ORO_SKILLS_TOKEN:-${GITHUB_TOKEN:-}}"
 OFFICIAL_PLUGINS="${ORO_SKILLS_OFFICIAL_PLUGINS:-orocommerce-development orocommerce-review orocommerce-testing orocommerce-maintenance}"
 
+# `claude plugin install` at user scope writes enabledPlugins[<key>]=true into the user settings, which re-enables plugins
+# the user disabled globally to enable them per project. Remember the keys that were explicitly false, restore them after.
+CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+DISABLED_SNAPSHOT=""
+plugin_settings_py() {
+  python3 - "$@" <<'PY'
+import json, os, sys
+
+mode, settings, snap = sys.argv[1:4]
+if mode == "snapshot":
+    keys = sys.argv[4:]
+    out = []
+    try:
+        with open(settings) as fh:
+            ep = json.load(fh).get("enabledPlugins", {})
+        out = [k for k in keys if isinstance(ep, dict) and ep.get(k) is False]
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError, AttributeError):
+        sys.stderr.write("  warning: %s is not valid JSON; disabled plugins will not be restored\n" % settings)
+    with open(snap, "w") as fh:
+        json.dump(out, fh)
+else:
+    with open(snap) as fh:
+        keys = json.load(fh)
+    if not keys:
+        sys.exit(0)
+    try:
+        with open(settings) as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+    except FileNotFoundError:
+        sys.exit(0)
+    except (OSError, ValueError):
+        sys.stderr.write("  warning: %s is not valid JSON; skipped restoring disabled plugins\n" % settings)
+        sys.exit(0)
+    ep = data.get("enabledPlugins")
+    if not isinstance(ep, dict):
+        ep = data["enabledPlugins"] = {}
+    changed = False
+    for k in keys:
+        if ep.get(k) is not False:
+            ep[k] = False
+            changed = True
+            print("  kept %s disabled in %s (enable it per project)" % (k, settings))
+    if changed:
+        tmp = settings + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, settings)
+PY
+}
+snapshot_disabled_plugins() {
+  DISABLED_SNAPSHOT="$(mktemp)"
+  plugin_settings_py snapshot "$CLAUDE_SETTINGS" "$DISABLED_SNAPSHOT" "$@" || true
+}
+restore_disabled_plugins() {
+  [ -n "$DISABLED_SNAPSHOT" ] || return 0
+  plugin_settings_py restore "$CLAUDE_SETTINGS" "$DISABLED_SNAPSHOT" || true
+  rm -f "$DISABLED_SNAPSHOT"; DISABLED_SNAPSHOT=""
+}
+# True when plugin key $1 is in installed_plugins.json (then `update` is used instead of `install`).
+plugin_installed() {
+  python3 - "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json" "$1" <<'PY' 2>/dev/null
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        sys.exit(0 if json.load(fh).get("plugins", {}).get(sys.argv[2]) else 1)
+except Exception:
+    sys.exit(1)
+PY
+}
+
 # Symlinks in $1 named $2 that point into this checkout (even when the target no longer exists) are legacy.
 remove_legacy_links() {
   local dir="$1" pattern="$2" link target
@@ -118,12 +193,21 @@ echo "Removing legacy symlinks from $SKILLS_DEST and $AGENTS_DEST"
 remove_legacy_links "$SKILLS_DEST" 'oro-*'
 remove_legacy_links "$AGENTS_DEST" 'oro-*.md'
 
+if command -v claude >/dev/null 2>&1; then
+  keys=()
+  [ "$INSTALL_PLUGIN" -eq 1 ] && keys+=("aaxis-oro@aaxis-oro")
+  if [ "$INSTALL_OFFICIAL" -eq 1 ]; then for plugin in $OFFICIAL_PLUGINS; do keys+=("${plugin}@ai-dev-platform"); done; fi
+  [ "${#keys[@]}" -gt 0 ] && snapshot_disabled_plugins "${keys[@]}"
+fi
+
 if [ "$INSTALL_PLUGIN" -eq 1 ]; then
   if command -v claude >/dev/null 2>&1; then
     echo "Registering aaxis-oro marketplace ($MARKETPLACE) and installing the plugin"
     claude plugin marketplace add "$MARKETPLACE" || echo "  (marketplace add failed or already present)" >&2
-    claude plugin install aaxis-oro@aaxis-oro || FAILED+=("claude plugin install aaxis-oro@aaxis-oro")
-    # install is a no-op for an already-installed plugin; refresh the marketplace and update to pick up new versions.
+    # install enables the plugin at user scope; only first-time installs need it, update keeps the enabled state.
+    if ! plugin_installed aaxis-oro@aaxis-oro; then
+      claude plugin install aaxis-oro@aaxis-oro || FAILED+=("claude plugin install aaxis-oro@aaxis-oro")
+    fi
     claude plugin marketplace update aaxis-oro || FAILED+=("claude plugin marketplace update aaxis-oro")
     claude plugin update aaxis-oro@aaxis-oro || FAILED+=("claude plugin update aaxis-oro@aaxis-oro")
   else
@@ -187,14 +271,21 @@ if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
     echo "Registering oroinc/ai-dev-platform marketplace"
     claude plugin marketplace add oroinc/ai-dev-platform || FAILED+=("claude plugin marketplace add oroinc/ai-dev-platform")
     for plugin in $OFFICIAL_PLUGINS; do
-      echo "Installing $plugin@ai-dev-platform"
-      claude plugin install "${plugin}@ai-dev-platform" -y || FAILED+=("claude plugin install ${plugin}@ai-dev-platform -y")
+      if plugin_installed "${plugin}@ai-dev-platform"; then
+        echo "Updating $plugin@ai-dev-platform"
+        claude plugin update "${plugin}@ai-dev-platform" || FAILED+=("claude plugin update ${plugin}@ai-dev-platform")
+      else
+        echo "Installing $plugin@ai-dev-platform"
+        claude plugin install "${plugin}@ai-dev-platform" -y || FAILED+=("claude plugin install ${plugin}@ai-dev-platform -y")
+      fi
     done
   else
     echo "  (claude CLI not found on PATH -- skipping official oroinc/ai-dev-platform plugin install." >&2
     echo "   Install it yourself later: /plugin marketplace add oroinc/ai-dev-platform, then /plugin install <name>@ai-dev-platform)" >&2
   fi
 fi
+
+restore_disabled_plugins
 
 # Pre-plugin atlas hooks would fire a second time next to the plugin's; they can sit in project or user settings.
 echo "Cleaning legacy atlas hooks from user and project Claude settings"

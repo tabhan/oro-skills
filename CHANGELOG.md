@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.6
+
+- Fix: `install.sh` no longer re-enables globally disabled plugins. `claude plugin install` writes `enabledPlugins[<key>]=true` into the user settings, so install.sh snapshots the keys it touches (aaxis-oro and the official orocommerce-*), restores every key that was explicitly `false` afterwards (merge-only; invalid JSON is skipped with a warning), and uses `plugin update` instead of `install` for plugins already installed.
+
 ## 0.29.5
 
 - Consistency: `plan-rules.md` now carries the SMALL exemption from the architect-gate (as `process-rules.md` and `task.py` do); `/aaxis-oro:review` stops with "review already covers HEAD" when an approved review covers it; new `aaxis-oro task small [KEY]` prints `SMALL` or `not SMALL: <reason>` using `is_small_change`; review's opus grep verified identical to `task.RISK_PATH`/`RISK_CONTENT` and now points at them. Also: `aaxis-oro dev refresh --target local|local-test|both` (default both; the e2e gate now suggests `--target local-test`, and a target-only refresh leaves the other stack due), and `aaxis-oro task phase`/`task timing` for per-phase timing.

@@ -116,5 +116,92 @@ class InstallLegacyLinksTest(unittest.TestCase):
             self.assertTrue((Path(tmp) / ".local" / "bin" / "aaxis-oro").is_file())
 
 
+class KeepDisabledPluginsTest(unittest.TestCase):
+    """install.sh must not leave globally disabled plugins re-enabled by `claude plugin install`."""
+
+    STUB = """#!/usr/bin/env python3
+import json, os, sys
+a = sys.argv[1:]
+if a[:2] == ["plugin", "install"]:
+    key = [x for x in a[2:] if not x.startswith("-")][0]
+    path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.environ["HOME"], ".claude"), "settings.json")
+    try:
+        with open(path) as fh:
+            d = json.load(fh)
+    except Exception:
+        sys.exit(0)
+    d.setdefault("enabledPlugins", {})[key] = True
+    with open(path, "w") as fh:
+        json.dump(d, fh)
+"""
+
+    def run_install(self, home, settings_text, **extra):
+        (home / "stub").mkdir()
+        stub = home / "stub" / "claude"
+        stub.write_text(self.STUB)
+        stub.chmod(0o755)
+        cfg = home / ".claude"
+        cfg.mkdir(exist_ok=True)
+        (cfg / "settings.json").write_text(settings_text)
+        env = {**os.environ, "HOME": str(home), "PATH": "%s:%s" % (home / "stub", os.environ["PATH"]),
+               "ORO_SKILLS_OFFICIAL_PLUGINS": "orocommerce-development orocommerce-review", **extra}
+        for k in ("CLAUDE_CONFIG_DIR", "CLAUDE_SKILLS_DIR", "CLAUDE_AGENTS_DIR", "ORO_ATLAS_BIN_DIR"):
+            if k not in extra:
+                env.pop(k, None)
+        r = subprocess.run(["bash", str(ROOT / "install.sh"), "--no-update", "--project", str(home)],
+                           env=env, capture_output=True, text=True)
+        return r, cfg / "settings.json"
+
+    def test_false_keys_restored_others_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            r, settings = self.run_install(home, json.dumps({
+                "theme": "dark",
+                "enabledPlugins": {
+                    "aaxis-oro@aaxis-oro": False,
+                    "orocommerce-development@ai-dev-platform": False,
+                    "orocommerce-review@ai-dev-platform": True,
+                    "other@x": False,
+                }}))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            d = json.loads(settings.read_text())
+            ep = d["enabledPlugins"]
+            self.assertIs(ep["aaxis-oro@aaxis-oro"], False)
+            self.assertIs(ep["orocommerce-development@ai-dev-platform"], False)
+            self.assertIs(ep["orocommerce-review@ai-dev-platform"], True)
+            self.assertIs(ep["other@x"], False)
+            self.assertEqual(d["theme"], "dark")
+            self.assertIn("kept aaxis-oro@aaxis-oro disabled", r.stdout)
+            self.assertIn("kept orocommerce-development@ai-dev-platform disabled", r.stdout)
+            self.assertNotIn("kept orocommerce-review", r.stdout)
+
+    def test_absent_keys_stay_as_cli_wrote(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            r, settings = self.run_install(home, json.dumps({"enabledPlugins": {"aaxis-oro@aaxis-oro": False}}))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            ep = json.loads(settings.read_text())["enabledPlugins"]
+            self.assertIs(ep["orocommerce-review@ai-dev-platform"], True)
+            self.assertIs(ep["aaxis-oro@aaxis-oro"], False)
+
+    def test_invalid_json_warns_and_is_not_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            r, settings = self.run_install(home, "{not json")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("not valid JSON", r.stderr)
+            self.assertEqual(settings.read_text(), "{not json")
+
+    def test_honours_claude_config_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            alt = home / "alt"
+            alt.mkdir()
+            (alt / "settings.json").write_text(json.dumps({"enabledPlugins": {"aaxis-oro@aaxis-oro": False}}))
+            r, _ = self.run_install(home, "{}", CLAUDE_CONFIG_DIR=str(alt))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIs(json.loads((alt / "settings.json").read_text())["enabledPlugins"]["aaxis-oro@aaxis-oro"], False)
+
+
 if __name__ == "__main__":
     unittest.main()

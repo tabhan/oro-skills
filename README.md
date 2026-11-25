@@ -14,6 +14,8 @@ claude plugin list                                    # aaxis-oro@aaxis-oro enab
 
 Update: `claude plugin marketplace update aaxis-oro && claude plugin update aaxis-oro@aaxis-oro`.
 `./install.sh` (in a clone) does the same plus the official plugins, a `~/.local/bin/aaxis-oro` shim (runs the installed plugin; set `ORO_SKILLS_DIR` to a clone to run that instead) and the git
+
+Re-running `install.sh` keeps plugins you disabled globally (`enabledPlugins` set to `false` in `~/.claude/settings.json`) disabled; enable them per project via setup.
 hook; flags are documented in its header. No SSH key: see `bootstrap.sh`. Local plugin dev:
 `claude --plugin-dir <clone>`, validate with `claude plugin validate <clone>`.
 

@@ -47,7 +47,7 @@ Content-Type: application/json
 | `user.os_user` | string (max 100) | no | |
 | `client.hostname` | string (max 255) | no | |
 | `client.os` | string (max 50) | no | e.g. `linux`, `darwin` |
-| `client.plugin_version` | string (max 30) | yes | e.g. `0.29.5` |
+| `client.plugin_version` | string (max 30) | yes | e.g. `0.29.6` |
 | `client.claude_code_version` | string (max 30) | no | |
 | `client.model` | string (max 100) | no | |
 | `project.repo_url` | string (max 500) | no | Normalized `https://github.com/<owner>/<repo>`; null outside a git repo |
@@ -76,7 +76,7 @@ Example:
     "occurred_at": "2026-11-21T09:14:03+08:00",
     "session_id": "724555a3-c348-4f0d-9c8b-84a740e0a389",
     "user": { "git_name": "Jane Doe", "git_email": "jane@example.com", "os_user": "jane" },
-    "client": { "hostname": "dev-01", "os": "linux", "plugin_version": "0.29.5",
+    "client": { "hostname": "dev-01", "os": "linux", "plugin_version": "0.29.6",
                 "claude_code_version": "2.3.1", "model": "claude-opus-5-5" },
     "project": { "repo_url": "https://github.com/acme/shop", "branch": "feature/ABC-123",
                  "commit": "824e757", "oro_version": "6.1.2" },
