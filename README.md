@@ -150,20 +150,21 @@ applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose 
   `orocommerce-review:review-changes` for the generic lenses and adds the Aaxis ones (reuse/OOTB via atlas, Aaxis rule
   judgment, plan.md/architect-gate drift, conditional performance), refuted with the official `finding-refuter`.
   It writes `.oro-ai/task/<KEY>/review.md` with `Verdict: approved|changes-requested|skipped - <reason>` and
-  `Range: <base>..<head>`. An approved review covers HEAD when its head is HEAD, or an ancestor with only `.oro-ai/`
-  files changed since (so committing the review itself keeps it fresh). Once the branch has committed code,
+  `Range: <base>..<head>`. An approved review covers HEAD when its head is HEAD, or an ancestor (a rebase is stale) whose
+  branch-own commits since (`git log --first-parent --no-merges`, so merging develop is ignored) changed at most
+  `task.SMALL_DELTA_LINES` (20) production lines (`is_prod`; tests, translations, `.oro-ai/` do not count, so committing
+  the review itself keeps it fresh). A bigger delta gets a single-reviewer delta review of `<reviewed head>..HEAD`. Once the branch has committed code,
   `task check` fails without a covering approved/skipped review, and `review-ticket-push` (PreToolUse on Bash
   `git push`) denies the push; there is no git-side hook, so a human pushing from a shell is not gated.
 - `review-ticket-stop` (Stop hook, `atlas/hooks/stop.py`) makes the review happen when coding finishes: with the
   same condition as the push gate, plus no uncommitted or untracked changes outside `.oro-ai/` (a dirty tree is
-  mid-work), it returns `decision: block` telling Claude to run `/aaxis-oro:review` (or record a skipped verdict);
-  a `changes-requested` review whose Range head is HEAD asks for the must-fix findings first. It blocks once per
-  stop chain (`stop_hook_active` lets the next Stop through with a warning), exempts subagents (SubagentStop /
+  mid-work), it emits a reminder (severity `warn`, never blocks) to run `/aaxis-oro:review` (or record a skipped verdict);
+  a `changes-requested` review whose Range head is HEAD asks for the must-fix findings first. It exempts subagents (SubagentStop /
   `agent_id`: the main session owns the review), only warns under the human-only enforcement switch, and any
   error allows the stop (logged to `~/.claude/atlas-hook.log`). `/aaxis-oro:review` first writes a
   `Verdict: in-progress` marker (`Range: <base>..<HEAD>`, `Started: <ISO-8601 UTC>`): while its head is HEAD and it is
   younger than 2h (`task.IN_PROGRESS_TTL`) the Stop hook only warns "review in progress since <t>"; a stale marker
-  blocks as usual. `in-progress` is never approved: push gate and `task check` still fail.
+  warns as usual. `in-progress` is never approved: push gate and `task check` still fail.
 - UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch). Keys
   inside harness wrappers (`<task-notification>`, `<system-reminder>`, text after `[SYSTEM NOTIFICATION`) are ignored:
   background-task notifications reach the hook as `prompt` text with no distinguishing payload field.

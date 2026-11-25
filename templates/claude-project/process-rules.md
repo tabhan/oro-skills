@@ -17,8 +17,10 @@ documents, phase lists and approvals, never the steps below. Rationale and detai
    commit on a ticket branch without an approved or skipped gate verdict, and warns on missing `STATUS.md` or e2e.
 5. Before push: `/aaxis-oro:review` (official `orocommerce-review` pack plus the Aaxis lenses) writes
       `.oro-ai/task/<TICKET>/review.md` (`Verdict:`, `Range: <base>..<head>`). The `git push` hook and `aaxis-oro task
-   check` fail until an approved verdict covers HEAD; new code commits need a
-   new review; a Stop hook blocks ending the turn once the ticket's code is committed and the tree is clean until the
+   check` fail until an approved verdict covers HEAD. An approval keeps covering HEAD while the branch's own commits
+   since change at most 20 production lines (merge commits such as merging develop, tests, translations and `.oro-ai/`
+   do not count); a bigger change needs a single-reviewer delta review of `<reviewed head>..HEAD`, not a full one. The
+   Stop hook warns (never blocks) once the ticket's code is committed and the tree is clean, until the
    review ran or `changes-requested` findings are fixed and re-reviewed. A trivial change records
    `Verdict: skipped - <reason>` instead.
 6. Root cause before fix, for every problem (bug, CI/test failure, review finding, data issue): state the root cause

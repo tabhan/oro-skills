@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.8
+
+- Fewer repeated full reviews. An approved `review.md` now keeps covering HEAD when the branch's own non-merge commits since its Range head (`git log --first-parent --no-merges`, so merging develop is ignored) changed at most `task.SMALL_DELTA_LINES` (20) production lines (`is_prod`; tests, translations, `.oro-ai/` do not count). A rebase (head not an ancestor) is still stale. Push gate and `task check` use the same `review_state`. `/aaxis-oro:review` runs a single-reviewer DELTA review of `<reviewed head>..HEAD` when the delta exceeds the threshold, refutes only Blockers, and `--fix` does one delta check instead of a rerun. `review-ticket-stop` is now `warn` (a reminder, never blocks); the push gate stays `deny`.
+
 ## 0.28.7
 
 - Telemetry dedupe is now per agent. Claude Code also fires PostToolUse inside subagents, and those inputs carry an `agent_id`; the 0.28.6 marker keyed on (session, skill) let a main-session skill call and a subagent's call to the same skill drop each other. The marker is now keyed on (session, `agent_id`, skill): the main session (absent or empty `agent_id`) is one bucket and each subagent its own, so subagent and main-session usage are counted separately, not filtered. Window (120 s), skill_used-only dedupe, the Oro-root gate and the endpoint are unchanged. `agent_id` is used for the key only and is not sent (the wire contract is unchanged).

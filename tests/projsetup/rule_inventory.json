@@ -48,8 +48,8 @@
   "denies an extension-point",
   "warns on missing",
   "covers HEAD",
-  "new code commits need a new review",
-  "blocks ending the turn",
+  "at most 20 production lines",
+  "Stop hook warns (never blocks)",
   "Root cause before fix",
   "evidence",
   "out of scope",
@@ -74,7 +74,7 @@
   "say so and let the user decide"
  ],
  "sha256": {
-  "process-rules": "e44be71cb2bd47f8ac279e2fea7f0f7d4474dae89284ecde3005243a67be83f2",
+  "process-rules": "8cf1ad7600744ee290e894b30b62a97db19993c73fed723044c0d79a7961d30d",
   "review-rules": "8634676d6445ca9028153b9f6d7191871d6f193581877956c1fa44eda9e6e966",
   "plan-rules": "72bb67c941c6b795a42113ff8f291d0b84da20dcbdf60658bee2880b40b3952f"
  },

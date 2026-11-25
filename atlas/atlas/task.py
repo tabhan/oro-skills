@@ -22,6 +22,9 @@ RANGE = re.compile(r"^[\s>*_#-]*range[\s*_]*:[\s*_`]*([0-9a-f]{7,40})\.\.\.?([0-
 # `Started: <ISO-8601 UTC>` on the in-progress marker /aaxis-oro:review writes before dispatching its lenses.
 STARTED = re.compile(r"^[\s>*_#-]*started[\s*_]*:[\s*_`]*(\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?)", re.I | re.M)
 IN_PROGRESS_TTL = 2 * 3600
+# An approved review still covers HEAD while the branch's own commits since its Range head change at most this many
+# production lines (added + deleted); see review_delta.
+SMALL_DELTA_LINES = 20
 TASK_ONLY = re.compile(r"^\.oro-ai/")
 E2E_FILE = re.compile(r"(?:\.feature|\.steps\.ts)$")
 PROD_FILE = re.compile(r"^src/.+\.(?:php|ya?ml|xml|twig|js|ts|scss)$")
@@ -90,10 +93,45 @@ def gate_state(root, key):
     return verdict_of(read_text(os.path.join(task_dir(root, key), "architect-gate.md")))
 
 
+def review_delta(root, reviewed):
+    """Production lines (added + deleted) the branch's OWN commits changed in reviewed..HEAD; None when git fails.
+
+    Merge-aware: `--first-parent --no-merges` walks only the branch's own line of commits, so merge commits (e.g.
+    merging develop) and everything they bring in are ignored, and the per-commit numstat of the remaining commits is
+    summed over production files only (is_prod: tests, translations, demo data, e2e and .oro-ai/ never count).
+    """
+    out = git(root, "log", "--first-parent", "--no-merges", "--no-renames", "--numstat", "--format=", "%s..HEAD" % reviewed)
+    if out is None:
+        return None
+    total = 0
+    for line in out.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3 and is_prod(parts[2]):
+            total += sum(int(n) for n in parts[:2] if n.isdigit())
+    # A merge's own edits are invisible above: a conflict resolution that hand-edits prod code is a change nobody
+    # reviewed. `git show --cc` prints only the combined diff, whose line prefix has one column per parent; a line
+    # whose every column is +/- differs from ALL parents, i.e. the resolution itself. Lines taken verbatim from one
+    # parent have a blank column and a clean merge prints no hunks at all, so both count 0.
+    for merge in (git(root, "rev-list", "--first-parent", "--merges", "%s..HEAD" % reviewed) or "").split():
+        diff = git(root, "show", "--cc", "--format=", "-U0", "--no-renames", merge)
+        if diff is None:
+            return None
+        path, cols = None, 0
+        for line in diff.splitlines():
+            if line.startswith("diff --cc "):
+                path, cols = line[10:], 0
+            elif line.startswith("@@"):
+                cols = line.split(" ")[0].count("@") - 1  # one prefix column per parent
+            elif cols and path and is_prod(path) and len(line) > cols and all(c in "+-" for c in line[:cols]):
+                total += 1
+    return total
+
+
 def review_state(root, key):
     """(state, reason) of .oro-ai/task/<KEY>/review.md; an approved review is 'stale' unless its Range head covers HEAD.
 
-    Covers = the head is HEAD, or an ancestor of HEAD with only .oro-ai/ files changed since (committing review.md itself).
+    Covers = the head is HEAD, or an ancestor of HEAD (a rebase makes it stale) whose branch-own, non-merge commits since
+    changed at most SMALL_DELTA_LINES production lines (review_delta); merge-only and non-production changes are free.
     """
     text = read_text(os.path.join(task_dir(root, key), "review.md"))
     state, reason = verdict_of(text)
@@ -101,12 +139,12 @@ def review_state(root, key):
         m = RANGE.search(text)
         head = git(root, "rev-parse", "HEAD")
         reviewed = m and git(root, "rev-parse", "--verify", "-q", m.group(2) + "^{commit}")
-        since = reviewed and git(root, "diff", "--name-only", "%s..HEAD" % reviewed)
-        covered = bool(reviewed) and (reviewed == head or (
-            since is not None and git(root, "merge-base", "--is-ancestor", reviewed, "HEAD") is not None
-            and all(TASK_ONLY.match(f) for f in since.splitlines() if f)))
+        delta = reviewed and reviewed != head and git(root, "merge-base", "--is-ancestor", reviewed, "HEAD") is not None \
+            and review_delta(root, reviewed)
+        covered = bool(reviewed) and (reviewed == head or (delta is not None and delta is not False and delta <= SMALL_DELTA_LINES))
         state, reason = ("approved", reason) if covered else (
-            "stale", "no Range: <base>..<head> line" if not m else "reviewed %s, HEAD is %s" % (m.group(2)[:10], (head or "?")[:10]))
+            "stale", "no Range: <base>..<head> line" if not m else "reviewed %s, HEAD is %s (not an ancestor, or over %d "
+            "production lines changed by the branch's own commits)" % (m.group(2)[:10], (head or "?")[:10], SMALL_DELTA_LINES))
     return state, reason
 
 

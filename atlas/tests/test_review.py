@@ -271,7 +271,7 @@ class TicketBranchBase(ReviewBase):
         self.write(".oro-ai/task/BUC-9/architect-gate.md", "Verdict: skipped - test\n")
         self.write(".oro-ai/task/BUC-9/STATUS.md", "x\n")
         self.write("src/Foo/Tests/E2e/x.feature", "Feature: x\n")
-        self.write("src/Foo/A.php", "<?php\n")
+        self.write("src/Foo/A.php", "<?php\n" + "$a = 1;\n" * 25)  # above task.SMALL_DELTA_LINES: reviewing HEAD~1 is stale
         self.git("add", "src")
         self.git("commit", "-qm", "code")
 
@@ -310,9 +310,79 @@ class SupplementaryReviewTest(TicketBranchBase):
         self.git("add", "-f", ".oro-ai/task")
         self.git("commit", "-qm", "review evidence")
         self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
-        self.write("src/Foo/B.php", "<?php\n")
+        self.write("src/Foo/B.php", "<?php\n" + "$b = 1;\n" * 25)
         self.git("add", "src")
         self.git("commit", "-qm", "more")
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def approve_head(self):
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        return self.sha()
+
+    def commit_file(self, path, lines):
+        self.write(path, "<?php\n" + "$x = 1;\n" * (lines - 1))
+        self.git("add", path)
+        self.git("commit", "-qm", "edit " + path)
+
+    def test_small_production_delta_stays_fresh_and_threshold_is_exact(self):
+        from atlas import task
+        self.approve_head()
+        self.commit_file("src/Foo/B.php", task.SMALL_DELTA_LINES)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+        self.commit_file("src/Foo/C.php", 1)  # 21 production lines in total
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def test_large_non_production_delta_does_not_count(self):
+        from atlas import task
+        self.approve_head()
+        self.commit_file("src/Foo/Tests/Unit/BTest.php", 100)
+        self.commit_file("src/Foo/translations/messages.en.yml", 100)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+
+    def test_merge_only_changes_stay_fresh(self):
+        from atlas import task
+        self.approve_head()
+        self.git("checkout", "-qb", "develop-side", "HEAD~0")
+        self.commit_file("src/Foo/FromDevelop.php", 200)
+        self.git("checkout", "-q", "-")
+        self.git("merge", "-q", "--no-ff", "-m", "Merge develop", "develop-side")
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+        self.commit_file("src/Foo/Own.php", 25)  # the branch's own commit still counts
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def conflict_merge(self, resolved_lines):
+        """Merge develop-side into the branch with a real conflict on src/Foo/Conf.php, resolved by hand-writing lines."""
+        self.commit_file("src/Foo/Conf.php", 5)
+        self.git("checkout", "-qb", "develop-side")
+        self.write("src/Foo/Conf.php", "<?php\n" + "$d = 1;\n" * 300)
+        self.git("commit", "-qam", "develop edit")
+        self.git("checkout", "-q", "-")
+        self.write("src/Foo/Conf.php", "<?php\n" + "$o = 1;\n" * 300)
+        self.git("commit", "-qam", "own edit")
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        subprocess.run(["git", "-C", self.root, "merge", "--no-ff", "-m", "Merge develop", "develop-side"], capture_output=True)
+        self.write("src/Foo/Conf.php", "<?php\n" + "$r = 1;\n" * resolved_lines)
+        self.git("add", "src")
+        self.git("commit", "-qm", "Merge develop")
+
+    def test_merge_conflict_resolution_over_threshold_is_stale(self):
+        from atlas import task
+        self.conflict_merge(300)
+        self.assertGreater(task.review_delta(self.root, self.sha("HEAD^1")), task.SMALL_DELTA_LINES)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def test_small_merge_conflict_resolution_stays_fresh(self):
+        from atlas import task
+        self.conflict_merge(8)
+        self.assertLessEqual(task.review_delta(self.root, self.sha("HEAD^1")), task.SMALL_DELTA_LINES)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+
+    def test_rebased_branch_is_stale_even_with_tiny_delta(self):
+        from atlas import task
+        old = self.approve_head()
+        self.git("checkout", "-q", "--orphan", "rebased")
+        self.git("commit", "-qm", "rebased root", "--allow-empty")
+        self.review("Verdict: approved\nRange: %s..%s\n" % (old, old))  # head no longer an ancestor of HEAD
         self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
 
     def test_task_check_requires_fresh_review(self):
@@ -373,18 +443,18 @@ class SupplementaryReviewTest(TicketBranchBase):
 
 
 class StopReviewGateTest(TicketBranchBase):
-    """stop.py blocks the main session's Stop until a fresh review covers finished (committed, clean) ticket code."""
+    """stop.py warns (severity warn, never blocks) on the main session's Stop until a fresh review covers finished (committed, clean) ticket code."""
 
     def stop(self, env=None, **extra):
         payload = dict({"session_id": "stop-s", "hook_event_name": "Stop", "cwd": self.root, "stop_hook_active": False}, **extra)
         return run("stop.py", payload, self.home, env)
 
-    def test_blocks_finished_code_without_review(self):
+    def test_warns_on_finished_code_without_review(self):
         rc, out = self.stop()
         self.assertEqual(rc, 0)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("/aaxis-oro:review", out["reason"])
-        self.assertIn("Verdict: skipped - <reason>", out["reason"])
+        self.assertNotIn("decision", out)  # review-ticket-stop is warn: a reminder, never a block
+        self.assertIn("/aaxis-oro:review", out["systemMessage"])
+        self.assertIn("Verdict: skipped - <reason>", out["systemMessage"])
 
     def test_fresh_approved_or_skipped_review_allows_stop(self):
         self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
@@ -394,10 +464,10 @@ class StopReviewGateTest(TicketBranchBase):
 
     def test_stale_review_blocks_again(self):
         self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
-        self.write("src/Foo/B.php", "<?php\n")
+        self.write("src/Foo/B.php", "<?php\n" + "$b = 1;\n" * 25)
         self.git("add", "src")
         self.git("commit", "-qm", "more")
-        self.assertIn("stale", self.stop()[1]["reason"])
+        self.assertIn("stale", self.stop()[1]["systemMessage"])
 
     def test_dirty_code_tree_is_mid_work_but_task_files_are_not(self):
         self.write("src/Foo/A.php", "<?php // wip\n")
@@ -407,7 +477,7 @@ class StopReviewGateTest(TicketBranchBase):
         self.assertIsNone(self.stop()[1], "untracked code is mid-work too")
         os.remove(os.path.join(self.root, "src", "Foo", "New.php"))
         self.write(".oro-ai/task/BUC-9/STATUS.md", "changed\n")
-        self.assertEqual(self.stop()[1]["decision"], "block")
+        self.assertIn("review-ticket-stop", self.stop()[1]["systemMessage"])
 
     def test_no_committed_code_on_branch_is_noop(self):
         self.git("checkout", "-qb", "feature/BUC-10", "HEAD~1")
@@ -416,10 +486,10 @@ class StopReviewGateTest(TicketBranchBase):
     def test_changes_requested_on_head_asks_for_fixes(self):
         self.review("Verdict: changes-requested\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
         out = self.stop()[1]
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("must-fix", out["reason"])
+        self.assertNotIn("decision", out)
+        self.assertIn("must-fix", out["systemMessage"])
         self.review("Verdict: changes-requested\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha("HEAD~1")))
-        self.assertNotIn("must-fix", self.stop()[1]["reason"])
+        self.assertNotIn("must-fix", self.stop()[1]["systemMessage"])
 
     def marker(self, head=None, started=None):
         from datetime import datetime, timezone
@@ -433,13 +503,13 @@ class StopReviewGateTest(TicketBranchBase):
         self.assertNotIn("decision", out)
         self.assertIn("review in progress since %s" % started, out["systemMessage"])
 
-    def test_stale_in_progress_marker_blocks(self):
+    def test_stale_in_progress_marker_warns(self):
         self.marker(started="2020-01-01T00:00:00Z")
         out = self.stop()[1]
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("stale in-progress marker", out["reason"])
+        self.assertNotIn("decision", out)
+        self.assertIn("stale in-progress marker", out["systemMessage"])
         self.marker(head=self.sha("HEAD~1"))
-        self.assertIn("Range head is not HEAD", self.stop()[1]["reason"])
+        self.assertIn("Range head is not HEAD", self.stop()[1]["systemMessage"])
 
     def test_loop_guard_allows_with_warning(self):
         out = self.stop(stop_hook_active=True)[1]

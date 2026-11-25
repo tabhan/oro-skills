@@ -13,6 +13,15 @@ read-only; never let a reviewer fix its own findings.
    commit first (the verdict covers commits only). File list: `git diff --name-only $BASE..$HEAD`. No code change
    (only `.oro-ai/`, docs): write `Verdict: skipped - <reason>` and stop. Create the task dir with
    `aaxis-oro task init $KEY` when missing.
+   Delta mode: when `.oro-ai/task/$KEY/review.md` is an approved review whose `Range:` head `$PREV` is an ancestor of
+   HEAD, but `aaxis-oro task check` still reports it stale (the branch's own commits changed more than
+   `task.SMALL_DELTA_LINES` = 20 production lines; clean merges, tests, translations and `.oro-ai/` never count, but prod lines hand-edited in a merge's conflict resolution do),
+   run a DELTA review instead of the full fan-out: scope = `$PREV..$HEAD` minus files changed only by clean merge commits, but INCLUDING files edited in merge conflict resolutions
+   (`git log --first-parent --no-merges --name-only --format= $PREV..$HEAD` plus, per first-parent merge,
+   `git show --cc --format= --name-only <merge>`), dispatch ONE reviewer
+   (`aaxis-oro:aaxis-reviewer` lens `aaxis`, or `orocommerce-review:review-changes` in rereview mode) on that scope,
+   skip step 4's other lenses, and refute only Blocker findings in step 5. Write `Range: $BASE..$HEAD` as usual.
+   Otherwise (no prior approved review, `$PREV` not an ancestor, e.g. after a rebase) run the full review.
    Before step 2, write the in-progress marker to `.oro-ai/task/$KEY/review.md` (overwriting any earlier review;
    this run's verdict replaces it): `Verdict: in-progress`, `Range: $BASE..$HEAD`, `Started: <date -u +%FT%TZ>`.
    The Stop hook then lets turns end while lenses run in the background; push and `task check` still fail. If the
@@ -56,11 +65,13 @@ read-only; never let a reviewer fix its own findings.
    Range: <BASE sha>..<HEAD sha>
    Official: <path of .oro-ai/review-latest.md, its Gate line>
    ```
-   then the table, then a `Deploy notes` section (from the reviewers' Deploy notes) only when non-empty. `approved` only when no Must-fix item remains. Never hand-edit the Range of an old review: new
-   commits need a new review (re-review mode of the official skill is fine for the delta).
+   then the table, then a `Deploy notes` section (from the reviewers' Deploy notes) only when non-empty. `approved` only when no Must-fix item remains. Never hand-edit the Range of an old review. A prior approval keeps covering HEAD
+   while the branch's own new commits stay within 20 production lines (merge-only and non-production changes do not
+   count); a bigger delta needs only a delta review (see Delta mode in step 1), not a full one.
 8. `--fix` (or the user asks): AskUserQuestion which items to apply, then file-disjoint waves - wave 1 parallel agents
    (sonnet; opus for design-level edits) each owning a disjoint file set and its tests, no shared config; wave 2 one
    agent for shared files (services, grids, translations) plus the area suite and cache warm. Commit, then verify with
-   a separate sonnet agent and rerun this command from step 1: the verdict must cover the new HEAD.
+   a separate sonnet agent, then run ONE delta check of the fix commits (Delta mode, single reviewer on `<reviewed head>..HEAD`),
+   not a rerun from step 1: the verdict must cover the new HEAD.
 
 Escape hatch for a trivial change: `Verdict: skipped - <reason>` (auditable). `ORO_ATLAS_ENFORCE=0` is human-only.
