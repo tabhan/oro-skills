@@ -1,12 +1,12 @@
-# System Configuration Groups
+# System configuration groups
 
-## Rule: Cron definitions go under a shared group
+## Rule: cron definitions go under a shared group
 
-All `*_cron_definition` fields must live under the shared `cron_definition_settings`
-group — **not** under each bundle's own group.
+All `*_cron_definition` fields live under the shared `cron_definition_settings` group, **not** under each bundle's
+own group, so admins find every schedule in one place.
 
 ```yaml
-# BAD — per-bundle group
+# BAD - per-bundle group
 system_configuration:
     groups:
         my_bundle_settings:
@@ -15,7 +15,7 @@ system_configuration:
                 fields:
                     - my_bundle.some_cron_definition   # wrong place
 
-# GOOD — shared group
+# GOOD - shared group
 system_configuration:
     groups:
         cron_definition_settings:
@@ -26,11 +26,5 @@ system_configuration:
                     - other_bundle.other_cron_definition
 ```
 
-## Why
-
-Admins expect to find all cron schedules in one place. Scattering them across
-bundle-specific groups makes ops harder and duplicates "Cron Schedules" UI.
-
-Define the actual field (`some_cron_definition`) under your bundle's
-`system_configuration/settings.yml` as usual, but only reference it from the
-shared group in the **groups → fields** list.
+Define the field itself (`some_cron_definition`) under your bundle's `system_configuration/settings.yml` as usual;
+only reference it from the shared group's **groups -> fields** list.

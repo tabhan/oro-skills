@@ -1,8 +1,7 @@
 # Form Handler — `oro_form.form.handler` tag
 
-`UpdateHandlerFacade` resolves the per-form handler by string alias. You
-register your handler as a service tagged `oro_form.form.handler` with an
-`alias` attribute, then pass that alias as the 5th argument to `update()`.
+`UpdateHandlerFacade` resolves the per-form handler by string alias: register the handler as a service tagged
+`oro_form.form.handler` with an `alias`, and pass that alias as the 5th argument to `update()`.
 
 ## Interface
 
@@ -15,8 +14,7 @@ interface FormHandlerInterface
 }
 ```
 
-Return `true` on successful save, `false` if the form was not submitted or was
-invalid.
+Return `true` on successful save, `false` if not submitted or invalid.
 
 ## Canonical implementation
 
@@ -64,20 +62,17 @@ class XyzFormHandler implements FormHandlerInterface
 
 ### Do NOT call `$form->setData($data)` if the form isn't bound to the entity
 
-Oro's default `FormHandler` does `$form->setData($data)` before `submitPostPutRequest`.
-That assumes the form's `data_class` matches the entity. If your form binds to
-an array (e.g. mapped to `$submission->setFormData((array) $form->getData())`
-downstream), calling `setData(Submission)` will try to read `$submission->message`
-and blow up. Skip `setData` and just `handleRequest`.
+Oro's default `FormHandler` does `$form->setData($data)` before `submitPostPutRequest`, assuming the form's
+`data_class` is the entity. If your form binds to an array (e.g. later mapped via
+`$submission->setFormData((array) $form->getData())`), `setData(Submission)` tries to read `$submission->message` and
+blows up. Skip `setData`; just `handleRequest`.
 
 ## Service registration
 
 ```yaml
 # Resources/config/services.yml
 services:
-    # Persists the submission, dispatches integration work, etc.
-    # Alias "acme_xyz_form" is what the controller passes to
-    # UpdateHandlerFacade::update(...).
+    # Alias "acme_xyz_form" is what the controller passes to UpdateHandlerFacade::update(...).
     acme_xyz.form.handler.xyz_form:
         class: Acme\Bundle\XyzBundle\Form\Handler\XyzFormHandler
         arguments:
@@ -86,20 +81,16 @@ services:
             - { name: oro_form.form.handler, alias: acme_xyz_form }
 ```
 
-## What `UpdateHandlerFacade` does with the alias
+## What `UpdateHandlerFacade` accepts as `$formHandler`
 
 ```php
 $update = $this->updateFactory->createUpdate($data, $form, $formHandler, $resultProvider);
 ```
 
-`$formHandler` can be:
+- `null`: the `default` handler (`Oro\Bundle\FormBundle\Form\Handler\FormHandler`, full event lifecycle with transaction support).
+- `string`: alias lookup via the `oro_form.form.handler` tag registry.
+- `callable`: invoked as `($data, $form, $request)`.
+- `FormHandlerInterface`: used directly.
 
-- `null` — use the `default` handler (`Oro\Bundle\FormBundle\Form\Handler\FormHandler`
-  which dispatches the full event lifecycle with transaction support).
-- `string` — alias lookup via the `oro_form.form.handler` tag registry.
-- `callable` — invoked as `($data, $form, $request)`.
-- `FormHandlerInterface` — used directly.
-
-For dialog forms you almost always want the string-alias path, since your
-handler usually has domain responsibilities (e.g. dispatch async jobs, emit
-integration records) that the default event-based handler doesn't cover.
+For dialog forms use the string alias: the handler usually has domain duties (async jobs, integration records) the
+default event-based handler doesn't cover.

@@ -1,11 +1,8 @@
 # JavaScript Trigger — `UI.renderWidgetAttributes`
 
-**Do NOT write a custom `DialogWidget` subclass.** The idiomatic Oro pattern is
-to attach Oro's built-in `oroui/js/app/components/widget-component` directly to
-the trigger button via the `UI.renderWidgetAttributes` Twig macro. The
-component takes care of click handling, loading the URL, instantiating
-`oro/dialog-widget`, and (when combined with `widget-form-component` on the
-response) closing on save.
+**Do NOT write a custom `DialogWidget` subclass.** Attach Oro's built-in `oroui/js/app/components/widget-component` to
+the trigger button via the `UI.renderWidgetAttributes` Twig macro; it handles the click, loads the URL, instantiates
+`oro/dialog-widget` and (with `widget-form-component` on the response) closes on save.
 
 ## Canonical Twig trigger
 
@@ -45,20 +42,14 @@ What the macro emits:
 </button>
 ```
 
-On page bind, `widget-component`:
-- Binds a `click` handler that prevents default.
-- On click, `loadModules(mapWidgetModuleName('dialog'))` resolves to
-  `oro/dialog-widget`.
-- Instantiates `new DialogWidget(options.options)` and calls `.render()`.
-- The dialog's `loadContent()` fetches the URL (which is the controller route).
-- Form submissions inside the dialog go through `AbstractWidget._onAdoptedFormSubmit`,
-  which posts with `_wid` and relies on the server-rendered `widget-content`
-  wrapper to close on `savedId`.
+On bind, `widget-component` prevents default on `click`, resolves `loadModules(mapWidgetModuleName('dialog'))` to
+`oro/dialog-widget`, runs `new DialogWidget(options.options).render()`, and the dialog's `loadContent()` fetches the
+controller URL. Form submits go through `AbstractWidget._onAdoptedFormSubmit`, which posts with `_wid` and relies on
+the server-rendered `widget-content` wrapper to close on `savedId`.
 
 ## When you need a thin JS wrapper
 
-Only write JS code when the trigger needs logic that the Twig macro can't
-express — e.g. closing a *previous* dialog before opening the new one:
+Only when the trigger needs logic the Twig macro can't express, e.g. closing a *previous* dialog first:
 
 ```js
 // product-options-dialog-view.js
@@ -100,24 +91,21 @@ export default BaseView.extend({
 
 **Rules of thumb:**
 
-- Don't subclass `DialogWidget` for drawer width/positioning — pass them via
-  `dialogOptions` + CSS. Subclassing to override `loadContent` /
-  `_onContentLoad` breaks Oro's submit pipeline (notably drops `_wid` handling).
-- `routing.generate(…)` goes through `frontend_routes.json` which is generated
-  by `php bin/console fos:js-routing:dump --target=public/media/js/frontend_routes.json`.
-  Run it whenever you add or rename a route before expecting the frontend to
-  see it.
+- Don't subclass `DialogWidget` for drawer width/positioning; pass `dialogOptions` + CSS. Overriding `loadContent` /
+  `_onContentLoad` breaks Oro's submit pipeline (drops `_wid`).
+- `routing.generate(...)` reads `frontend_routes.json`, produced by
+  `php bin/console fos:js-routing:dump --target=public/media/js/frontend_routes.json`. Run it whenever you add or
+  rename a route (or add a parameter to one called via `routing.generate()`) before expecting the frontend to see it.
 
-## Unrelated but useful — diagnosing "the button isn't opening anything"
+## Diagnosing "the button isn't opening anything"
 
 ```js
 // Run in DevTools console after clicking the button
 document.querySelector('[data-action="ask-question"]').dataset
-// should show bound-component after binding — if not bound, jsmodules.yml
+// should show bound-component after binding; if not bound, jsmodules.yml
 // probably doesn't export the component in this page's dynamic-imports.
 ```
 
-If the button has `data-bound-component="oroui/js/app/components/widget-component"`
-but clicking does nothing, the most likely cause is that `options.url` was
-empty — check that the Twig macro's `path()` call resolves (the route name
-must exist and be dumped into `frontend_routes.json` if referenced from JS).
+If the button has `data-bound-component="oroui/js/app/components/widget-component"` but clicking does nothing, the
+likely cause is an empty `options.url`: check that the Twig `path()` resolves (the route must exist and be dumped
+into `frontend_routes.json` if referenced from JS).

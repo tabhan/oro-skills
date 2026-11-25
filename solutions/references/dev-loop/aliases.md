@@ -1,4 +1,4 @@
-# Oro CLI Aliases
+# Oro CLI aliases
 
 Always prefer the alias over typing the underlying command.
 
@@ -17,14 +17,11 @@ Always prefer the alias over typing the underlying command.
 | `cai` | `c assets:install --symlink` | Install assets with symlinks |
 | `caw` | `/usr/local/bin/oro/npm run watch` | Watch JS/SCSS changes (live rebuild) |
 
-**Usage:** For JS/SCSS rebuild use `cab` (oro:assets:build). For JS/SCSS debugging use
-`caw` (npm watch).
+JS/SCSS rebuild: `cab`; JS/SCSS debugging: `caw`.
 
-**`assets:install` vs `oro:assets:install`** — both exist and they are not the same.
-`cai` is Symfony's `assets:install --symlink`, which only links bundle `Resources/public`
-into `public/`. After a **JS module change** that is not enough: run
-`c oro:assets:install --symlink`, Oro's own command, which also regenerates the module
-map. Reach for `cai` only when you specifically want the plain Symfony link step.
+**`assets:install` vs `oro:assets:install`** are different. `cai` is Symfony's `assets:install --symlink`, which
+only links bundle `Resources/public` into `public/`. After a **JS module change** run `c oro:assets:install --symlink`
+(Oro's own command, which also regenerates the module map); use `cai` only for the plain link step.
 
 ## Cache
 
@@ -35,8 +32,7 @@ map. Reach for `cai` only when you specifically want the plain Symfony link step
 | `ccw` | `cstop && cw && cstart` | Stop services, warmup, restart |
 | `ccc` | `cstop && cw && cc && cstart` | Stop, warmup, clear, restart |
 
-See `cache-invalidation.md` for when to use each — prefer surgical folder deletion
-over full clears.
+See `cache-invalidation.md` for when to use each (prefer surgical deletion over full clears).
 
 ## Services (Supervisor)
 
@@ -56,9 +52,6 @@ over full clears.
 | `cup` | `cstop && c oro:migration:load --force && c oro:migration:data:load && ccw && cstart` | Full migration load + restart |
 | `ctran` | `c oro:translation:load && c oro:translation:rebuild-cache && c oro:translation:dump` | Reload translations |
 
-Editing a translation YAML does nothing without `ctran` — translations are loaded
-into DB + cache, not read from disk at runtime.
-
 ## Debugging
 
 | Alias | Command | Purpose |
@@ -77,5 +70,4 @@ into DB + cache, not read from disk at runtime.
 
 ## Git commit path
 
-For git commits that run Node-based hooks, the PATH must include `/usr/local/bin/oro`
-so the hook sees the correct Node.js version.
+Git commits that run Node-based hooks need `/usr/local/bin/oro` on `PATH` so the hook sees the right Node.js.

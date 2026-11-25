@@ -1,40 +1,18 @@
-# Cache Invalidation Strategy
+# Cache invalidation strategy
 
-Full `ccw` / `cc` take ~25–30 seconds because they rebuild the entire Symfony
-container. Most edits only invalidate one subsystem. **Reach for the narrowest
-invalidation that works.**
-
-## Pick the narrowest clear
+Full `ccw` / `cc` take ~25-30s because they rebuild the whole Symfony container. Most edits invalidate one subsystem:
+**reach for the narrowest invalidation that works.**
 
 | Edited | Clear | How |
 |--------|-------|-----|
 | Twig template | twig cache only | `rm -rf /oroapp/var/cache/prod/twig` |
-| Translation YAML (`messages.*.yml`) | translation DB + cache | `ctran` (DB load, not disk cache) |
-| Datagrid YAML, routing, services, acls, api, config | container | full `ccw` (unavoidable) |
+| Translation YAML (`messages.*.yml`) | translation DB + cache | `ctran` (translations load from DB, not from the YAML at runtime) |
+| Datagrid YAML, routing, services, acls, api, navigation, config, DI tags (compiled container) | container | full `ccw` (= `cstop && cw && cstart`; unavoidable) |
 | SCSS / JS under Resources/public | asset build | `cab` / `cai --symlink`, or rely on `caw` watch |
-| Entity mapping / migration | schema | `cup` (includes migration + warm + restart) |
-| Frontend content only (layout updates, CSS tweaks already built) | browser hard reload | no backend clear needed |
+| Entity mapping / migration | schema | `cup` (includes migration, warm and restart, so not `ccw`: a container warm alone leaves the schema stale) |
+| Frontend content only (layout updates, CSS tweaks already built) | browser hard reload | no backend clear |
 
-## Principle
-
-- After a batch of edits, run ONE clear at the end, not one per file.
-- When multiple categories are edited, run the broadest needed — e.g. YAML + translation
-  in same task: `ccw && ctran`.
-- After schema changes: `cup` (skips `ccw`, includes it).
-- When in doubt between `twig/` rm and `ccw`, try the targeted clear first — if the
-  browser still shows stale output, escalate.
-
-## Why full `ccw` exists
-
-- `ccw` = `cstop && cw && cstart` — stops FPM/nginx, warms cache, restarts.
-- Needed when compiled container state changes (DI tags, service definitions,
-  acls, routing, datagrids, api.yml, navigation.yml).
-- Twig templates are compiled but have their own cache subdir (`var/cache/prod/twig`)
-  and don't require a full rebuild.
-
-## Common mistakes
-
-- Running `cc` / `ccw` after pure Twig edits → wastes 30s.
-- Editing `messages.en.yml` and expecting the change without `ctran` → translations
-  come from DB, not from the YAML file at runtime.
-- Running `ccw` when `cup` is needed → container warms, but schema is still stale.
+- After a batch of edits run ONE clear at the end, not one per file; with several categories run the broadest needed
+  (YAML + translation: `ccw && ctran`).
+- When unsure between the `twig/` rm and `ccw`, try the targeted clear first; escalate if the browser still shows
+  stale output. `cc` / `ccw` after pure Twig edits wastes 30s.

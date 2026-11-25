@@ -1,36 +1,14 @@
 # Entity and enum gotchas
 
-This skill used to be a near-complete mirror of Oro's own documentation (architecture,
-bundles, entities, ACL, API, message queue, translations, setup, etc.). That generic
-material duplicated the official `oroinc/ai-dev-platform` plugin's reference docs
-(`orocommerce-development`, `orocommerce-foundation`, `orocommerce-discovery`), so it was
-removed on 2026-09-10. What remains is only content tied to a real incident/gotcha
-actually hit on this project.
+Only incident-driven content lives here; generic Oro mechanics are not mirrored.
 
----
+| Task | Document | Key content |
+|------|----------|-------------|
+| Doctrine schema drift on entity-extend indexes (`DROP INDEX`) | `entity-extend-indexes.md` | Aaxis `MetadataListener` + `entity_extend.yml` fix for custom unique/regular indexes on entity-extend fields |
+| Serialized enum-extend fields | `extend-entities.md` | Stored format (`<enum_code>.<internal_id>`), `getEnumChoicesByCode` vs `getEnumInternalChoicesByCode`, datagrid pattern, pitfalls (filter "no results", `EntityNotFoundException`) |
 
-## Available Documents
-
-| Task Type | Document File | Key Content |
-|-----------|---------------|--------------|
-| **Doctrine schema drift on entity-extend indexes** | `entity-extend-indexes.md` | Aaxis `MetadataListener` + `entity_extend.yml` fix for `DROP INDEX` drift on custom unique/regular indexes on entity-extend fields |
-| **Serialized enum-extend field gotchas** | `extend-entities.md` | Correct stored format (`<enum_code>.<internal_id>`), right choice-provider (`getEnumChoicesByCode` vs `getEnumInternalChoicesByCode`), datagrid pattern, and real pitfalls this project hit (filter "no results", `EntityNotFoundException`) |
-
-For everything else — creating entities, bundles, ACL config, datagrids, API config,
-workflows, message queue, bundle-less structure, translations, environment setup — use
-the official plugin's docs (e.g. `orocommerce-development`'s `backend.md` and
-`sql-safety.md`, `orocommerce-foundation`'s `override-points.md` and `ticket-layout.md`,
-`orocommerce-discovery`'s `backend.md`/`architecture.md`) or Oro's own documentation.
-Do not re-derive generic mechanics here.
-
----
-
-## Usage Rules
-
-1. Read the AGENT QUERY HINTS block at the top of a doc first to confirm it matches your task.
-2. If your question isn't a schema-drift-on-entity-extend-index question or a
-   serialized-enum-storage question, this skill has nothing for you — go to the official
-   plugin's reference docs.
-3. Only add new content here when it is a genuine incident/gotcha specific to this
-   environment (a real bug, a real class name tied to that bug, a real ticket, a
-   migration-ordering issue actually hit) — not generic "how Oro works" material.
+Everything else (entities, bundles, ACL, datagrids, API, workflows, message queue, translations, setup): use the
+official plugin docs (`orocommerce-development` `backend.md`/`sql-safety.md`, `orocommerce-foundation`
+`override-points.md`/`ticket-layout.md`, `orocommerce-discovery` `backend.md`/`architecture.md`) or Oro's
+documentation; do not re-derive generic mechanics here. Add content here only for a genuine environment-specific
+incident (a real bug, class name, ticket or migration-ordering issue actually hit).

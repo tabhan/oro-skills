@@ -1,39 +1,29 @@
 # Solution approach and overriding a core service
 
-## 1. Solution-approach hierarchy
+## Solution-approach hierarchy (form rendering / option shaping)
 
-When solving a form-rendering / option-shaping problem, prefer in this order:
+1. **Entity config** (`entity_configs.yml` `form.type` / `form.form_options`): declarative, no PHP.
+2. **Symfony form-type extension**: configure the type itself to accept/transform options.
+3. **Service decorator**: last resort.
 
-1. **Entity config** (`entity_configs.yml` `form.type` / `form.form_options`) — declarative, no PHP.
-2. **Symfony form-type extension** — configure the type itself to accept/transform options.
-3. **Service decorator** — last resort.
+A decorator that strips a form type's `choices`/`configs` options to force a render is a bad solution. Use
+`form.type` in `entity_configs.yml` (e.g. a boolean extend field forced to `CheckboxType`) plus a small type
+extension calling `setDefined(['choices', 'configs'])`.
 
-A decorator that strips a form type's `choices`/`configs` options to force a render is a bad
-solution — do it instead via `form.type` in `entity_configs.yml` (e.g. forcing a boolean extend
-field to `CheckboxType`) plus a small type extension calling `setDefined(['choices', 'configs'])`.
+## Overriding an Oro core service method: aspect interceptor over decorator
 
-For overriding an Oro **core service method** (a different domain than form/config), the ranking
-is **aspect interceptor > Symfony decorator** — see below.
+This is the canonical statement of the rule. To wrap / filter / mutate an Oro core service method, default to the
+project's `aaxis_aspect.interceptor` (Aaxis AspectBundle) before `decorates:`. Use a Symfony decorator only when **no
+downstream consumer typehints the concrete class** of the decorated service; check with
+`aaxis-oro atlas unsafe <Class>` (e.g. `ProductRepository`). Run atlas first even for investigation, before reading `vendor/`.
 
-## 2. Overriding an Oro core service — prefer the aspect interceptor
+**Why decorators bite on Oro:** many consumers typehint the **concrete class** (e.g. `WorkflowAclExtension::__construct(... WorkflowAclMetadataProvider $provider)`).
+A composition decorator fails at container compile time: `TypeError: Argument #N must be of type Foo, FooDecorator given`.
+A decorator that `extends` the original works but must forward the parent constructor, which breaks on every Oro
+upgrade that adds a dependency. The interceptor's compiler pass generates a proxy that **extends the target class**,
+so the type contract holds and you never reference the original class or its constructor.
 
-When you want to wrap / filter / mutate the behaviour of an Oro core service method, default to
-the project's `aaxis_aspect.interceptor` pattern (Aaxis AspectBundle) before reaching for
-Symfony's `decorates:`. Use a Symfony decorator only when **no downstream consumer typehints the
-concrete class** of the decorated service. Check with `aaxis-oro atlas unsafe <Class>` (e.g. `aaxis-oro atlas unsafe ProductRepository`) (atlas skill). Run atlas first even for investigation, before reading vendor/.
-
-**Why decorators bite on Oro:** many Oro consumers typehint the **concrete class**
-(e.g. `WorkflowAclExtension::__construct(... WorkflowAclMetadataProvider $provider)`). A
-composition-based decorator (clean interface approach) fails the type contract at container
-compile time — `TypeError: Argument #N must be of type Foo, FooDecorator given` on first page
-load. Forcing the decorator to `extends` the original works but couples you to forwarding the
-parent constructor signature, which breaks on every Oro upgrade that adds a dependency.
-
-The aspect interceptor's compiler pass generates a proxy that **extends the target class**, so
-the type contract holds automatically and you never reference the original class or its ctor:
-
-Put the interceptor in the folder mirroring the intercepted class, never a generic
-`Interceptor/`.
+Put the interceptor in a folder mirroring the intercepted class, never a generic `Interceptor/`.
 
 ```php
 use Aaxis\Bundle\AspectBundle\Annotations\Pointcut;
@@ -55,10 +45,10 @@ buckman_x.foo_bar_interceptor:
         - { name: aaxis_aspect.interceptor, service: <oro_target_service_id> }
 ```
 
-**Interceptors must be stateless.** The generated proxy reuses ONE interceptor instance for every call of the
-intercepted method, so never keep per-call data (arguments, results, flags) in properties; use locals and the
-`MethodInvocation` only. Constructor-injected collaborators are fine.
+**Interceptors must be stateless.** The generated proxy reuses ONE instance for every call, so keep per-call data
+(arguments, results, flags) in locals and the `MethodInvocation`, never in properties. Constructor-injected
+collaborators are fine. Listeners and voters are too loose for most extension needs; use them only when the
+extension point genuinely is an event.
 
-Test it directly: instantiate the interceptor in PHPUnit, mock `MethodInvocation` to return the
-payload, assert on the output — no container needed.
-
+Test it directly: instantiate the interceptor in PHPUnit, mock `MethodInvocation` to return the payload, assert on
+the output; no container needed.
