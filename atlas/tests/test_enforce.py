@@ -96,7 +96,7 @@ class StalenessKindTest(EnforceBase):
         first = self.edit_ext()
         self.assertNotEqual(self.decision(first), "deny")
         self.assertIn("behind your src edits", first["hookSpecificOutput"]["additionalContext"])
-        self.assertIn("--incremental", first["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("reindexes in the background", first["hookSpecificOutput"]["additionalContext"])
         again = self.edit_ext()
         self.assertNotIn("behind", json.dumps(again))
 
@@ -117,10 +117,138 @@ class StalenessKindTest(EnforceBase):
         json.dump(data, open(idx, "w"))
         self.assertNotEqual(self.decision(self.edit_ext()), "deny")
 
+    def test_corrupt_index_denies(self):
+        self.bash("aaxis-oro atlas service x")
+        with open(os.path.join(self.root, ".oro-ai", "atlas", "index.json"), "w") as fh:
+            fh.write('{"shards": ')
+        out = self.edit_ext()
+        self.assertEqual(self.decision(out), "deny")
+        self.assertIn("unreadable", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_schema_version_mismatch_denies(self):
+        self.bash("aaxis-oro atlas service x")
+        idx = os.path.join(self.root, ".oro-ai", "atlas", "index.json")
+        data = json.load(open(idx))
+        data["schema_version"] = 99
+        json.dump(data, open(idx, "w"))
+        self.assertEqual(self.decision(self.edit_ext()), "deny")
+
+    def test_index_without_schema_version_is_still_usable(self):
+        self.bash("aaxis-oro atlas service x")
+        idx = os.path.join(self.root, ".oro-ai", "atlas", "index.json")
+        data = json.load(open(idx))
+        data.pop("schema_version", None)
+        json.dump(data, open(idx, "w"))
+        self.assertNotEqual(self.decision(self.edit_ext()), "deny")
+
     def test_missing_index_still_denies(self):
         self.bash("aaxis-oro atlas service x")
         os.remove(os.path.join(self.root, ".oro-ai", "atlas", "index.json"))
         self.assertEqual(self.decision(self.edit_ext()), "deny")
+
+
+class StateMachineTest(EnforceBase):
+    """fresh -> silent; stale-usable -> edits allowed, reindex scheduled at Stop/SessionStart only; unusable -> deny."""
+
+    def touch_src(self):
+        with open(os.path.join(self.root, "src", "Foo", "New.php"), "w") as fh:
+            fh.write("<?php")
+
+    def recorder(self, seconds=4):
+        path = os.path.join(self.tmp.name, "fake-rebuild.py")
+        self.calls = os.path.join(self.tmp.name, "rebuild-calls")
+        with open(path, "w") as fh:
+            fh.write("import sys, time\nopen(%r, 'a').write(' '.join(sys.argv[1:]) + '\\n')\ntime.sleep(%d)\n" % (self.calls, seconds))
+        return {"ORO_ATLAS_AUTO_REBUILD": "1", "ORO_ATLAS_REBUILD_BIN": path}
+
+    def n_calls(self):
+        import time
+        time.sleep(0.6)
+        return len(open(self.calls).read().splitlines()) if os.path.exists(self.calls) else 0
+
+    def stop(self, env, sid="s1"):
+        return run("stop.py", {"session_id": sid, "cwd": self.root, "hook_event_name": "Stop"}, self.home, env)[1]
+
+    def test_fresh_is_silent_and_never_rebuilds(self):
+        env = self.recorder()
+        self.bash("aaxis-oro atlas service x")
+        self.assertIsNone(self.edit_ext(env))
+        self.assertIsNone(self.stop(env))
+        self.assertEqual(self.n_calls(), 0)
+
+    def test_edit_allows_and_warns_but_never_rebuilds(self):
+        env = self.recorder()
+        self.bash("aaxis-oro atlas service x")
+        self.touch_src()
+        out = self.edit_ext(env)
+        self.assertNotEqual(self.decision(out), "deny")
+        self.assertIn("may be stale", out["systemMessage"])
+        self.assertIn("when this turn ends", out["systemMessage"])
+        self.assertEqual(self.n_calls(), 0)
+
+    def test_stop_on_stale_usable_spawns_exactly_one_rebuild(self):
+        env = self.recorder()
+        self.touch_src()
+        self.stop(env)
+        self.assertEqual(self.n_calls(), 1)
+        self.assertIn("build --project %s --incremental --background" % self.root, open(self.calls).read())
+
+    def test_second_trigger_while_running_spawns_none(self):
+        env = self.recorder()
+        self.touch_src()
+        self.stop(env, sid="s1")
+        self.stop(env, sid="s2")
+        run("sessionstart_atlas.py", {"session_id": "s3", "cwd": self.root, "source": "startup"}, self.home, env)
+        self.assertEqual(self.n_calls(), 1)
+
+    def test_session_start_schedules_too_and_says_so(self):
+        env = self.recorder()
+        self.touch_src()
+        out = run("sessionstart_atlas.py", {"session_id": "s3", "cwd": self.root, "source": "startup"}, self.home, env)[1]
+        self.assertIn("reindexing in the background", out["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(self.n_calls(), 1)
+
+    def test_build_lock_held_means_no_spawn(self):
+        sys.path.insert(0, HOOKS)
+        import _common as c
+        self.touch_src()
+        started = []
+        with open(os.path.join(self.root, ".oro-ai", "atlas", ".lock"), "w") as fh:
+            fh.write(str(os.getpid()))
+        os.environ["ORO_ATLAS_AUTO_REBUILD"] = "1"
+        try:
+            self.assertEqual(c.schedule_rebuild(self.root, spawn=started.append)[0], "running")
+        finally:
+            os.environ["ORO_ATLAS_AUTO_REBUILD"] = "0"
+        self.assertEqual(started, [])
+
+    def test_failed_rebuild_is_reported_and_retried_at_next_trigger(self):
+        sys.path.insert(0, HOOKS)
+        import _common as c
+        from atlas import build
+        self.touch_src()
+        with open(os.path.join(self.root, ".oro-ai", "atlas", build.FAIL_NAME), "w") as fh:
+            json.dump({"count": 2, "ts": 0, "reason": "boom"}, fh)
+        started = []
+        os.environ["ORO_ATLAS_AUTO_REBUILD"] = "1"
+        try:
+            outcome, warning = c.schedule_rebuild(self.root, spawn=lambda cmd: started.append(cmd) or type("P", (), {"pid": 0})())
+        finally:
+            os.environ["ORO_ATLAS_AUTO_REBUILD"] = "0"
+        self.assertEqual(outcome, "started")
+        self.assertIn("failed 2 time(s) (boom)", warning)
+        self.assertEqual(len(started), 1)
+
+    def test_unusable_and_disabled_never_rebuild(self):
+        env = self.recorder()
+        self.touch_src()
+        self.make_stale()  # composer.lock changed: unusable
+        self.assertEqual(self.decision(self.edit_ext(env, sid="x")), "deny")
+        self.stop(env)
+        self.assertEqual(self.n_calls(), 0)
+        env = dict(self.recorder(), ORO_ATLAS_AUTO_REBUILD="0")
+        self.stop(env)
+        self.assertEqual(self.n_calls(), 0)
 
 
 class ExtensionFileTest(EnforceBase):

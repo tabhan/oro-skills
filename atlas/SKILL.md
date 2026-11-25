@@ -38,7 +38,7 @@ instead of grepping 14k services by hand. Details: [README.md](README.md).
 - `aaxis-oro atlas unsafe <Class>` lists classes typehinted concretely by other constructors. If the target
   is listed, `decorates:` breaks the container: use `aaxis_aspect.interceptor` (see the solutions skill, override-core-service.md).
 - Reuse an OOTB hook when one exists; only add a new event/tag/extension point if the atlas has none.
-- A `STALE` line (`aaxis-oro atlas status` exits 2) means the index is out of date. Atlas never rebuilds by itself: run
+- A `STALE` line (`aaxis-oro atlas status` exits 2) means the index is out of date. Queries still answer from a stale index ("may be out of date"); hooks reindex stale-usable src changes in the background at turn end. Otherwise run
   `aaxis-oro atlas build --incremental` (needs the project's `php bin/console` working) or ask the user to, before trusting results.
 - Investigation counts: run atlas before reading vendor/, not only before editing. Subagents get this
   reminder from the SubagentStart hook.

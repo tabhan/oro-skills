@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 os.environ["ATLAS_NO_AUTOBUILD"] = "1"
+os.environ["ORO_ATLAS_AUTO_REBUILD"] = "0"  # hooks never start a real background build in tests
 
 HOOKS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks")
 sys.path.insert(0, os.path.join(HOOKS, ".."))

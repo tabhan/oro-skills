@@ -132,44 +132,44 @@ ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.y
 
 ## Ticket process
 
-`/aaxis-oro:setup` writes the `process-rules` block (`templates/claude-project/process-rules.md`) into the project's
-`CLAUDE_project.md`; it states the per-ticket steps and that they override any command's fast path. Enforcement
-applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose name holds a ticket key
-(`[A-Z][A-Z0-9]+-<n>`); elsewhere nothing changes.
+`/aaxis-oro:setup` writes the `process-rules` block (`templates/claude-project/process-rules.md`, the single statement
+of the steps) into the project's `CLAUDE_project.md`. Enforcement applies only to setup projects (`.oro-ai/config.json`
+exists) on a branch whose name holds a ticket key (`[A-Z][A-Z0-9]+-<n>`); elsewhere nothing changes.
 
 - `aaxis-oro task init [KEY]` creates `.oro-ai/task/<KEY>/STATUS.md` and `plan.md` stubs (never overwrites);
   `aaxis-oro task check [KEY]` lists missing evidence (exit 1). KEY defaults to the branch's key. Once the branch has
   committed code, a `plan.md` whose `## Root cause` section is missing or empty (the stub's guidance prose alone counts
   as empty) prints a warning without changing the exit code; features write `n/a - feature`.
+- `aaxis-oro task gate-diff [KEY]` lists `plan.md` sections changed/new/removed since the approval recorded by
+  `task gate-record` (`Approved-Section:` lines in `architect-gate.md`); none recorded = whole plan.
 - `review check --staged` (and so the `git commit` PreToolUse hook): `review-ticket-gate` denies a staged
-  extension-point file (same list as the atlas edit hook) unless `architect-gate.md` has a `Verdict: approved` or
-  `Verdict: skipped - <reason>` line (a bare `PASS`/`REJECT` first line is read the same); `review-ticket-evidence` warns when `STATUS.md` is missing or production `src/`
-  code changed on the branch (vs the first of `origin/develop`, `develop`, `origin/main`, `main`, ...) with no
+  extension-point file (same list as the atlas edit hook) unless the change is SMALL (`task.is_small_change`: at most 3
+  files outside `.oro-ai/`, no risk path or added `decorates:`/interceptor/ACL construct; `task check` agrees) or
+  `architect-gate.md` has a `Verdict: approved` or `Verdict: skipped - <reason>` line (a bare `PASS`/`REJECT` first line
+  counts); `review-ticket-evidence` warns when `STATUS.md` is missing, or production `src/` code changed on the branch
+  (vs the first of `origin/develop`, `develop`, `origin/main`, `main`, ...) touches user-visible behaviour
+  (`task.is_user_visible`: Twig/JS/TS/SCSS/CSS, `Controller/`, `Resources/views|public|translations`, datagrid/layout/
+  routing/api/workflow/action/operation/navigation/system_configuration/email yml; never `Tests/`) with no
   `*.feature`/`*.steps.ts`.
-- Supplementary review (`/aaxis-oro:review`, agent `aaxis-oro:aaxis-reviewer`): invokes the official
-  `orocommerce-review:review-changes` for the generic lenses and adds the Aaxis ones (reuse/OOTB via atlas, Aaxis rule
-  judgment, plan.md/architect-gate drift, conditional performance), refuted with the official `finding-refuter`.
-  It writes `.oro-ai/task/<KEY>/review.md` with `Verdict: approved|changes-requested|skipped - <reason>` and
-  `Range: <base>..<head>`. An approved review covers HEAD when its head is HEAD, or an ancestor (a rebase is stale) whose
-  branch-own commits since (`git log --first-parent --no-merges`, so merging develop is ignored) changed at most
-  `task.SMALL_DELTA_LINES` (20) production lines (`is_prod`; tests, translations, `.oro-ai/` do not count, so committing
-  the review itself keeps it fresh). A bigger delta gets a single-reviewer delta review of `<reviewed head>..HEAD`. Once the branch has committed code,
+- Supplementary review (`/aaxis-oro:review`, agent `aaxis-oro:aaxis-reviewer`; flow in `commands/review.md`) writes
+  `.oro-ai/task/<KEY>/review.md` with `Verdict: approved|changes-requested|skipped - <reason>` and `Range: <base>..<head>`.
+  An approved review covers HEAD when its head is HEAD, or an ancestor (a rebase is stale) whose branch-own commits since
+  (`git log --first-parent --no-merges`, so merging develop is ignored) changed at most `task.SMALL_DELTA_LINES` (20)
+  production lines (`is_prod`; tests, translations, `.oro-ai/` do not count, so committing the review keeps it fresh);
+  a bigger delta gets a single-reviewer delta review of `<reviewed head>..HEAD`. Once the branch has committed code,
   `task check` fails without a covering approved/skipped review, and `review-ticket-push` (PreToolUse on Bash
   `git push`) denies the push; there is no git-side hook, so a human pushing from a shell is not gated.
-- `review-ticket-stop` (Stop hook, `atlas/hooks/stop.py`) makes the review happen when coding finishes: with the
-  same condition as the push gate, plus no uncommitted or untracked changes outside `.oro-ai/` (a dirty tree is
-  mid-work), it emits a reminder (severity `warn`, never blocks) to run `/aaxis-oro:review` (or record a skipped verdict);
-  a `changes-requested` review whose Range head is HEAD asks for the must-fix findings first. It exempts subagents (SubagentStop /
-  `agent_id`: the main session owns the review), only warns under the human-only enforcement switch, and any
-  error allows the stop (logged to `~/.claude/atlas-hook.log`). `/aaxis-oro:review` first writes a
-  `Verdict: in-progress` marker (`Range: <base>..<HEAD>`, `Started: <ISO-8601 UTC>`): while its head is HEAD and it is
-  younger than 2h (`task.IN_PROGRESS_TTL`) the Stop hook only warns "review in progress since <t>"; a stale marker
-  warns as usual. `in-progress` is never approved: push gate and `task check` still fail.
-- UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch). Keys
-  inside harness wrappers (`<task-notification>`, `<system-reminder>`, text after `[SYSTEM NOTIFICATION`) are ignored:
-  background-task notifications reach the hook as `prompt` text with no distinguishing payload field.
-- Escape hatches: `Verdict: skipped - <reason>` for a trivial change (auditable in the task dir); the human-only
-  `ORO_ATLAS_ENFORCE=0` downgrades the deny to a warning.
+- `review-ticket-stop` (Stop hook, `atlas/hooks/stop.py`) emits a reminder (severity `warn`, never blocks) to run
+  `/aaxis-oro:review` (or record a skipped verdict) under the push-gate condition plus a clean tree (no uncommitted or
+  untracked changes outside `.oro-ai/`); a `changes-requested` review whose Range head is HEAD asks for the must-fix
+  findings first. It exempts subagents (`agent_id`), only warns under the human-only enforcement switch, and any error
+  allows the stop (logged to `~/.claude/atlas-hook.log`). `/aaxis-oro:review` first writes a `Verdict: in-progress`
+  marker (`Range: <base>..<HEAD>`, `Started: <ISO-8601 UTC>`): while its head is HEAD and under 2h old
+  (`task.IN_PROGRESS_TTL`) the Stop hook only warns "review in progress since <t>"; `in-progress` is never approved.
+- UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch); keys inside
+  harness wrappers (`<task-notification>`, `<system-reminder>`, `[SYSTEM NOTIFICATION`) are ignored.
+- Escape hatches: `Verdict: skipped - <reason>` for a trivial change; the human-only `ORO_ATLAS_ENFORCE=0` downgrades
+  the deny to a warning.
 
 Existing projects pick up the block with `aaxis-oro setup sync` (`setup status` reports `blocks out of sync: process-rules`).
 
@@ -178,7 +178,7 @@ Existing projects pick up the block with `aaxis-oro setup sync` (`setup status` 
 - Token efficiency: deterministic work lives in scripts with quiet output (one line per step, documented exit codes,
   `--verbose`/`--json`, detail in `.oro-ai/.../logs`). Skills are short indexes of judgment; mechanics that mirror
   code stay in the README beside that code. Generic Oro documentation stays with the official plugins.
-- Never copy: a skill states a decision and the incident behind it, then points at the docs.
+- Never copy: a skill states a decision and its incident, then points at the docs.
 - Shell-agnostic (bash/POSIX sh); idempotent commands; no prompts except documented asks.
 
 ## Versioning and contributing

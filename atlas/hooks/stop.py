@@ -79,8 +79,20 @@ def bypass_reminder(payload):
     return out
 
 
+def atlas_reindex(payload):
+    """Schedule the detached incremental reindex of a stale-usable atlas index at the end of the turn (never blocks)."""
+    if payload.get("hook_event_name") == "SubagentStop" or payload.get("agent_id"):
+        return None
+    root = c.project_root(payload.get("cwd") or os.getcwd())
+    _, warning = c.schedule_rebuild(root) if root else (None, None)
+    return {"systemMessage": "[atlas] " + warning} if warning else None
+
+
 def decide(payload):
     out = bypass_reminder(payload)
+    re_out = atlas_reindex(payload)
+    if re_out:
+        out = {"systemMessage": (out["systemMessage"] + "\n" if out else "") + re_out["systemMessage"]}
     gate, verdict = review_gate(payload)
     if gate:
         if out and "systemMessage" in gate:

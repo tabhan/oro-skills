@@ -80,6 +80,6 @@
     header into a separate sticky table and leaves a hidden, handler-less clone, so `table.grid thead ...`
     selectors hit the clone. Select rows with the row-checkbox hook, and exercise a mass action through
     its endpoint rather than the header UI when the header is unreachable.
-12. **Test first.** Write the scenario, watch it fail for the right reason, implement until green. Never write the
-    e2e last to rubber-stamp finished code.
+12. **Test first.** Write the scenario, watch it fail for the right reason, implement until green; never write the e2e last.
+    Mandatory for user-visible behaviour, optional for pure backend work (process rule 3).
 

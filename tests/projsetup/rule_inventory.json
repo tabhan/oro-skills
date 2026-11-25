@@ -43,6 +43,10 @@
   "Required for every ticket",
   "never the steps below",
   "seen red",
+  "user-visible behaviour",
+  "pure backend refactors",
+  "re-gates only the plan sections",
+  "needs no gate",
   "Behat is deprecated",
   "supplements, never replaces",
   "denies an extension-point",
@@ -74,7 +78,7 @@
   "say so and let the user decide"
  ],
  "sha256": {
-  "process-rules": "8cf1ad7600744ee290e894b30b62a97db19993c73fed723044c0d79a7961d30d",
+  "process-rules": "60442eb458eaa660733c63e330e7ab63633f32c7ae458cc5fd2214e41c7d4e0d",
   "review-rules": "8634676d6445ca9028153b9f6d7191871d6f193581877956c1fa44eda9e6e966",
   "plan-rules": "72bb67c941c6b795a42113ff8f291d0b84da20dcbdf60658bee2880b40b3952f"
  },

@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ["ATLAS_NO_AUTOBUILD"] = "1"
 
 from atlas import build, cli, extractors, index, store  # noqa: E402
-from atlas.common import Context, atlas_dir  # noqa: E402
+from atlas.common import Context, atlas_dir, resolve_generation  # noqa: E402
 from atlas.extractors import events  # noqa: E402
 from tests.test_core import make_project  # noqa: E402
 
@@ -122,7 +122,7 @@ class NoAutoRebuildTest(unittest.TestCase):
         b.assert_not_called()
         sp.assert_not_called()
         self.assertEqual(code, 0)
-        self.assertIn("rebuild (never automatic): atlas build --incremental", err)
+        self.assertIn("rebuild when convenient: atlas build --incremental", err)
 
     def test_no_heal_helpers_remain(self):
         self.assertFalse(hasattr(cli, "_heal") or hasattr(cli, "spawn_background"))
@@ -159,6 +159,100 @@ class IncrementalBuildTest(unittest.TestCase):
         with mock.patch.object(build, "build") as b:
             build.build_incremental(ctx, io.StringIO(), background=True)
         b.assert_not_called()
+
+
+class StagedRebuildTest(unittest.TestCase):
+    """build_staged: the live index is untouched until a full success, then swapped in (index.json last)."""
+
+    def setUp(self):
+        self.root = make_project()
+        self.mods = {n: mock.Mock(NAME=n, ORDER=0, DEPENDS=(), extract=lambda c, n=n: [{"id": n}]) for n in ("grids", "events")}
+        self.patch = mock.patch.object(extractors, "load_all", return_value=self.mods)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        build.build(Context(self.root), None, io.StringIO())
+        self.base = Context(self.root).out_dir
+        os.makedirs(os.path.join(self.root, "src", "A"), exist_ok=True)
+        open(os.path.join(self.root, "src", "A", "datagrids.yml"), "w").write("x")  # grids shard goes stale
+
+    @property
+    def live(self):
+        return resolve_generation(self.base)
+
+    def live_ids(self):
+        return [r["id"] for r in store.read_shard(self.live, "grids")]
+
+    def test_success_swaps_in_and_leaves_no_staging_or_lock(self):
+        self.mods["grids"].extract = lambda c: [{"id": "new"}]
+        self.assertEqual(build.build_staged(self.root, io.StringIO()), "built")
+        self.assertEqual(self.live_ids(), ["new"])
+        self.assertEqual(index.stale_shards(self.root, self.live), [])
+        self.assertFalse(os.path.exists(self.live + build.STAGING_SUFFIX))
+        self.assertFalse(os.path.exists(build.lock_path(self.live)))
+
+    def test_live_index_is_untouched_while_the_build_runs(self):
+        seen = {}
+
+        def extract(c):
+            seen["out_dir"], seen["live"] = c.out_dir, self.live_ids()  # in-flight query: still the old shard
+            return [{"id": "new"}]
+
+        self.mods["grids"].extract = extract
+        build.build_staged(self.root, io.StringIO())
+        self.assertEqual(seen["live"], ["grids"])
+        self.assertTrue(seen["out_dir"].endswith(build.STAGING_SUFFIX))
+
+    def test_failure_keeps_old_index_and_records_it_then_success_clears_it(self):
+        def boom(c):
+            raise RuntimeError("php exploded")
+
+        self.mods["grids"].extract = boom
+        before = open(os.path.join(self.live, index.INDEX_NAME)).read()
+        self.assertEqual(build.build_staged(self.root, io.StringIO()), "failed")
+        self.assertEqual(self.live_ids(), ["grids"])
+        self.assertEqual(open(os.path.join(self.live, index.INDEX_NAME)).read(), before)
+        self.assertFalse(os.path.exists(self.live + build.STAGING_SUFFIX))
+        fail = build.rebuild_failure(self.live)
+        self.assertEqual(fail["count"], 1)
+        self.assertIn("php exploded", fail["reason"])
+        self.assertEqual(build.build_staged(self.root, io.StringIO()), "failed")
+        self.assertEqual(build.rebuild_failure(self.live)["count"], 2)
+        self.mods["grids"].extract = lambda c: [{"id": "ok"}]
+        self.assertEqual(build.build_staged(self.root, io.StringIO()), "built")
+        self.assertIsNone(build.rebuild_failure(self.live))
+
+    def test_reader_during_swap_sees_one_generation_and_old_ones_are_pruned(self):
+        for n in range(4):
+            self.mods["grids"].extract = lambda c, n=n: [{"id": "g%d" % n}]
+            open(os.path.join(self.root, "src", "A", "datagrids.yml"), "w").write("x" * (n + 2))
+            seen, before = [], self.read_gen()
+            real_replace = os.replace
+
+            def replace(src, dst, seen=seen):
+                if os.path.basename(dst) == "current":
+                    seen.append(self.read_gen())  # just before the flip: all old
+                real_replace(src, dst)
+                if os.path.basename(dst) == "current":
+                    seen.append(self.read_gen())  # just after: all new
+            with mock.patch("os.replace", replace):
+                self.assertEqual(build.build_staged(self.root, io.StringIO()), "built")
+            self.assertEqual(seen[0], before)  # before the flip: the complete old generation
+            self.assertEqual(seen[1], self.read_gen())  # after: the complete new one
+            self.assertNotEqual(seen[0], seen[1])
+        self.assertLessEqual(len(os.listdir(os.path.join(self.base, "gen"))), 2)
+        self.assertEqual(self.live_ids(), ["g3"])
+        self.assertFalse(os.path.exists(os.path.join(self.base, "grids.jsonl")))
+
+    def read_gen(self):
+        """(shard id, index stamp, shard list) read from ONE resolved generation, as a query does."""
+        d = resolve_generation(self.base)
+        ids = [r["id"] for r in store.read_shard(d, "grids")]
+        return ids[0], index.read_index(d)["shards"]["grids"]["generated_at"], store.list_shards(d)
+
+    def test_second_build_while_locked_starts_nothing(self):
+        open(build.lock_path(self.live), "w").write(str(os.getpid()))
+        self.assertEqual(build.build_staged(self.root, io.StringIO()), "running")
+        self.assertFalse(os.path.exists(self.live + build.STAGING_SUFFIX))
 
 
 class SetupTest(unittest.TestCase):

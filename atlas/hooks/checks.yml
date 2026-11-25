@@ -5,7 +5,7 @@ checks:
     severity: deny
     oro: ">=7.0.0"
     topic: decorates-unsafe-target
-  # Deny extension-file edits while the atlas index is stale/missing or its build failed (pretooluse_edit.py)
+  # Deny extension-file edits only when the atlas index is unusable: missing/corrupt, format/schema mismatch, composer.lock or vendor changed. A merely behind (src/config) index is allowed with a warning and a background incremental rebuild (pretooluse_edit.py)
   - id: atlas-index-fresh
     severity: deny
     oro: ">=7.0.0"
@@ -33,7 +33,7 @@ checks:
   - id: review-test-weakening
     severity: warn
     oro: ">=7.0.0"
-  # Setup project, ticket branch: staged extension-point change needs .oro-ai/task/<KEY>/architect-gate.md approved/skipped
+  # Setup project, ticket branch: staged extension-point change (unless SMALL: <=3 files, no risk path) needs .oro-ai/task/<KEY>/architect-gate.md approved/skipped
   - id: review-ticket-gate
     severity: deny
     oro: ">=7.0.0"

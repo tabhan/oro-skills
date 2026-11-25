@@ -216,6 +216,8 @@ class TicketProcessTest(ReviewBase):
         self.git("checkout", "-qb", "bugfix/BUC-7")
         self.write(".oro-ai/config.json", "{}\n")
         self.write("src/Foo/Resources/config/services.yml", "services: {}\n")
+        for n in "BCD":  # four files: not a SMALL change, so the gate applies
+            self.write("src/Foo/%s.php" % n, "<?php\n")
         self.git("add", "src")
 
     def gate(self, text):
@@ -238,6 +240,11 @@ class TicketProcessTest(ReviewBase):
         p = self.check()
         self.assertEqual(p.returncode, 0)
         self.assertIn("STATUS.md", p.stdout)
+        self.assertNotIn("no e2e", p.stdout)  # DI wiring is not user-visible: e2e optional
+        self.write("src/Foo/Controller/XController.php", "<?php\n")
+        self.git("add", "src")
+        p = self.check()
+        self.assertEqual(p.returncode, 0)
         self.assertIn("no e2e", p.stdout)
         run_task = lambda *a: subprocess.run([sys.executable, EXE, "task", *a], cwd=self.root, capture_output=True, text=True)
         self.assertIn("created STATUS.md, plan.md", run_task("init").stdout)
@@ -246,6 +253,18 @@ class TicketProcessTest(ReviewBase):
         self.git("add", "src")
         self.assertEqual(run_task("check").returncode, 0)
         self.assertNotIn("review-ticket-evidence", self.check().stdout)
+
+    def test_user_visible_classification(self):
+        from atlas import task
+        for path in ("src/Foo/Controller/X.php", "src/Foo/Resources/views/a.html.twig", "src/Foo/Resources/public/js/a.js",
+                     "src/Foo/Resources/public/scss/a.scss", "src/Foo/Resources/config/oro/datagrids.yml",
+                     "src/Foo/Resources/config/oro/workflows.yml", "src/Foo/Resources/config/oro/routing.yml",
+                     "src/Foo/Resources/translations/messages.en.yml", "src/Foo/Resources/views/layouts/x/layout.yml"):
+            self.assertTrue(task.is_user_visible(path), path)
+        for path in ("src/Foo/Service/A.php", "src/Foo/EventListener/L.php", "src/Foo/Resources/config/services.yml",
+                     "src/Foo/Migrations/Schema/V1/M.php", "src/Foo/Tests/E2e/x.feature", "src/Foo/Tests/Unit/ControllerTest.php",
+                     "src/Foo/Controller/Tests/a.php", "docs/a.md", "src/Foo/Migrations/Data/Demo/d.yml"):
+            self.assertFalse(task.is_user_visible(path), path)
 
     def test_non_setup_project_and_non_ticket_branch_unaffected(self):
         os.remove(os.path.join(self.root, ".oro-ai", "config.json"))
@@ -259,6 +278,75 @@ class TicketProcessTest(ReviewBase):
                            env=dict(os.environ, HOME=self.home, ORO_ATLAS_ENFORCE="0"))
         self.assertEqual(p.returncode, 0)
         self.assertIn("review-ticket-gate", p.stdout)
+
+
+class SmallChangeGateTest(ReviewBase):
+    """SMALL changes (<= 3 files, no risk path/construct) need no architect-gate verdict; replans re-gate changed sections only."""
+
+    def setUp(self):
+        super().setUp()
+        self.git("checkout", "-qb", "bugfix/BUC-8")
+        self.write(".oro-ai/config.json", "{}\n")
+        self.write(".oro-ai/task/BUC-8/STATUS.md", "x\n")
+
+    def stage(self, *files):
+        for f, text in files:
+            self.write(f, text)
+        self.git("add", "src")
+
+    def task(self, *a):
+        return subprocess.run([sys.executable, EXE, "task", *a], cwd=self.root, capture_output=True, text=True)
+
+    def test_small_extension_change_needs_no_gate(self):
+        self.stage(("src/Foo/Resources/config/services.yml", "services: {}\n"))
+        p = self.check()
+        self.assertEqual(p.returncode, 0)
+        self.assertNotIn("review-ticket-gate", p.stdout)
+        self.assertEqual(self.task("check").returncode, 0)  # no gate problem either
+
+    def test_four_files_need_the_gate(self):
+        self.stage(("src/Foo/Resources/config/services.yml", "services: {}\n"), ("src/Foo/B.php", "<?php\n"),
+                   ("src/Foo/C.php", "<?php\n"), ("src/Foo/D.php", "<?php\n"))
+        self.assertEqual(self.check().returncode, 1)
+        self.assertIn("architect-gate", self.task("check").stdout)
+
+    def test_risk_path_or_construct_needs_the_gate_even_when_small(self):
+        self.stage(("src/Foo/Resources/config/services.yml", "services: {}\n"), ("src/Foo/Migrations/Schema/V1/M.php", "<?php\n"))
+        self.assertEqual(self.check().returncode, 1)
+        self.git("reset", "-q")
+        self.git("clean", "-fdq", "src")
+        self.stage(("src/Foo/Resources/config/services.yml", "services:\n  a:\n    decorates: foo.mgr\n"))
+        self.assertEqual(self.check().returncode, 1)
+        self.assertIn("architect-gate", self.task("check").stdout)
+
+    def test_is_small_change_unit(self):
+        from atlas import task
+        self.assertTrue(task.is_small_change(self.root, ["src/A.php", "src/B.php", "src/C.php", ".oro-ai/x.md"]))
+        self.assertFalse(task.is_small_change(self.root, ["src/A.php", "src/B.php", "src/C.php", "src/D.php"]))
+        for risky in ("src/Foo/Security/V.php", "src/Foo/Resources/config/oro/acl.yml", "src/Foo/Resources/config/oro/workflows.yml",
+                      "src/Foo/EventListener/XInterceptor.php", "src/Foo/Migrations/Schema/M.php"):
+            self.assertFalse(task.is_small_change(self.root, [risky]), risky)
+        self.assertFalse(task.is_small_change(self.root, ["src/A.yml"], "+  decorates: x"))
+
+    def test_gate_diff_and_record_only_regate_changed_sections(self):
+        plan = ".oro-ai/task/BUC-8/plan.md"
+        self.write(plan, "# plan\n\n## Extension points\nlistener A\n\n## Tests\nscenario 1\n")
+        self.assertIn("gate the whole plan", self.task("gate-diff").stdout)
+        self.write(".oro-ai/task/BUC-8/architect-gate.md", "Verdict: rejected\n")
+        self.assertEqual(self.task("gate-record").returncode, 1)
+        self.write(".oro-ai/task/BUC-8/architect-gate.md", "Verdict: approved\n")
+        self.assertEqual(self.task("gate-record").returncode, 0)
+        self.assertIn("Approved-Section: Tests = ", open(os.path.join(self.root, ".oro-ai/task/BUC-8/architect-gate.md")).read())
+        out = self.task("gate-diff").stdout
+        self.assertIn("changed: -", out)
+        self.assertIn("new: -", out)
+        self.write(plan, "# plan\n\n## Extension points\nlistener A\nlistener B via event\n\n## Tests\nscenario 1\n\n## Rollout\nx\n")
+        out = self.task("gate-diff").stdout
+        self.assertIn("changed: Extension points", out)
+        self.assertIn("new: Rollout", out)
+        self.assertIn("unchanged: plan; Tests", out.replace("unchanged: plan; Tests", "unchanged: plan; Tests"))
+        self.assertEqual(self.task("gate-record").returncode, 0)
+        self.assertIn("changed: -", self.task("gate-diff").stdout)
 
 
 class TicketBranchBase(ReviewBase):

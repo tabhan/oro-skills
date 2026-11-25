@@ -4,6 +4,7 @@ Only setup projects (`.oro-ai/config.json` present) are in scope; everything els
 Mechanics and the escape hatch: README "Ticket process".
 """
 import argparse
+import hashlib
 import os
 import re
 import subprocess
@@ -29,14 +30,28 @@ TASK_ONLY = re.compile(r"^\.oro-ai/")
 E2E_FILE = re.compile(r"(?:\.feature|\.steps\.ts)$")
 PROD_FILE = re.compile(r"^src/.+\.(?:php|ya?ml|xml|twig|js|ts|scss)$")
 NOT_PROD = re.compile(r"/(?:Tests|Migrations/Data/Demo)/|/translations/")
+# User-visible behaviour: the only production changes that need a test-first e2e scenario (process rule 3). Storefront/admin UI
+# (twig, JS/TS, SCSS/CSS, layouts, public assets), controllers/routes, API, datagrids, workflows/operations/actions, emails,
+# navigation/system-config screens, and translations shown to users. Pure backend (services, listeners, DI/config wiring,
+# migrations, entities, MQ processors) is optional for e2e: a unit/functional test is enough.
+USER_VISIBLE = re.compile(
+    r"^src/.+(?:\.(?:twig|js|ts|scss|css)$|/(?:Controller|Api|Layout|layouts|views|public|translations|EmailTemplates|Mailer)/"
+    r"|/Resources/config/oro/(?:datagrids|layouts|routing|api|workflows|actions|operations|navigation|system_configuration|"
+    r"emails|email_templates)[^/]*\.ya?ml$|/Resources/config/(?:routing|oro/routing)[^/]*\.ya?ml$|/Resources/views/)")
+USER_VISIBLE_EXCLUDE = re.compile(r"/Tests/|/Migrations/Data/Demo/")
+# SMALL change (no architect-gate agent, no verdict file needed): at most SMALL_FILES changed files outside `.oro-ai/` and
+# none on a risk path (same list /aaxis-oro:review uses to pick opus) or adding a risk construct.
+SMALL_FILES = 3
+RISK_PATH = re.compile(r"/Migrations/|acl|security|workflows?\.ya?ml|/workflows/|Interceptor", re.I)
+RISK_CONTENT = re.compile(r"^\+.*(?:decorates:|aaxis_aspect\.interceptor|acl_resource|permission)", re.M)
 BASES = ("origin/develop", "develop", "origin/main", "main", "origin/master", "master")
 STATUS_STUB = "# %s status\n\nOne line per milestone (date, step, result).\n\n- [ ] plan written (plan.md)\n" \
-              "- [ ] architect-gate verdict saved (architect-gate.md)\n- [ ] e2e scenario red\n- [ ] implementation green\n" \
+              "- [ ] architect-gate verdict saved (architect-gate.md)\n- [ ] e2e scenario red (user-visible changes; else n/a)\n- [ ] implementation green\n" \
               "- [ ] review check / verification\n"
 PLAN_STUB = "# %s plan\n\n## Root cause\n\nEvidence (file:line, log, reproduction), the layer it lives in (code / test / data / environment / " \
             "config / upstream) and why the change fixes that layer, not a symptom (process rule \"Root cause before " \
             "fix\"). A feature with no defect writes `n/a - feature`.\n\n## Extension points\n\nFor each choice: mechanism, source (`aaxis-oro atlas <sub> <term>` -> file:line, " \
-            "an `aaxis-oro:solutions` reference, an Oro docs URL).\n\n## Tests\n\nThe e2e scenario(s) written first.\n"
+            "an `aaxis-oro:solutions` reference, an Oro docs URL).\n\n## Tests\n\nThe e2e scenario(s) written first for user-visible behaviour; for a pure backend change, the unit/functional test or `n/a - no user-visible change`.\n"
 
 
 def git(root, *args):
@@ -91,6 +106,45 @@ def verdict_of(text):
 def gate_state(root, key):
     """Verdict of .oro-ai/task/<KEY>/architect-gate.md (see verdict_of)."""
     return verdict_of(read_text(os.path.join(task_dir(root, key), "architect-gate.md")))
+
+
+APPROVED_SECTION = re.compile(r"^Approved-Section:[ \t]*(.+?)[ \t]*=[ \t]*([0-9a-f]{12})[ \t]*$", re.M)
+HEADING = re.compile(r"^#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$", re.M)
+
+
+def plan_sections(text):
+    """{heading: 12-hex hash of the section body} of a plan.md (text before the first heading is skipped)."""
+    marks = list(HEADING.finditer(text or ""))
+    found = {}
+    for i, m in enumerate(marks):
+        body = text[m.end():marks[i + 1].start() if i + 1 < len(marks) else len(text)]
+        found[m.group(1).strip()] = hashlib.sha256(" ".join(body.split()).encode()).hexdigest()[:12]
+    return found
+
+
+def gate_diff(root, key):
+    """(approved?, {'changed': [...], 'new': [...], 'removed': [...], 'unchanged': [...]}) of plan.md against the sections
+    recorded in architect-gate.md by the last approved verdict. approved? is False when nothing was recorded: gate the
+    whole plan then; otherwise the architect-gate re-reviews only 'changed' and 'new' sections."""
+    gate = read_text(os.path.join(task_dir(root, key), "architect-gate.md")) or ""
+    before = {h: d for h, d in APPROVED_SECTION.findall(gate)}
+    now = plan_sections(read_text(os.path.join(task_dir(root, key), "plan.md")) or "")
+    diff = {"changed": [h for h in now if h in before and before[h] != now[h]], "new": [h for h in now if h not in before],
+            "removed": [h for h in before if h not in now], "unchanged": [h for h in now if before.get(h) == now[h]]}
+    return bool(before), diff
+
+
+def record_gate_sections(root, key):
+    """Replace the `Approved-Section:` lines of an approved architect-gate.md with the current plan.md sections; True on success."""
+    path = os.path.join(task_dir(root, key), "architect-gate.md")
+    text = read_text(path)
+    if verdict_of(text)[0] != "approved":
+        return False
+    text = APPROVED_SECTION.sub("", text).rstrip("\n") + "\n"
+    lines = "".join("Approved-Section: %s = %s\n" % (h, d) for h, d in plan_sections(read_text(os.path.join(task_dir(root, key), "plan.md")) or "").items())
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text + "\n" + lines)
+    return True
 
 
 def review_delta(root, reviewed):
@@ -193,8 +247,31 @@ def branch_files(root):
     return []
 
 
+def branch_added_text(root):
+    """Added lines of the branch's committed diff vs the first base ref that exists ('' when none resolves)."""
+    for base in BASES:
+        if git(root, "rev-parse", "--verify", "-q", base) is not None:
+            return git(root, "diff", "-U0", "%s...HEAD" % base) or ""
+    return ""
+
+
+def is_small_change(root, paths, added_text=""):
+    """True for a SMALL change: at most SMALL_FILES files (ignoring `.oro-ai/`), no risk path, no risk construct in the
+    added lines (`added_text` plus the branch's committed diff). SMALL changes are exempt from the architect-gate."""
+    files = {p for p in paths if not TASK_ONLY.match(p)}
+    small = len(files) <= SMALL_FILES and not any(RISK_PATH.search(p) for p in files)
+    if small and files:
+        small = not RISK_CONTENT.search(added_text + "\n" + branch_added_text(root))
+    return small
+
+
 def is_prod(path):
     return bool(PROD_FILE.search(path)) and not NOT_PROD.search(path) and not E2E_FILE.search(path)
+
+
+def is_user_visible(path):
+    """A changed file that alters user-visible behaviour (see USER_VISIBLE); tests, demo data and e2e files never do."""
+    return bool(USER_VISIBLE.search(path)) and not USER_VISIBLE_EXCLUDE.search(path) and not E2E_FILE.search(path)
 
 
 def evidence(root, key, paths):
@@ -202,8 +279,9 @@ def evidence(root, key, paths):
     lines = []
     if not os.path.isfile(os.path.join(task_dir(root, key), "STATUS.md")):
         lines.append("no .oro-ai/task/%s/STATUS.md; run: aaxis-oro task init %s" % (key, key))
-    if any(is_prod(p) for p in paths) and not any(E2E_FILE.search(p) for p in paths):
-        lines.append("production code changed but no e2e *.feature/*.steps.ts on the branch (test-first, aaxis-oro:e2e)")
+    if any(is_user_visible(p) for p in paths) and not any(E2E_FILE.search(p) for p in paths):
+        lines.append("user-visible behaviour changed (UI/controller/API/email/workflow/datagrid/translation) but no e2e "
+                     "*.feature/*.steps.ts on the branch (test-first, aaxis-oro:e2e)")
     return lines
 
 
@@ -254,7 +332,7 @@ def _require_project(explicit):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="aaxis-oro task", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("action", choices=("init", "check"))
+    ap.add_argument("action", choices=("init", "check", "gate-diff", "gate-record"))
     ap.add_argument("key", nargs="?", help="ticket key; default: from the branch name")
     ap.add_argument("--project")
     try:
@@ -272,14 +350,26 @@ def main(argv=None):
         made = init(root, key)
         print("task %s: %s" % (key, ("created " + ", ".join(made)) if made else "exists"))
         return 0
+    if a.action == "gate-record":
+        ok = record_gate_sections(root, key)
+        print("task %s: %s" % (key, "recorded the approved plan sections in architect-gate.md" if ok else "architect-gate.md is not approved; nothing recorded"))
+        return 0 if ok else 1
+    if a.action == "gate-diff":
+        recorded, diff = gate_diff(root, key)
+        if not recorded:
+            print("task %s: no approved sections recorded: gate the whole plan" % key)
+        else:
+            print("task %s: re-gate only changed/new sections\n" % key + "\n".join("%s: %s" % (k, "; ".join(v) or "-") for k, v in diff.items()))
+        return 0
     state, reason = gate_state(root, key)
     staged = (git(root, "diff", "--cached", "--name-only") or "").splitlines()
     problems = evidence(root, key, branch_files(root) + staged)
     rp = review_problem(root, key)
     problems += [rp] if rp else []
     warning = root_cause_problem(root, key)
-    if state not in ("approved", "skipped"):
-        problems.insert(0, "architect-gate: %s (.oro-ai/task/%s/architect-gate.md needs 'Verdict: approved')" % (state, key))
+    if state not in ("approved", "skipped") and not is_small_change(root, branch_files(root) + staged,
+                                                                    git(root, "diff", "--cached", "-U0") or ""):
+        problems.insert(0, "architect-gate: %s (.oro-ai/task/%s/architect-gate.md needs 'Verdict: approved'; SMALL changes of at most 3 files with no risk path are exempt)" % (state, key))
     print("\n".join(problems + ([warning] if warning else []) + ["task %s: %s (gate %s%s)" % (key, "incomplete" if problems else "ok", state,
                                                             ": " + reason if reason else "")]))
     return 1 if problems else 0
