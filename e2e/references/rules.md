@@ -80,6 +80,7 @@
     header into a separate sticky table and leaves a hidden, handler-less clone, so `table.grid thead ...`
     selectors hit the clone. Select rows with the row-checkbox hook, and exercise a mass action through
     its endpoint rather than the header UI when the header is unreachable.
-12. **Test first.** Write the scenario, watch it fail for the right reason, implement until green; never write the e2e last.
-    Mandatory for user-visible behaviour, optional for pure backend work (process rule 3).
-
+12. **Test first, from the spec.** Write each scenario from the ticket or spec acceptance criteria, tagged
+    `@spec:<ID>:AC-n` (`spec` skill), never from the implementation. Watch it fail for the right reason (red first),
+    then implement until green; never write the e2e last. The final green run is made by an agent that did not write
+    the scenario. Mandatory for user-visible behaviour, optional for pure backend work (process rule 3).

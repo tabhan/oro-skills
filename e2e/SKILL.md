@@ -15,25 +15,20 @@ explicit target (`aaxis-oro test local-test e2e ...`), never a default. Browser 
 `orocommerce-testing` skills. Harness mechanics are quoted from the harness READMEs, never from memory
 (`references/harness.md`).
 
-## Decide
+## Route (rules.md is canonical; numbers are its rules)
 
-| Question | Answer | Detail |
-|---|---|---|
-| Where does test data come from? | Alice `@fixture-<Bundle>:<file>.yml` with native columns/JSON; a `Tests/E2e/Action/` action only for state that is not stored data (transition logs, exports, reindex) | rules.md 1 |
-| Grid scenario? | Filter on a key the fixture owns first; never assert on an unfiltered grid | rules.md 2 |
-| Re-runnable? | Natural-key upsert on load; never a truncating `@fixture-fresh` for Product/User/Role/etc. | rules.md 3 |
-| End of feature? | Signed out; Change History dialog closed with an explicit idempotent step | rules.md 4, 5 |
-| Bug rides event + flush order? | Drive the REAL transition/action; seeded end state cannot catch it | rules.md 6 |
-| "Zero results" assertion? | Empty by construction (own keyword + value the rows lack) | rules.md 7 |
-| Needs data the fixture does not create? | That is a defect in the feature; no dumps, no reinstall | rules.md 8 |
-| Need a clear/reindex/delete? | Scoped by id or natural key; no global DELETE, reindex or cache-pool clear | rules.md 9 |
-| Running a console/Oro command in a step? | The single shared harness helper; never hard-code `--env` | rules.md 10 |
-| Wide admin grid? | Viewport 1920; row-checkbox hook; mass action through its endpoint | rules.md 11 |
-| New feature? | Scenario first, red for the right reason, then implement | rules.md 12 |
-| Locators? | Structural hooks (class, `data-*`, column key), never label text | conventions.md |
-| Audit / Change History assertion times out? | Async broker drain; a hidden empty grid means no audit recorded | debugging-audit-mq.md |
-| Passes alone, fails in the full run? | Cross-feature race: fix the sharing or route to the serial lane, no sleeps | parallelism.md |
-| Done? | Full non-debug run green; walk the checklist | checklist.md |
+| Question | Go to |
+|---|---|
+| Where does test data come from (fixtures vs actions)? | rules.md 1 |
+| Grid scenario; re-runnability and the truncating-tag danger | rules.md 2, 3 |
+| End of feature: sign-out, Change History dialog | rules.md 4, 5 |
+| Bug rides event + flush order; zero-result assertions; ambient data; scoped clear/reindex | rules.md 6, 7, 8, 9 |
+| Console/Oro command in a step; wide admin grids | rules.md 10, 11 |
+| New feature: scenarios from ACs (`@spec:<ID>:AC-n`), red first, green by another agent | rules.md 12 |
+| Locators, env ids, debug flag, harness gotchas, test-cache clear, timeout consts | conventions.md |
+| Audit / Change History assertion times out | debugging-audit-mq.md |
+| Passes alone, fails in the full run | parallelism.md |
+| Done? | Full non-debug run green; checklist.md |
 
 ## Never
 

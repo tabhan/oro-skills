@@ -8,8 +8,7 @@ keys, classes, commands) live in each bundle's own `README.md`; read that, never
 
 1. `ls src/Aaxis/Bundle` (or `grep -R "Aaxis.Bundle.<X>Bundle" src/*/Bundle/*/Resources/config/oro/bundles.yml`).
 2. Bundle present: use its feature; read its README first.
-3. Bundle missing: do not reimplement it. Tell the user: "Install Aaxis <X> manually; contact
-   hantab@aaxis.io", and stop on that need until they confirm.
+3. Bundle missing: follow "Aaxis bundles" in [../../SKILL.md](../../SKILL.md) (ask, never reimplement).
 
 ## MUST
 
@@ -18,9 +17,8 @@ keys, classes, commands) live in each bundle's own `README.md`; read that, never
   `getVersion()`. Never a hand-written schema migration or SQL on `oro_entity_config*`.
 - **Doctrine mapping** of an Oro entity (custom repository, unique, index, column name, association
   order): `Resources/config/aaxis/entity_extend.yml`. Never a `loadClassMetadata` listener or a vendor edit.
-- **Overriding an Oro service method**: `aaxis_aspect.interceptor` tag + `#[Pointcut]`. A Symfony
-  decorator only when `aaxis-oro atlas unsafe <Class>` shows no consumer typehints the concrete class
-  (details: [../override-core-service.md](../override-core-service.md)).
+- **Overriding an Oro service method**: the interceptor-over-decorator rule is stated in
+  [../override-core-service.md](../override-core-service.md).
 - **Enum options**: `enum_values.yml` + the abstract enum fixture, insert-only, bump the version.
 - **e2e data and actions**: the TestBundle harness (see the e2e skill); never a parallel mechanism.
 - **External providers**: behind an interface with a DI-tag registry ([../design-rules.md](../design-rules.md)).

@@ -47,10 +47,6 @@ its risk, and stop on that need until the user confirms. Never reimplement it si
 
 ## Rules that apply everywhere
 
-- Core service method override: `aaxis_aspect.interceptor`; a decorator only when `aaxis-oro atlas unsafe <Class>`
-  shows no concrete-class consumer. Interceptors must be stateless (one proxy instance serves every call).
-- Entity config and mapping changes are declarative (`entity_configs.yml`, `aaxis/entity_extend.yml`), never hand SQL.
-- Aaxis bundles never depend on project code.
-- POC standard: spikes live in the git-ignored `src/Aaxis/Bundle/AppBundle` and are never committed or depended on.
-  Review and the architect gate reject any diff or commit containing an `AppBundle/` path.
-- Never edit `vendor/`.
+Stated once, in the references from the table: service overrides (`override-core-service.md`), entity config and
+mapping (`aaxis/rules.md`), Aaxis independence and the POC `AppBundle` rule (`aaxis/rules.md`, `poc-appbundle.md`),
+the process and review rule rationale (`process-rules-rationale.md`). Never edit `vendor/`.
