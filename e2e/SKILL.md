@@ -30,6 +30,12 @@ explicit target (`aaxis-oro test local-test e2e ...`), never a default. Browser 
 | Passes alone, fails in the full run | parallelism.md |
 | Done? | Related features green in a non-debug run; checklist.md |
 
+## Budget
+
+- After fixes, re-run only the affected features; the full suite stays on demand (checklist.md).
+- Before a long or token-heavy step (full suite, refresh/cache warm, a wave of agents), say so and offer the lighter
+  option.
+
 ## Never
 
 - Truncate or `DELETE` without a WHERE on a shared DB; `@fixture-fresh` only for keyless test-only entities.

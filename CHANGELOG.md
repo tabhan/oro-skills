@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.7
+
+- Budget: the `e2e` skill gains a Budget section: after fixes re-run only the affected features (the full suite stays on demand), and say so before a long or token-heavy step (full suite, refresh/cache warm, a wave of agents), offering the lighter option.
+
 ## 0.29.6
 
 - Fix: `install.sh` no longer re-enables globally disabled plugins. `claude plugin install` writes `enabledPlugins[<key>]=true` into the user settings, so install.sh snapshots the keys it touches (aaxis-oro and the official orocommerce-*), restores every key that was explicitly `false` afterwards (merge-only; invalid JSON is skipped with a warning), and uses `plugin update` instead of `install` for plugins already installed.
