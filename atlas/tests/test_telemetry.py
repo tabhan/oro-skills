@@ -125,8 +125,8 @@ class EventTypeTest(unittest.TestCase):
         e = T.event_type
         self.assertEqual(e({"hook_event_name": "SessionStart", "source": "resume"}), ("session_start", {"source": "resume"}))
         self.assertEqual(e({"hook_event_name": "SessionEnd", "reason": "logout"}), ("session_end", {"reason": "logout"}))
-        self.assertEqual(e({"hook_event_name": "PostToolUse", "tool_name": "Skill", "tool_input": {"skill": "tab-jira", "args": "SECRET"}}),
-                         ("skill_used", {"name": "tab-jira"}))
+        self.assertEqual(e({"hook_event_name": "PostToolUse", "tool_name": "Skill", "tool_input": {"skill": "ticket-work", "args": "SECRET"}}),
+                         ("skill_used", {"name": "ticket-work"}))
         self.assertEqual(e({"hook_event_name": "UserPromptSubmit", "prompt": "/aaxis-oro:review ABC-1 secret text"}),
                          ("skill_used", {"name": "aaxis-oro:review"}))
 
@@ -353,7 +353,7 @@ class DedupeTest(Base):
     def test_other_skill_other_session_and_later_use_still_count(self):
         got = []
         T.decide(self.skill(), spawn=got.append, now=1000)
-        T.decide(self.skill(name="tab-jira"), spawn=got.append, now=1001)
+        T.decide(self.skill(name="ticket-work"), spawn=got.append, now=1001)
         T.decide(self.skill(sid="s2"), spawn=got.append, now=1001)
         T.decide(self.skill(), spawn=got.append, now=1000 + T.DEDUPE_WINDOW + 1)
         self.assertEqual(len(got), 4)

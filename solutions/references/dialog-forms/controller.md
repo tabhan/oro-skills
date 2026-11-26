@@ -1,8 +1,7 @@
 # Controller — `UpdateHandlerFacade` + dual-mode response
 
-The controller uses `#[Layout]` and delegates the save to `UpdateHandlerFacade`.
-**The same controller action serves both GET (dialog open) and POST (AJAX or
-standard submit).** The facade decides the response shape based on `_wid`.
+The controller uses `#[Layout]` and delegates the save to `UpdateHandlerFacade`. **One action serves both GET
+(dialog open) and POST (AJAX or standard submit)**; the facade picks the response shape from `_wid`.
 
 ## Canonical structure
 
@@ -65,46 +64,33 @@ class XyzFormController
 }
 ```
 
-## What `UpdateHandlerFacade::update()` does for you
+## What `UpdateHandlerFacade::update()` does
 
 1. Calls your `FormHandlerInterface::process($entity, $form, $request)`.
-2. On success (handler returned `true`):
-   - If `_wid` is in the request → returns `array` with `savedId` populated from
-     the entity ID (via `DoctrineHelper::getSingleEntityIdentifier`), plus
-     template data (`form` as FormView, `entity`, `isWidgetContext`).
-   - Otherwise → adds the success message to the flash bag and returns
-     `RedirectResponse` via `Oro\Bundle\UIBundle\Route\Router::redirect($entity)`.
-3. On failure (handler returned `false`, e.g. GET or invalid form) → returns
-   an `array` of template data for the layout to re-render.
+2. Handler returned `true` (success): with `_wid` in the request it returns an `array` with `savedId` (from
+   `DoctrineHelper::getSingleEntityIdentifier`) plus template data (`form` as FormView, `entity`, `isWidgetContext`);
+   without `_wid` it adds the success flash and returns a `RedirectResponse` via `Oro\Bundle\UIBundle\Route\Router::redirect($entity)`.
+3. Handler returned `false` (GET or invalid form): returns an `array` of template data for the layout to re-render.
 
 ## Pitfalls
 
-- **Do not merge the facade's array into your layout data unchanged** —
-  `$result` contains `'form' => Symfony\Component\Form\FormView`, and the
-  layout engine will throw
-  `InvalidArgumentException: The "form" must be a string, "FormInterface" …`
-  (see `FormContextConfigurator::configureContext`). Extract only `savedId`
-  and pass your own clean `['data' => [...]]` array.
-- **Do not return `JsonResponse`.** `DialogWidget.setContent()` expects HTML
-  containing `<div class="widget-content">`; anything else throws
-  "Invalid server response".
-- **Do not special-case `_wid` branching yourself** (e.g. "if widget return
-  array, else return redirect"). The facade already branches; your job is
-  just to stop it from redirecting when you're in widget context (which
-  happens only if the POST loses `_wid` — e.g. through a locale redirect).
+- **Do not merge the facade's array into your layout data unchanged.** `$result` contains `'form' => FormView`, and
+  the layout engine throws `InvalidArgumentException: The "form" must be a string, "FormInterface" ...`
+  (`FormContextConfigurator::configureContext`). Extract only `savedId` and pass your own clean `['data' => [...]]`.
+- **Do not return `JsonResponse`.** `DialogWidget.setContent()` expects HTML containing `<div class="widget-content">`;
+  anything else throws "Invalid server response".
+- **Do not branch on `_wid` yourself.** Only stop the facade from redirecting in widget context (it happens when the
+  POST loses `_wid`, e.g. through a locale redirect).
 
 ## Non-widget success redirect
 
-`Router::redirect($entity)` redirects to whatever URL the `input_action`
-form field says. If `input_action` is missing, it falls back to
-`$request->getUri()` — i.e. the form POST URL, which is usually meaningless to
-the end user. **Always emit `input_action` from the form template** so the
-non-dialog path redirects to the page where the form was embedded. See
-`form-template.md`.
+`Router::redirect($entity)` redirects to the URL the `input_action` form field names; if missing it falls back to
+`$request->getUri()` (the form POST URL, meaningless to the user). **Always emit `input_action` from the form
+template** so the non-dialog path returns to the embedding page ([form-template.md](form-template.md)).
 
-`Router::parseRedirectUrl` validates only URL format, not same-origin. Since
-`input_action` is POST-body data, an attacker can craft a malicious redirect.
-If you care, wrap the facade's `RedirectResponse` in your controller:
+`Router::parseRedirectUrl` validates only URL format (`parse_url(...) !== false`), not same-origin, and
+`input_action` is client-controlled POST data (CSRF plus a modified `input_action` could redirect off-site). Wrap
+the facade's `RedirectResponse` in your controller and force a same-host target:
 
 ```php
 if ($result instanceof RedirectResponse && !$isWidget) {

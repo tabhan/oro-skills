@@ -34,11 +34,9 @@ env.yml (or the template, in oro-skills) and rerun. `check` detects drift by ren
 
 - Domains, TLS certificate paths and the project namespace are never defaulted or hard-coded. When setup exits 64 with
   `ask:` lines, ask the user for each value, then rerun `aaxis-oro env setup --set key=value ...`.
-- It renders `docker-compose.override.yml` (fixed Mongo port, capped cache and memory, no dummy profile),
-  `.env-app.local` (merge: Node pin and profile lines removed, Mongo port set), `.env-app.behat_test.local` and
-  `.env-app.test.local` (one template), the nginx test block and, only with `local_test.supervisor_consumer: true`, the
-  `mc_test` program (autostart off). Nginx and supervisor files are staged under `.oro-ai/local-env/rendered/`.
-- Node comes from `.nvmrc` through nvm into `parameters.yml` (managed, no backup); PHP comes from `composer.json`.
+- It renders the managed files listed in `README.md` "Templates" (nginx and supervisor files are staged under
+  `.oro-ai/local-env/rendered/`). Node comes from `.nvmrc` through nvm into `parameters.yml` (managed, no backup); PHP
+  from `composer.json`.
 - It also scaffolds the git-ignored POC bundle `src/Aaxis/Bundle/AppBundle` (own `.gitignore` `*`) for spikes; code there
   is never committed or depended on. Existing files in it are left alone.
 - Container changes are not applied by setup: it prints `NEXT: docker compose up -d ...`; run that, never `down -v`.

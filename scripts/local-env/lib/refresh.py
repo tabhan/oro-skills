@@ -4,7 +4,7 @@
   plan   --project P [--all] [--target local|local-test]   print "<step>\\t<reason>" lines (all steps when --all or no record)
   gate   --project P --target local|local-test              exit 1 + one-line message when a step applicable to the target is due
   baseline-key --project P                                  baseline key, cached by a fingerprint of composer.lock + Migrations + DataFixtures
-  record --project P                                        store HEAD + input hashes in .oro-ai/local-env/refresh.json
+  record --project P [--target T]                                       store HEAD + input hashes in .oro-ai/local-env/refresh.json
 """
 import argparse
 import hashlib
@@ -122,11 +122,19 @@ def due(project, target=None, everything=False):
     if cur is None:
         return None, []
     rec = load(project)
-    changed = set(CATEGORIES) if everything or rec is None else {c for c in CATEGORIES if rec["inputs"].get(c) != cur[1][c]}
     why = "no record" if rec is None else "all" if everything else None
+
+    def changed_for(stack):
+        # A target-only refresh records its own inputs under target_inputs[stack]; the other stack keeps the older ones.
+        if everything or rec is None:
+            return set(CATEGORIES)
+        base = (rec.get("target_inputs") or {}).get(stack) or rec["inputs"]
+        return {c for c in CATEGORIES if base.get(c) != cur[1][c]}
     plan = []
     for step, stack, triggers in STEPS:
         if target in (None, stack) or stack == "shared":
+            changed = changed_for(target) if stack == "shared" and target else \
+                changed_for("local") | changed_for("local-test") if stack == "shared" else changed_for(stack)
             hit = [t for t in triggers if t in changed]
             if hit:
                 plan.append((step, why or "+".join(hit)))
@@ -190,8 +198,13 @@ def main(argv):
             return 0
         os.makedirs(os.path.dirname(state_path(project)), exist_ok=True)
         tmp = state_path(project) + ".tmp"
+        old = load(project)
+        data = {"commit": cur[0], "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "inputs": cur[1]}
+        if a.target:  # no prior record: the other stack keeps empty inputs, so it stays due
+            data = dict(old or {"commit": cur[0], "inputs": {}}, refreshed_at=data["refreshed_at"],
+                        target_inputs=dict((old or {}).get("target_inputs") or {}, **{a.target: cur[1]}))
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"commit": cur[0], "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "inputs": cur[1]}, fh, indent=2)
+            json.dump(data, fh, indent=2)
             fh.write("\n")
         os.replace(tmp, state_path(project))
         return 0
@@ -204,7 +217,8 @@ def main(argv):
             print("%s\t%s" % (step, why))
         return 0
     if plan:
-        print("tree not refreshed since %s; run: aaxis-oro dev refresh" % (rec["commit"][:10] if rec and rec.get("commit") else "none"))
+        print("tree not refreshed since %s; run: aaxis-oro dev refresh%s" % (rec["commit"][:10] if rec and rec.get("commit") else "none",
+                                                                          " --target " + a.target if a.target else ""))
         return 1
     return 0
 

@@ -13,7 +13,9 @@ claude plugin list                                    # aaxis-oro@aaxis-oro enab
 ```
 
 Update: `claude plugin marketplace update aaxis-oro && claude plugin update aaxis-oro@aaxis-oro`.
-`./install.sh` (in a clone) does the same plus the official plugins, a `~/.local/bin/aaxis-oro` link and the git
+`./install.sh` (in a clone) does the same plus the official plugins, a `~/.local/bin/aaxis-oro` shim (runs the installed plugin; set `ORO_SKILLS_DIR` to a clone to run that instead) and the git
+
+Re-running `install.sh` keeps plugins you disabled globally (`enabledPlugins` set to `false` in `~/.claude/settings.json`) disabled; enable them per project via setup.
 hook; flags are documented in its header. No SSH key: see `bootstrap.sh`. Local plugin dev:
 `claude --plugin-dir <clone>`, validate with `claude plugin validate <clone>`.
 
@@ -53,18 +55,19 @@ dev     lint | refresh [--all]       lint this plugin | refresh derived state af
 ## Hooks
 
 Shipped in `hooks/hooks.json`, never per project; each injects a few lines at most:
-SessionStart (atlas freshness, notes, version, legacy/memory migration prompts, new-plugin-version notice), UserPromptSubmit and SubagentStart
+SessionStart (atlas freshness, notes, version, legacy/memory migration prompts, new-plugin-version auto-update), UserPromptSubmit and SubagentStart
 (atlas-first hints), PreToolUse (atlas/decorator checks on edits, Bash guard for the enforcement switch, memory-write
 block, anchored notes), PostToolUse Bash, Stop (end-of-session reminders, supplementary-review gate).
 `ORO_ATLAS_ENFORCE=0` is a human-only escape hatch; Claude never sets it.
 
-Update notice: the SessionStart hook never touches the network. It compares the installed version with the marketplace
-clone's `plugin.json` and the cached result of the last remote check (`~/.claude/aaxis-oro-update-check.json`), and prints
-one line with the upgrade commands when a newer version is known. When that cache is older than 24h (1h after a failure)
-it starts a detached background refresher (a lock file prevents duplicates) that does a depth-1 `git fetch` of the
-clone's origin with a ~30s budget and writes the cache atomically, so a new version is announced on the next session. It
-never updates, never prompts for credentials, never modifies the clone and stays silent on any failure. Disable with
-`AAXIS_ORO_NO_UPDATE_CHECK=1`.
+Auto-update: the SessionStart hook never touches the network itself. When its cached remote check (every 6h, 1h after a
+failure, ~30s budget, lock-guarded) finds a newer version and the plugin is installed through the marketplace, a detached
+background refresher runs `claude plugin marketplace update aaxis-oro` and `claude plugin update aaxis-oro@aaxis-oro` for
+the user scope and the current project's local/project scope (no prompts, old version directories are kept), and the next
+session prints `[aaxis-oro] updated X->Y (restart to apply)` once. Without a `claude` binary, without a marketplace install
+or after a failed update it prints the manual upgrade notice instead (cache `~/.claude/aaxis-oro-update-check.json`). Not
+run in subagents. `AAXIS_ORO_NO_AUTO_UPDATE=1` keeps the notice only; `AAXIS_ORO_NO_UPDATE_CHECK=1` disables both.
+Versions up to 0.29.2 only announce updates: run once `claude plugin marketplace update aaxis-oro && claude plugin update aaxis-oro@aaxis-oro` to get 0.29.3, which then keeps itself current.
 
 Upgrading from the pre-plugin install: stale `oro-atlas/hooks/*.py` entries in Claude settings keep resolving to
 shims in `oro-atlas/hooks/` that remove those entries from project and `~/.claude` settings (atlas entries only),
@@ -81,7 +84,7 @@ Field list and format: `docs/TELEMETRY_API.md`.
 
 ## Git pre-commit hook
 
-`aaxis-oro setup sync` installs a managed `pre-commit` (template `templates/git-hooks/pre-commit.sh`, header
+`aaxis-oro setup sync` also enables the seven Oro plugins in the project's git-excluded `.claude/settings.local.json` (they are disabled globally). It installs a managed `pre-commit` (template `templates/git-hooks/pre-commit.sh`, header
 `aaxis-oro:managed-pre-commit`) running static/quality checks only: PHPCS, PHP-CS-Fixer, PHPMD, PHPStan, Psalm, PHPUnit,
 ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.yml`, `.gitlab-ci.yml`,
 `.github/workflows`; installs, Sonar and `pipe:` steps are ignored), else composer/package.json scripts, else
@@ -132,43 +135,44 @@ ESLint, Stylelint, YamlLint. Commands come from CI first (`bitbucket-pipelines.y
 
 ## Ticket process
 
-`/aaxis-oro:setup` writes the `process-rules` block (`templates/claude-project/process-rules.md`) into the project's
-`CLAUDE_project.md`; it states the per-ticket steps and that they override any command's fast path. Enforcement
-applies only to setup projects (`.oro-ai/config.json` exists) on a branch whose name holds a ticket key
-(`[A-Z][A-Z0-9]+-<n>`); elsewhere nothing changes.
+`/aaxis-oro:setup` writes the `process-rules` block (`templates/claude-project/process-rules.md`, the single statement
+of the steps) into the project's `CLAUDE_project.md`. Enforcement applies only to setup projects (`.oro-ai/config.json`
+exists) on a branch whose name holds a ticket key (`[A-Z][A-Z0-9]+-<n>`); elsewhere nothing changes.
 
 - `aaxis-oro task init [KEY]` creates `.oro-ai/task/<KEY>/STATUS.md` and `plan.md` stubs (never overwrites);
   `aaxis-oro task check [KEY]` lists missing evidence (exit 1). KEY defaults to the branch's key. Once the branch has
   committed code, a `plan.md` whose `## Root cause` section is missing or empty (the stub's guidance prose alone counts
   as empty) prints a warning without changing the exit code; features write `n/a - feature`.
+- `aaxis-oro task gate-diff [KEY]` lists `plan.md` sections changed/new/removed since the approval recorded by
+  `task gate-record` (`Approved-Section:` lines in `architect-gate.md`); none recorded = whole plan.
+- `aaxis-oro task small [KEY]` prints `SMALL` (exit 0) or `not SMALL: <reason>` (exit 1): the deterministic check the gate and hooks use.
+- `aaxis-oro task phase <KEY> <name> start|end [--note T]` appends timing events to `.oro-ai/task/<KEY>/timing.jsonl`; `task timing <KEY>` prints per-phase durations and the total (both never fail the caller).
 - `review check --staged` (and so the `git commit` PreToolUse hook): `review-ticket-gate` denies a staged
-  extension-point file (same list as the atlas edit hook) unless `architect-gate.md` has a `Verdict: approved` or
-  `Verdict: skipped - <reason>` line (a bare `PASS`/`REJECT` first line is read the same); `review-ticket-evidence` warns when `STATUS.md` is missing or production `src/`
-  code changed on the branch (vs the first of `origin/develop`, `develop`, `origin/main`, `main`, ...) with no
+  extension-point file (same list as the atlas edit hook) unless the change is SMALL (`task.is_small_change`: at most 3
+  files outside `.oro-ai/`, no risk path or added `decorates:`/interceptor/ACL construct; `task check` agrees) or
+  `architect-gate.md` has a `Verdict: approved` or `Verdict: skipped - <reason>` line (a bare `PASS`/`REJECT` first line
+  counts); `review-ticket-evidence` warns when `STATUS.md` is missing, or production `src/` code changed on the branch
+  (vs the first of `origin/develop`, `develop`, `origin/main`, `main`, ...) touches user-visible behaviour
+  (`task.is_user_visible`: Twig/JS/TS/SCSS/CSS, `Controller/`, `Resources/views|public|translations`, datagrid/layout/
+  routing/api/workflow/action/operation/navigation/system_configuration/email yml; never `Tests/`) with no
   `*.feature`/`*.steps.ts`.
-- Supplementary review (`/aaxis-oro:review`, agent `aaxis-oro:aaxis-reviewer`): invokes the official
-  `orocommerce-review:review-changes` for the generic lenses and adds the Aaxis ones (reuse/OOTB via atlas, Aaxis rule
-  judgment, plan.md/architect-gate drift, conditional performance), refuted with the official `finding-refuter`.
-  It writes `.oro-ai/task/<KEY>/review.md` with `Verdict: approved|changes-requested|skipped - <reason>` and
-  `Range: <base>..<head>`. An approved review covers HEAD when its head is HEAD, or an ancestor with only `.oro-ai/`
-  files changed since (so committing the review itself keeps it fresh). Once the branch has committed code,
-  `task check` fails without a covering approved/skipped review, and `review-ticket-push` (PreToolUse on Bash
-  `git push`) denies the push; there is no git-side hook, so a human pushing from a shell is not gated.
-- `review-ticket-stop` (Stop hook, `atlas/hooks/stop.py`) makes the review happen when coding finishes: with the
-  same condition as the push gate, plus no uncommitted or untracked changes outside `.oro-ai/` (a dirty tree is
-  mid-work), it returns `decision: block` telling Claude to run `/aaxis-oro:review` (or record a skipped verdict);
-  a `changes-requested` review whose Range head is HEAD asks for the must-fix findings first. It blocks once per
-  stop chain (`stop_hook_active` lets the next Stop through with a warning), exempts subagents (SubagentStop /
-  `agent_id`: the main session owns the review), only warns under the human-only enforcement switch, and any
-  error allows the stop (logged to `~/.claude/atlas-hook.log`). `/aaxis-oro:review` first writes a
-  `Verdict: in-progress` marker (`Range: <base>..<HEAD>`, `Started: <ISO-8601 UTC>`): while its head is HEAD and it is
-  younger than 2h (`task.IN_PROGRESS_TTL`) the Stop hook only warns "review in progress since <t>"; a stale marker
-  blocks as usual. `in-progress` is never approved: push gate and `task check` still fail.
-- UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch). Keys
-  inside harness wrappers (`<task-notification>`, `<system-reminder>`, text after `[SYSTEM NOTIFICATION`) are ignored:
-  background-task notifications reach the hook as `prompt` text with no distinguishing payload field.
-- Escape hatches: `Verdict: skipped - <reason>` for a trivial change (auditable in the task dir); the human-only
-  `ORO_ATLAS_ENFORCE=0` downgrades the deny to a warning.
+- Supplementary review (`/aaxis-oro:review`; flow, verdict and marker formats, delta mode: `commands/review.md`) writes
+  `.oro-ai/task/<KEY>/review.md` (`Verdict: approved|changes-requested|skipped - <reason>`, `Range: <base>..<head>`). An approved review covers HEAD when its head is HEAD, or an ancestor (a rebase is
+  stale) whose branch-own commits since (`git log --first-parent --no-merges`, so merging develop is ignored) changed at
+  most `task.SMALL_DELTA_LINES` (20) production lines (`is_prod`; tests, translations, `.oro-ai/` do not count). Once
+  the branch has committed code, `task check` fails without a covering approved/skipped review and
+  `review-ticket-push` (PreToolUse on Bash `git push`) denies the push; there is no git-side hook, so a human pushing
+  from a shell is not gated.
+- `review-ticket-stop` (Stop hook, `atlas/hooks/stop.py`) only warns (never blocks): run `/aaxis-oro:review` or record a
+  skipped verdict, under the push-gate condition plus a clean tree (nothing uncommitted or untracked outside
+  `.oro-ai/`); a `changes-requested` review whose Range head is HEAD asks for the must-fix findings first. A
+  `Verdict: in-progress` marker whose head is HEAD and under 2h old (`task.IN_PROGRESS_TTL`) only warns "review in
+  progress since <t>"; it is never approved. It exempts subagents (`agent_id`), only warns under the human-only
+  enforcement switch, and any error allows the stop (logged to `~/.claude/atlas-hook.log`).
+- UserPromptSubmit injects one reminder per ticket key per session (key from the prompt, else the branch); keys inside
+  harness wrappers (`<task-notification>`, `<system-reminder>`, `[SYSTEM NOTIFICATION`) are ignored.
+- Escape hatches: `Verdict: skipped - <reason>` for a trivial change; the human-only `ORO_ATLAS_ENFORCE=0` downgrades
+  the deny to a warning.
 
 Existing projects pick up the block with `aaxis-oro setup sync` (`setup status` reports `blocks out of sync: process-rules`).
 
@@ -177,7 +181,7 @@ Existing projects pick up the block with `aaxis-oro setup sync` (`setup status` 
 - Token efficiency: deterministic work lives in scripts with quiet output (one line per step, documented exit codes,
   `--verbose`/`--json`, detail in `.oro-ai/.../logs`). Skills are short indexes of judgment; mechanics that mirror
   code stay in the README beside that code. Generic Oro documentation stays with the official plugins.
-- Never copy: a skill states a decision and the incident behind it, then points at the docs.
+- Never copy: a skill states a decision and its incident, then points at the docs.
 - Shell-agnostic (bash/POSIX sh); idempotent commands; no prompts except documented asks.
 
 ## Versioning and contributing

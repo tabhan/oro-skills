@@ -7,7 +7,7 @@
 #   ./install.sh                 # update this checkout (git pull), remove legacy symlinks, install the plugin, link CLIs
 #   ./install.sh --no-update     # skip git pull
 #   ./install.sh --project DIR   # project whose .claude/settings*.json are cleaned of legacy atlas hooks, with ~/.claude/settings*.json (default: cwd)
-#   ./install.sh --uninstall     # remove the CLI symlink this script created
+#   ./install.sh --uninstall     # remove the CLI shim and legacy links this script created
 #
 # First-time install with SSH access to the repo:
 #   git clone git@github.com:tabhan/oro-skills.git /opt/projects/oro-skills
@@ -45,6 +45,81 @@ SKILLS_DEST="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
 AGENTS_DEST="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 TOKEN="${ORO_SKILLS_TOKEN:-${GITHUB_TOKEN:-}}"
 OFFICIAL_PLUGINS="${ORO_SKILLS_OFFICIAL_PLUGINS:-orocommerce-development orocommerce-review orocommerce-testing orocommerce-maintenance}"
+
+# `claude plugin install` at user scope writes enabledPlugins[<key>]=true into the user settings, which re-enables plugins
+# the user disabled globally to enable them per project. Remember the keys that were explicitly false, restore them after.
+CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+DISABLED_SNAPSHOT=""
+plugin_settings_py() {
+  python3 - "$@" <<'PY'
+import json, os, sys
+
+mode, settings, snap = sys.argv[1:4]
+if mode == "snapshot":
+    keys = sys.argv[4:]
+    out = []
+    try:
+        with open(settings) as fh:
+            ep = json.load(fh).get("enabledPlugins", {})
+        out = [k for k in keys if isinstance(ep, dict) and ep.get(k) is False]
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError, AttributeError):
+        sys.stderr.write("  warning: %s is not valid JSON; disabled plugins will not be restored\n" % settings)
+    with open(snap, "w") as fh:
+        json.dump(out, fh)
+else:
+    with open(snap) as fh:
+        keys = json.load(fh)
+    if not keys:
+        sys.exit(0)
+    try:
+        with open(settings) as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+    except FileNotFoundError:
+        sys.exit(0)
+    except (OSError, ValueError):
+        sys.stderr.write("  warning: %s is not valid JSON; skipped restoring disabled plugins\n" % settings)
+        sys.exit(0)
+    ep = data.get("enabledPlugins")
+    if not isinstance(ep, dict):
+        ep = data["enabledPlugins"] = {}
+    changed = False
+    for k in keys:
+        if ep.get(k) is not False:
+            ep[k] = False
+            changed = True
+            print("  kept %s disabled in %s (enable it per project)" % (k, settings))
+    if changed:
+        tmp = settings + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, settings)
+PY
+}
+snapshot_disabled_plugins() {
+  DISABLED_SNAPSHOT="$(mktemp)"
+  plugin_settings_py snapshot "$CLAUDE_SETTINGS" "$DISABLED_SNAPSHOT" "$@" || true
+}
+restore_disabled_plugins() {
+  [ -n "$DISABLED_SNAPSHOT" ] || return 0
+  plugin_settings_py restore "$CLAUDE_SETTINGS" "$DISABLED_SNAPSHOT" || true
+  rm -f "$DISABLED_SNAPSHOT"; DISABLED_SNAPSHOT=""
+}
+# True when plugin key $1 is in installed_plugins.json (then `update` is used instead of `install`).
+plugin_installed() {
+  python3 - "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json" "$1" <<'PY' 2>/dev/null
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        sys.exit(0 if json.load(fh).get("plugins", {}).get(sys.argv[2]) else 1)
+except Exception:
+    sys.exit(1)
+PY
+}
 
 # Symlinks in $1 named $2 that point into this checkout (even when the target no longer exists) are legacy.
 remove_legacy_links() {
@@ -98,6 +173,9 @@ if [ "$UNINSTALL" -eq 1 ]; then
   remove_legacy_links "$SKILLS_DEST" 'oro-*'
   remove_legacy_links "$AGENTS_DEST" 'oro-*.md'
   remove_legacy_links "${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}" '*'
+  if grep -q 'aaxis-oro shim' "${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}/aaxis-oro" 2>/dev/null; then
+    rm -f "${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}/aaxis-oro"
+  fi
   exit 0
 fi
 
@@ -117,12 +195,21 @@ echo "Removing legacy symlinks from $SKILLS_DEST and $AGENTS_DEST"
 remove_legacy_links "$SKILLS_DEST" 'oro-*'
 remove_legacy_links "$AGENTS_DEST" 'oro-*.md'
 
+if command -v claude >/dev/null 2>&1; then
+  keys=()
+  [ "$INSTALL_PLUGIN" -eq 1 ] && keys+=("aaxis-oro@aaxis-oro")
+  if [ "$INSTALL_OFFICIAL" -eq 1 ]; then for plugin in $OFFICIAL_PLUGINS; do keys+=("${plugin}@ai-dev-platform"); done; fi
+  [ "${#keys[@]}" -gt 0 ] && snapshot_disabled_plugins "${keys[@]}"
+fi
+
 if [ "$INSTALL_PLUGIN" -eq 1 ]; then
   if command -v claude >/dev/null 2>&1; then
     echo "Registering aaxis-oro marketplace ($MARKETPLACE) and installing the plugin"
     claude plugin marketplace add "$MARKETPLACE" || echo "  (marketplace add failed or already present)" >&2
-    claude plugin install aaxis-oro@aaxis-oro || FAILED+=("claude plugin install aaxis-oro@aaxis-oro")
-    # install is a no-op for an already-installed plugin; refresh the marketplace and update to pick up new versions.
+    # install enables the plugin at user scope; only first-time installs need it, update keeps the enabled state.
+    if ! plugin_installed aaxis-oro@aaxis-oro; then
+      claude plugin install aaxis-oro@aaxis-oro || FAILED+=("claude plugin install aaxis-oro@aaxis-oro")
+    fi
     claude plugin marketplace update aaxis-oro || FAILED+=("claude plugin marketplace update aaxis-oro")
     claude plugin update aaxis-oro@aaxis-oro || FAILED+=("claude plugin update aaxis-oro@aaxis-oro")
   else
@@ -135,8 +222,47 @@ CLI_BIN_DIR="${ORO_ATLAS_BIN_DIR:-$HOME/.local/bin}"
 mkdir -p "$CLI_BIN_DIR"
 remove_legacy_links "$CLI_BIN_DIR" 'atlas*'
 remove_legacy_links "$CLI_BIN_DIR" 'oro-*'
-ln -sfn "$SCRIPT_DIR/bin/aaxis-oro" "$CLI_BIN_DIR/aaxis-oro"
-echo "  $CLI_BIN_DIR/aaxis-oro -> $SCRIPT_DIR/bin/aaxis-oro"
+# A shim, not a symlink: the CLI must be the same version the hooks run (the installed plugin), not whichever
+# clone ran install.sh. ORO_SKILLS_DIR (plugin developers) overrides; the clone is only the no-plugin fallback.
+rm -f "$CLI_BIN_DIR/aaxis-oro"
+cat > "$CLI_BIN_DIR/aaxis-oro" <<SHIM
+#!/usr/bin/env python3
+# aaxis-oro shim (written by install.sh): runs bin/aaxis-oro of the installed aaxis-oro plugin.
+import json, os, re, sys
+
+FALLBACK = "$SCRIPT_DIR"
+
+
+def ver(v):
+    return tuple(int(n) for n in re.findall(r"\\d+", str(v))) or (0,)
+
+
+def plugin_dir():
+    try:
+        with open(os.path.join(os.path.expanduser("~"), ".claude", "plugins", "installed_plugins.json")) as fh:
+            plugins = json.load(fh).get("plugins", {})
+    except (OSError, ValueError):
+        return None
+    found = []
+    for key, entries in plugins.items():
+        if key.split("@")[0] != "aaxis-oro" or not isinstance(entries, list):
+            continue
+        for e in entries:
+            path = e.get("installPath") if isinstance(e, dict) else None
+            if path and os.access(os.path.join(path, "bin", "aaxis-oro"), os.X_OK):
+                found.append((e.get("scope") == "user", ver(e.get("version")), path))
+    return max(found)[2] if found else None
+
+
+root = os.environ.get("ORO_SKILLS_DIR") or plugin_dir()
+if not root:
+    root = FALLBACK
+    sys.stderr.write("aaxis-oro: no installed aaxis-oro plugin found, using the clone at %s\\n" % root)
+target = os.path.join(root, "bin", "aaxis-oro")
+os.execv(target, [target] + sys.argv[1:])
+SHIM
+chmod +x "$CLI_BIN_DIR/aaxis-oro"
+echo "  $CLI_BIN_DIR/aaxis-oro (shim -> installed plugin; ORO_SKILLS_DIR overrides; fallback $SCRIPT_DIR/bin/aaxis-oro)"
 case ":$PATH:" in
   *":$CLI_BIN_DIR:"*) ;;
   *) echo "  (add $CLI_BIN_DIR to PATH, or call $SCRIPT_DIR/bin/aaxis-oro directly)" >&2 ;;
@@ -147,14 +273,21 @@ if [ "$INSTALL_OFFICIAL" -eq 1 ]; then
     echo "Registering oroinc/ai-dev-platform marketplace"
     claude plugin marketplace add oroinc/ai-dev-platform || FAILED+=("claude plugin marketplace add oroinc/ai-dev-platform")
     for plugin in $OFFICIAL_PLUGINS; do
-      echo "Installing $plugin@ai-dev-platform"
-      claude plugin install "${plugin}@ai-dev-platform" -y || FAILED+=("claude plugin install ${plugin}@ai-dev-platform -y")
+      if plugin_installed "${plugin}@ai-dev-platform"; then
+        echo "Updating $plugin@ai-dev-platform"
+        claude plugin update "${plugin}@ai-dev-platform" || FAILED+=("claude plugin update ${plugin}@ai-dev-platform")
+      else
+        echo "Installing $plugin@ai-dev-platform"
+        claude plugin install "${plugin}@ai-dev-platform" -y || FAILED+=("claude plugin install ${plugin}@ai-dev-platform -y")
+      fi
     done
   else
     echo "  (claude CLI not found on PATH -- skipping official oroinc/ai-dev-platform plugin install." >&2
     echo "   Install it yourself later: /plugin marketplace add oroinc/ai-dev-platform, then /plugin install <name>@ai-dev-platform)" >&2
   fi
 fi
+
+restore_disabled_plugins
 
 # Pre-plugin atlas hooks would fire a second time next to the plugin's; they can sit in project or user settings.
 echo "Cleaning legacy atlas hooks from user and project Claude settings"

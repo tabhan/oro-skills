@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""SessionStart hook (startup|resume|compact): inject one status line; a stale index is reported, never rebuilt.
+"""SessionStart hook (startup|resume|compact): inject one status line; a stale-usable index is reindexed in the background.
 
-Enforcement lives in pretooluse_edit.py; this hook only reports the index state; rebuilding is always a deliberate command.
+Enforcement lives in pretooluse_edit.py; this hook reports the index state and schedules the reindex (`c.schedule_rebuild`).
 """
 import json
 import os
@@ -41,11 +41,13 @@ def version_line(root):
 
 
 def index_status(root):
-    """Never builds: a stale/missing index is reported with the exact command (a migration in flight owns the rebuild)."""
+    """Reports the state; a stale-usable index also gets a detached reindex (a missing/unusable one needs the exact command)."""
     state = c.index_state(root)
     text = "Atlas index fresh."
     if state != "ok":
-        text = c.build_hint(root, state) + ("; migration rebuilding in background" if migrate.pending(root) else "") + "."
+        outcome, warning = c.schedule_rebuild(root)  # stale-usable only: detached, low priority, swaps in when done
+        text = c.build_hint(root, state) + ("; migration rebuilding in background" if migrate.pending(root) else "")
+        text += ("; reindexing in the background" if outcome in ("started", "running") else "") + (". " + warning if warning else "") + "."
     return text
 
 

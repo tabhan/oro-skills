@@ -13,6 +13,9 @@ from . import notesindex
 from .common import sha256_file
 
 INDEX_NAME = "index.json"
+# On-disk layout version of index.json/shards. A mismatch (an index written by an incompatible tool) makes every answer
+# unreliable, so the hooks treat it as unusable; an index without the field predates it and counts as version 1.
+SCHEMA_VERSION = 1
 SRC_EXTS = (".php", ".yml", ".yaml", ".xml")
 _PKG = os.path.dirname(os.path.abspath(__file__))
 # Stamp key -> label shown to the user.
@@ -172,6 +175,7 @@ def update_index(root, out_dir, built, durations=None, pre=None):
         }
     idx.update(
         atlas_version=__version__,
+        schema_version=SCHEMA_VERSION,
         composer_lock_sha256=sha,
         platform_version=platform_version(root),
         oro_version=detected_version(root),
@@ -239,6 +243,8 @@ def stale_reasons(root, out_dir, names=None):
     idx = read_index(out_dir) or {"shards": {}}
     picked = [n for n in idx["shards"] if names is None or n in names]
     status = shard_status(root, out_dir, picked, check_files=False)
+    if idx.get("schema_version", 1) != SCHEMA_VERSION:
+        status = {n: {"state": "stale", "reasons": ["index format"]} for n in picked}
     return {n: s["reasons"] for n, s in sorted(status.items()) if s["state"] == "stale"}
 
 
@@ -252,4 +258,5 @@ def stale_line(root, out_dir, names=None):
     for name, rs in reasons.items():
         by_reason.setdefault(" and ".join(rs), []).append(name)
     parts = ["%s changed since %s built" % (r, ",".join(ns)) for r, ns in sorted(by_reason.items())]
-    return ("STALE: %s; rebuild (never automatic): atlas build --incremental" % "; ".join(parts)) if parts else None
+    return ("STALE: %s; answers may be out of date (served from the existing index); rebuild when convenient: atlas build --incremental"
+            % "; ".join(parts)) if parts else None

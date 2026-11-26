@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""SessionStart hook: one-line notice when a newer aaxis-oro plugin version exists. Never updates anything.
+"""SessionStart hook: keeps the aaxis-oro plugin current, and says so in one line.
 
-The hook itself never touches the network. Installed version: this copy's .claude-plugin/plugin.json. Latest version:
-the highest of the marketplace clone Claude Code keeps (~/.claude/plugins/marketplaces/<name>/.claude-plugin/plugin.json)
-and the cached result of the last remote check (~/.claude/aaxis-oro-update-check.json).
-When that cache is stale (24h after a success, 1h after a failure) the hook spawns a fully detached background refresher
-(this script with --refresh) and returns at once. The refresher does a depth-1 `git fetch` of the clone's own origin (same
-URL and credentials Claude Code cloned with) into a throwaway bare repo, within a ~30s budget, and writes the cache
-atomically. A version found by the refresher is therefore announced on the next session. The repo carries no release
-tags (the version lives only in plugin.json on main), so `ls-remote --tags` cannot answer.
-Any failure is silent. A lock file keeps concurrent sessions from stacking refreshers. The marketplace clone is never
-modified. Opt out with AAXIS_ORO_NO_UPDATE_CHECK=1.
+Native autoUpdate was spiked and rejected: Claude Code runs it only in an interactive session, after a random 0-10 minute
+delay on an unref'd timer, so short sessions and `-p` never update. This hook does the update itself, in the background.
+The hook never touches the network. Installed version: this copy's .claude-plugin/plugin.json. Latest version: the
+highest of the marketplace clone (~/.claude/plugins/marketplaces/<name>/.claude-plugin/plugin.json) and the cached result
+of the last remote check (~/.claude/aaxis-oro-update-check.json, which also holds the last update result).
+When that cache is stale (6h after a success, 1h after a failure) or an update is due, the hook spawns a fully detached
+refresher (this script with --refresh) and returns at once. The refresher does a depth-1 `git fetch` of the clone's own
+origin into a throwaway bare repo; when that is newer than the installed version and the plugin is installed through the
+marketplace, it runs `claude plugin marketplace update` then `claude plugin update --scope S` for the user scope and for
+the current project's local/project scope, and records {from,to,ok,ts,scopes} in the cache. The next session prints
+"updated X->Y (restart to apply)" once. Old version directories are never deleted. Without a `claude` binary, without a
+marketplace install, or after a failed update the plain upgrade notice (with the manual command) is shown instead, and
+the update is retried after 1h. A lock file keeps concurrent sessions from stacking refreshers. Skipped in subagents.
+Opt out: AAXIS_ORO_NO_AUTO_UPDATE=1 (notice only), AAXIS_ORO_NO_UPDATE_CHECK=1 (everything).
 """
 import json
 import os
@@ -25,11 +29,13 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 
 NAME = "aaxis-oro"
-TTL = 24 * 3600
+TTL = 6 * 3600
 RETRY = 3600  # after a failed remote check (offline, no access) wait this long before trying again
 BUDGET = 30  # refresher: total seconds for the whole fetch
+UPDATE_TIMEOUT = 120  # refresher: hard limit per `claude plugin ...` call
+PLUGIN_ID = NAME + "@" + NAME
 CONNECT_TIMEOUT = 10
-LOCK_TTL = 120  # a refresher lock older than this is stale (crashed refresher)
+LOCK_TTL = 600  # a refresher lock older than this is stale (crashed refresher)
 NOTICE = ("[aaxis-oro] version %s is available (installed %s). Upgrade: `claude plugin marketplace update aaxis-oro && "
           "claude plugin update aaxis-oro@aaxis-oro`, or run ./install.sh in your checkout.")
 
@@ -166,48 +172,190 @@ def spawn_refresher():
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
 
 
-def refresh(now=None, fetch=remote_version):
-    """Background mode: one remote check, cache written atomically. Never raises."""
+def find_claude():
+    """The `claude` binary: PATH first, then the usual install spots. None when absent."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for rel in (".claude/local/claude", ".local/bin/claude"):
+        path = os.path.join(os.path.expanduser("~"), rel)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def installs():
+    """The marketplace install records of this plugin (installed_plugins.json), [] when there are none."""
+    data = read_json(os.path.join(claude_dir(), "plugins", "installed_plugins.json")).get("plugins")
+    entries = data.get(PLUGIN_ID) if isinstance(data, dict) else None
+    return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+
+
+def within(path, project):
+    try:
+        path, project = os.path.realpath(path), os.path.realpath(project)
+    except (OSError, ValueError, TypeError):
+        return False
+    return path == project or path.startswith(project.rstrip(os.sep) + os.sep)
+
+
+def scopes_for(cwd):
+    """[(scope, project_dir_or_None)] to update: user, plus a local/project install recorded for the current project."""
+    out = []
+    for entry in installs():
+        scope, project = entry.get("scope"), entry.get("projectPath")
+        if scope == "user" and ("user", None) not in out:
+            out.append(("user", None))
+        elif scope in ("local", "project") and project and cwd and within(cwd, project) and (scope, project) not in out:
+            out.append((scope, project))
+    return out
+
+
+def auto_update_on():
+    return not os.environ.get("AAXIS_ORO_NO_AUTO_UPDATE")
+
+
+def can_auto_update():
+    """Auto-update is wanted, the plugin is installed through the marketplace and a `claude` binary exists."""
+    return auto_update_on() and bool(installs()) and find_claude() is not None
+
+
+def update_env():
+    env = git_env()
+    env["AAXIS_ORO_NO_UPDATE_CHECK"] = "1"
+    return env
+
+
+def claude_run(claude, args, cwd=None):
+    """One `claude plugin ...` call: no stdin, no prompt, hard timeout. Returns the parsed last JSON line (or {})."""
+    out = subprocess.run([claude, "plugin"] + args, cwd=cwd or None, env=update_env(), capture_output=True, text=True,
+                         timeout=UPDATE_TIMEOUT, stdin=subprocess.DEVNULL)
+    lines = [ln for ln in (out.stdout or "").splitlines() if ln.strip().startswith("{")]
+    try:
+        info = json.loads(lines[-1]) if lines else {}
+    except ValueError:
+        info = {}
+    if out.returncode or info.get("outcome") not in (None, "ok"):
+        raise RuntimeError("claude plugin %s failed (rc %s)" % (args[0], out.returncode))
+    return info
+
+
+def do_update(installed, cwd, now, run=claude_run, claude=None):
+    """Refresh the marketplace clone, then update every applicable scope. Returns the state record; never raises."""
+    rec = {"from": installed, "to": installed, "ok": False, "ts": now, "scopes": [], "announced": False}
+    claude = claude or find_claude()
+    scopes = scopes_for(cwd)
+    if not claude:
+        rec["error"] = "claude binary not found"
+        return rec
+    if not scopes:
+        rec["error"] = "no user or current-project install"
+        return rec
+    try:
+        run(claude, ["marketplace", "update", NAME])
+        newest = installed
+        for scope, project in scopes:
+            info = run(claude, ["update", PLUGIN_ID, "--scope", scope, "--json"], cwd=project)
+            rec["scopes"].append(scope)
+            if parse(info.get("newVersion")) and newer(info.get("newVersion"), newest):
+                newest = info["newVersion"]
+        rec["to"], rec["ok"] = newest, newer(newest, installed)
+        if not rec["ok"]:
+            rec["error"] = "no newer version installed"
+    except Exception as exc:  # noqa: BLE001 - timeout, offline, auth: the notice takes over, retry later
+        rec["error"] = str(exc)[:200]
+    return rec
+
+
+def update_due(cache, latest, installed, now):
+    """An update should be attempted: a newer version is known and no usable attempt (or a failed one past the backoff)."""
+    if not newer(latest, installed):
+        return False
+    upd = cache.get("update") or {}
+    try:
+        age = now - float(upd.get("ts") or 0)
+    except (TypeError, ValueError):
+        age = RETRY
+    if upd.get("ok") and not newer(latest, upd.get("to")):
+        return False  # already updated to (at least) that version; restart pending
+    return not upd or age >= (TTL if upd.get("ok") else RETRY)
+
+
+def refresh(now=None, fetch=remote_version, update=do_update, cwd=None, root=ROOT):
+    """Background mode: one remote check and, when newer and possible, the update. Cache written atomically. Never raises."""
     now = time.time() if now is None else now
     clone = marketplace_dir()
     if not os.path.isdir(clone) or not acquire_lock(now):
         return
     try:
         cache = read_json(cache_path())
+        keep = {k: cache[k] for k in ("update",) if k in cache}
         try:
             got = fetch(clone, time.monotonic() + BUDGET)
             if parse(got) is None:
                 raise ValueError("no version")
-            write_cache({"checked_at": now, "ok": True, "latest": got})
         except Exception:  # noqa: BLE001 - offline, no access, timeout: stay quiet, retry later
-            write_cache({"checked_at": now, "ok": False, "latest": cache.get("latest")})
+            write_cache(dict({"checked_at": now, "ok": False, "latest": cache.get("latest")}, **keep))
+            return
+        installed = manifest_version(os.path.join(root, ".claude-plugin", "plugin.json"))
+        data = {"checked_at": now, "ok": True, "latest": got}
+        target = max([v for v in (got, manifest_version(os.path.join(clone, ".claude-plugin", "plugin.json"))) if parse(v)], key=parse)
+        if can_auto_update() and update_due(cache, target, installed, now):
+            rec = update(installed, cwd if cwd is not None else os.getcwd(), now)
+            keep["update"] = rec
+            data["ok"] = rec["ok"]  # a failed update retries after RETRY, like a failed check
+        write_cache(dict(data, **keep))
     finally:
         release_lock()
 
 
-def latest_version(now, spawn=spawn_refresher):
-    """Highest version known from the local clone and the cache; spawns the refresher when the cache is stale."""
-    clone = marketplace_dir()
-    cache = read_json(cache_path())
-    if stale(cache, now) and os.path.isdir(clone) and not lock_fresh(now):
+def known_latest(cache):
+    """Highest version known locally: the marketplace clone's manifest and the cached remote check."""
+    known = [c for c in (manifest_version(os.path.join(marketplace_dir(), ".claude-plugin", "plugin.json")), cache.get("latest")) if parse(c)]
+    return max(known, key=parse) if known else None
+
+
+def maybe_spawn(cache, now, spawn, due):
+    """Start the refresher when the cache is stale or an update is due, unless one runs or there is no clone."""
+    if (due or stale(cache, now)) and os.path.isdir(marketplace_dir()) and not lock_fresh(now):
         try:
             spawn()
         except Exception:  # noqa: BLE001 - cannot spawn: stay quiet
             pass
-    known = [c for c in (manifest_version(os.path.join(clone, ".claude-plugin", "plugin.json")), cache.get("latest")) if parse(c)]
-    return max(known, key=parse) if known else None
+
+
+def announce(cache, installed):
+    """One line for an update the background refresher finished and this user has not been told about yet."""
+    upd = cache.get("update") or {}
+    if not (upd.get("ok") and not upd.get("announced") and parse(upd.get("to"))):
+        return None
+    cache["update"] = dict(upd, announced=True)
+    write_cache(cache)
+    tail = " (restart to apply)" if newer(upd["to"], installed) else ""
+    return "[aaxis-oro] updated %s\u2192%s%s" % (upd.get("from"), upd["to"], tail)
 
 
 def decide(payload, root=ROOT, now=None, spawn=spawn_refresher):
     if os.environ.get("AAXIS_ORO_NO_UPDATE_CHECK"):
         return None
-    if isinstance(payload, dict) and payload.get("source") == "compact":
-        return None
+    payload = payload if isinstance(payload, dict) else {}
+    if payload.get("source") == "compact" or payload.get("agent_id"):
+        return None  # compact and subagents: nothing to say, nothing to start
     installed = manifest_version(os.path.join(root, ".claude-plugin", "plugin.json"))
     if parse(installed) is None:
         return None
-    latest = latest_version(time.time() if now is None else now, spawn)
-    if latest and newer(latest, installed):
+    now = time.time() if now is None else now
+    cache = read_json(cache_path())
+    auto = can_auto_update()
+    latest = known_latest(cache)
+    maybe_spawn(cache, now, spawn, auto and update_due(cache, latest, installed, now))
+    if auto:
+        said = announce(cache, installed)
+        if said:
+            return {"systemMessage": said}
+    upd = cache.get("update") or {}
+    updating = auto and not (upd and not upd.get("ok"))  # a failed attempt hands over to the manual notice
+    if latest and newer(latest, installed) and not updating:
         return {"systemMessage": NOTICE % (latest, installed)}
     return None
 

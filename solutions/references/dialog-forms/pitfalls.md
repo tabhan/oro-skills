@@ -1,135 +1,53 @@
-# Pitfalls — symptoms and root causes
-
-The dialog-form flow has many moving parts. Here are the failures we've hit
-in practice, with the symptom → root cause → fix mapping.
+# Pitfalls: symptoms and root causes
 
 ## "Invalid server response"
 
-**Symptom:** User submits the form, dialog closes or stays open showing a JS
-error. `abstract-widget.js` throws `new Error('Invalid server response: ' + content)`.
+`abstract-widget.js` throws `new Error('Invalid server response: ' + content)` because the response body has no
+top-level `.widget-content` (`setContent()` does `$(content).filter('.widget-content').first()`). Causes, most common first:
 
-**Root cause:** The response body did not start with a `.widget-content`
-element at the top level. `setContent()` does
-`$(content).filter('.widget-content').first()` and the result is empty.
-
-**Most common causes, in order:**
-
-1. **Any redirect (30x) happened on the POST** — an event listener
-   (auth, locale prefix, slug redirect, etc.) returned a `RedirectResponse`
-   for the unprefixed POST, and the browser followed it as a GET, dropping
-   the body. The subsequent GET returns a fresh form which the dialog sees
-   as a non-widget response. Fix: ensure the form's `action` URL matches the
-   exact URL pattern your middleware considers "final" — no listener should
-   want to redirect it.
-
-2. **Controller returned a `JsonResponse`** because you built it yourself.
-   `DialogWidget` does not consume JSON; it consumes HTML with
-   `.widget-content`. Fix: return `array` from the `#[Layout]` action.
-
-3. **Controller returned the facade's array as-is** and the Layout system
-   threw because `['form' => FormView]` doesn't match `FormInterface` expected
-   by `FormContextConfigurator::configureContext()`. Fix: extract only
-   `savedId` and return your own clean `['data' => […]]`. See `controller.md`.
+1. **Any 30x on the POST** (auth, locale prefix, slug redirect listener): the browser follows it as a GET and drops the
+   body; the dialog receives a fresh non-widget form. Make the form's `action` URL match the exact URL pattern the
+   middleware considers final, so no listener wants to redirect it.
+2. **Controller returned a `JsonResponse`.** `DialogWidget` consumes HTML with `.widget-content`: return an `array` from the `#[Layout]` action.
+3. **Controller returned the facade's array as-is** (`['form' => FormView]` fails `FormContextConfigurator::configureContext()`):
+   extract only `savedId` ([controller.md](controller.md)).
 
 ## Page refresh / redirect after submit
 
-**Symptom:** On submit, the whole page navigates somewhere (often home or
-the form route itself) instead of the dialog closing.
+The whole page navigates (often home or the form route) instead of the dialog closing: the POST carried no `_wid`, so
+`UpdateHandlerFacade::constructResponse()` took the non-widget branch and returned a `RedirectResponse`. Causes:
 
-**Root cause:** The POST didn't carry `_wid`, so `UpdateHandlerFacade::constructResponse()`
-took the non-widget branch and returned `RedirectResponse`. The browser follows.
-
-**Most common causes:**
-
-1. **Upstream 302 dropped `_wid` during POST → GET redirect** — same as
-   "Invalid server response" above. Fix the URL your form posts to so no
-   listener wants to redirect it.
-
-2. **Submit handler bypass** — your custom `DialogWidget` subclass overrode
-   `loadContent` / `_onContentLoad` and lost the `_wid` attachment. Fix:
-   don't subclass; use `oro/dialog-widget` directly.
-
-3. **Form not inside `.widget-actions` wrapper** — `AbstractWidget._adoptWidgetActions()`
-   never set `this.form`, so `_onAdoptedFormSubmit()` silently fails to POST.
-   The browser then does a normal HTML form submit. Fix: wrap the submit
-   button in `<div class="widget-actions">`.
+1. An upstream 302 dropped `_wid` (POST -> GET); same fix as case 1 above.
+2. A custom `DialogWidget` subclass overrode `loadContent` / `_onContentLoad` and lost `_wid`: don't subclass ([javascript-trigger.md](javascript-trigger.md)).
+3. Submit button not inside `.widget-actions`: `_adoptWidgetActions()` never set `this.form`, `_onAdoptedFormSubmit()`
+   silently fails, and the browser does a normal HTML submit ([form-template.md](form-template.md)).
 
 ## Submit button is invisible
 
-**Symptom:** The dialog opens, the form renders, but there is no visible
-"Submit" button.
+`DialogWidget` defaults to `moveAdoptedActions: true`, so the button lives in `.ui-dialog-buttonpane`, which your CSS
+hides for this drawer class (common copy-paste from a dialog whose button sits in the form body). Style
+`.ui-dialog-buttonpane` inside your drawer class and do NOT set `moveAdoptedActions: false` ([form-template.md](form-template.md), section 2).
 
-**Root cause:** `DialogWidget` default is `moveAdoptedActions: true`. The
-original button is removed from the form and re-rendered inside
-`.ui-dialog-buttonpane`. Your project's CSS hides `.ui-dialog-buttonpane`
-for this drawer class (common copy-paste from another dialog where the
-button lives in the form body).
+## Redirect goes to the admin entity URL after a non-dialog submit
 
-**Fix:** Style `.ui-dialog-buttonpane` inside your drawer class. See
-`form-template.md` §2.
-
-**Do NOT set `moveAdoptedActions: false`.** The button becomes visible in
-the form, but `this.form` registration becomes unreliable and the AJAX
-submit path breaks.
-
-## Redirect goes to the admin entity URL after successful non-dialog submit
-
-**Symptom:** Content-widget-embedded form submits successfully, but the user
-is redirected to `/admin/…/view/123` (entity view route) and either sees
-404 or an ACL error.
-
-**Root cause:** `UpdateHandlerFacade::constructResponse()` called
-`Router::redirect($entity)`. With no `input_action` in the request it returns
-`$request->getUri()`; with one, it uses that payload's `redirectUrl` or generates
-the `route` it names. Oro's default save-and-close button supplies an `input_action`
-carrying an admin `route`, and that generated admin URL is what the storefront user
-lands on. `Router::redirect()` never reads the entity's `routeView`.
-
-**Fix:** Emit an `input_action` hidden field from the form template with
-`{"redirectUrl":"<localized page URL>"}`. See `form-template.md` §3.
+Content-widget form saves, then the user lands on `/admin/.../view/123` (404 or ACL error). `Router::redirect($entity)`
+returns `$request->getUri()` with no `input_action`; with one it uses its `redirectUrl` or generates the `route` it
+names. Oro's default save-and-close button supplies an `input_action` carrying an admin `route`, which is what the
+storefront user lands on. `Router::redirect()` never reads the entity's `routeView`. Fix: emit an `input_action`
+hidden field with `{"redirectUrl":"<localized page URL>"}` ([form-template.md](form-template.md), section 3).
 
 ## `inputAction is UNDEFINED` in Twig
 
-**Symptom:** You added `inputAction` to your content widget's `getWidgetData()`
-return array, but `{% if inputAction is defined %}` is false.
-
-**Root cause:** The content widget's `widget.yml` layout explicitly binds keys
-from `data[…]` to layout variables. New keys don't get bound automatically.
-
-**Fix:** Add the mapping:
-
-```yaml
-# Resources/views/layouts/default/content_widget/xyz_form/widget.yml
-options:
-    vars:
-        …
-        inputAction: '=data["inputAction"]'
-```
+`widget.yml` binds only listed `data[...]` keys to layout variables. Add `inputAction: '=data["inputAction"]'` under
+`options: vars:` ([form-template.md](form-template.md), section 4).
 
 ## Form action lacks the widget name segment
 
-**Symptom:** Form action is `/us-en/cms/cta-form` instead of
-`/us-en/cms/cta-form/cta-form-contact-us`.
-
-**Root cause:** The route has a default value for the path parameter
-(`public function form(..., string $widgetName = 'cta-form-contact-us')`),
-and you're generating the URL for the exact default value. Symfony's URL
-generator omits a trailing path parameter whose value equals the default.
-
-**This is usually fine** — the server side routes match and resolve with the
-default. But it's visually confusing when debugging. If a non-default widget
-uses the same form, its URL will include the segment correctly.
+`/us-en/cms/cta-form` instead of `/us-en/cms/cta-form/cta-form-contact-us`: the path parameter equals the route's
+default (`string $widgetName = 'cta-form-contact-us'`) and Symfony's URL generator omits a trailing default value.
+Usually fine (the server still matches), just confusing; a non-default widget includes the segment.
 
 ## Route cache stale after rename
 
-**Symptom:** You renamed a dialog-form route. Server `request.log` shows 404
-or 500 for the old name; `frontend_routes.json` (consumed by the JS trigger's
-`routing.generate()`) still has the old name.
-
-**Fix:** after the usual `cache:clear`, re-dump the JS route map:
-```bash
-php bin/console fos:js-routing:dump --target=public/media/js/frontend_routes.json
-```
-
-Also re-dump routes whenever you add a parameter to an existing route that
-the frontend calls via `routing.generate()`.
+`request.log` shows 404/500 for the old route name and `frontend_routes.json` (used by `routing.generate()`) still has
+it. After the usual `cache:clear`, re-dump the JS route map (command in [javascript-trigger.md](javascript-trigger.md)).

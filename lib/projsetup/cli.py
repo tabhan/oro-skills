@@ -156,6 +156,8 @@ def sync(root, dry):
     lines.append(precommit.install(root, dry))
     y = precommit.ensure_yamllint(root, dry)
     lines += [y] if y else []
+    from projsetup import plugins
+    lines += plugins.sync(root, dry)
     return lines, 0
 
 

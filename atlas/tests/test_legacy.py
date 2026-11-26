@@ -141,11 +141,11 @@ class InstallCleanupTest(unittest.TestCase):
             fh.write("#!/bin/sh\nexit 1\n")
         os.chmod(os.path.join(fake, "claude"), 0o755)
         env = dict(os.environ, CLAUDE_SKILLS_DIR=home + "/skills", CLAUDE_AGENTS_DIR=home + "/agents",
-                   ORO_ATLAS_BIN_DIR=home + "/bin", PATH=fake + ":" + os.environ["PATH"])
+                   ORO_ATLAS_BIN_DIR=home + "/bin", HOME=home, PATH=fake + ":" + os.environ["PATH"])
         p = subprocess.run([os.path.join(REPO, "install.sh"), "--no-update", "--project", d], env=env, capture_output=True, text=True)
         self.assertEqual(p.returncode, 1)  # failures reported, not aborted
         self.assertIn("claude plugin install aaxis-oro@aaxis-oro", p.stderr)
-        self.assertTrue(os.path.islink(home + "/bin/aaxis-oro"))  # CLI still linked after the failure
+        self.assertTrue(os.path.isfile(home + "/bin/aaxis-oro"))  # CLI still linked after the failure
         self.assertFalse(legacy.project_has_legacy(d))
         self.assertEqual(legacy.load(d)["permissions"], {"allow": ["x"]})
 

@@ -216,6 +216,8 @@ class TicketProcessTest(ReviewBase):
         self.git("checkout", "-qb", "bugfix/BUC-7")
         self.write(".oro-ai/config.json", "{}\n")
         self.write("src/Foo/Resources/config/services.yml", "services: {}\n")
+        for n in "BCD":  # four files: not a SMALL change, so the gate applies
+            self.write("src/Foo/%s.php" % n, "<?php\n")
         self.git("add", "src")
 
     def gate(self, text):
@@ -238,6 +240,11 @@ class TicketProcessTest(ReviewBase):
         p = self.check()
         self.assertEqual(p.returncode, 0)
         self.assertIn("STATUS.md", p.stdout)
+        self.assertNotIn("no e2e", p.stdout)  # DI wiring is not user-visible: e2e optional
+        self.write("src/Foo/Controller/XController.php", "<?php\n")
+        self.git("add", "src")
+        p = self.check()
+        self.assertEqual(p.returncode, 0)
         self.assertIn("no e2e", p.stdout)
         run_task = lambda *a: subprocess.run([sys.executable, EXE, "task", *a], cwd=self.root, capture_output=True, text=True)
         self.assertIn("created STATUS.md, plan.md", run_task("init").stdout)
@@ -246,6 +253,18 @@ class TicketProcessTest(ReviewBase):
         self.git("add", "src")
         self.assertEqual(run_task("check").returncode, 0)
         self.assertNotIn("review-ticket-evidence", self.check().stdout)
+
+    def test_user_visible_classification(self):
+        from atlas import task
+        for path in ("src/Foo/Controller/X.php", "src/Foo/Resources/views/a.html.twig", "src/Foo/Resources/public/js/a.js",
+                     "src/Foo/Resources/public/scss/a.scss", "src/Foo/Resources/config/oro/datagrids.yml",
+                     "src/Foo/Resources/config/oro/workflows.yml", "src/Foo/Resources/config/oro/routing.yml",
+                     "src/Foo/Resources/translations/messages.en.yml", "src/Foo/Resources/views/layouts/x/layout.yml"):
+            self.assertTrue(task.is_user_visible(path), path)
+        for path in ("src/Foo/Service/A.php", "src/Foo/EventListener/L.php", "src/Foo/Resources/config/services.yml",
+                     "src/Foo/Migrations/Schema/V1/M.php", "src/Foo/Tests/E2e/x.feature", "src/Foo/Tests/Unit/ControllerTest.php",
+                     "src/Foo/Controller/Tests/a.php", "docs/a.md", "src/Foo/Migrations/Data/Demo/d.yml"):
+            self.assertFalse(task.is_user_visible(path), path)
 
     def test_non_setup_project_and_non_ticket_branch_unaffected(self):
         os.remove(os.path.join(self.root, ".oro-ai", "config.json"))
@@ -261,6 +280,121 @@ class TicketProcessTest(ReviewBase):
         self.assertIn("review-ticket-gate", p.stdout)
 
 
+class SmallChangeGateTest(ReviewBase):
+    """SMALL changes (<= 3 files, no risk path/construct) need no architect-gate verdict; replans re-gate changed sections only."""
+
+    def setUp(self):
+        super().setUp()
+        self.git("checkout", "-qb", "bugfix/BUC-8")
+        self.write(".oro-ai/config.json", "{}\n")
+        self.write(".oro-ai/task/BUC-8/STATUS.md", "x\n")
+
+    def stage(self, *files):
+        for f, text in files:
+            self.write(f, text)
+        self.git("add", "src")
+
+    def task(self, *a):
+        return subprocess.run([sys.executable, EXE, "task", *a], cwd=self.root, capture_output=True, text=True)
+
+    def test_small_extension_change_needs_no_gate(self):
+        self.stage(("src/Foo/Resources/config/services.yml", "services: {}\n"))
+        p = self.check()
+        self.assertEqual(p.returncode, 0)
+        self.assertNotIn("review-ticket-gate", p.stdout)
+        self.assertEqual(self.task("check").returncode, 0)  # no gate problem either
+
+    def test_four_files_need_the_gate(self):
+        self.stage(("src/Foo/Resources/config/services.yml", "services: {}\n"), ("src/Foo/B.php", "<?php\n"),
+                   ("src/Foo/C.php", "<?php\n"), ("src/Foo/D.php", "<?php\n"))
+        self.assertEqual(self.check().returncode, 1)
+        self.assertIn("architect-gate", self.task("check").stdout)
+
+    def test_risk_path_or_construct_needs_the_gate_even_when_small(self):
+        self.stage(("src/Foo/Resources/config/services.yml", "services: {}\n"), ("src/Foo/Migrations/Schema/V1/M.php", "<?php\n"))
+        self.assertEqual(self.check().returncode, 1)
+        self.git("reset", "-q")
+        self.git("clean", "-fdq", "src")
+        self.stage(("src/Foo/Resources/config/services.yml", "services:\n  a:\n    decorates: foo.mgr\n"))
+        self.assertEqual(self.check().returncode, 1)
+        self.assertIn("architect-gate", self.task("check").stdout)
+
+    def test_is_small_change_unit(self):
+        from atlas import task
+        self.assertTrue(task.is_small_change(self.root, ["src/A.php", "src/B.php", "src/C.php", ".oro-ai/x.md"]))
+        self.assertFalse(task.is_small_change(self.root, ["src/A.php", "src/B.php", "src/C.php", "src/D.php"]))
+        for risky in ("src/Foo/Security/V.php", "src/Foo/Resources/config/oro/acl.yml", "src/Foo/Resources/config/oro/workflows.yml",
+                      "src/Foo/EventListener/XInterceptor.php", "src/Foo/Migrations/Schema/M.php"):
+            self.assertFalse(task.is_small_change(self.root, [risky]), risky)
+        self.assertFalse(task.is_small_change(self.root, ["src/A.yml"], "+  decorates: x"))
+
+    def test_task_small_cli(self):
+        self.stage(("src/Foo/A.php", "<?php\n"))
+        r = self.task("small")
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "SMALL"))
+        self.stage(("src/Foo/Migrations/Schema/V1/M.php", "<?php\n"))
+        r = self.task("small")
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(r.stdout.startswith("not SMALL: risk path"), r.stdout)
+        self.assertEqual(r.stdout.count("not SMALL"), 1)
+        self.git("reset", "-q")
+        self.git("clean", "-fdq", "src")
+        self.stage(*[("src/Foo/F%d.php" % i, "<?php\n") for i in range(4)])
+        self.assertIn("files changed (max 3)", self.task("small").stdout)
+
+    def test_untracked_files_count_for_small(self):
+        self.write("src/Foo/Resources/config/services.yml", "services:\n  a:\n    decorates: foo.mgr\n")
+        self.assertIn("risk construct", self.task("small").stdout)
+        os.remove(os.path.join(self.root, "src/Foo/Resources/config/services.yml"))
+        self.write("src/Foo/Migrations/Schema/V1/M.php", "<?php\n")
+        r = self.task("small")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("risk path", r.stdout)
+        os.remove(os.path.join(self.root, "src/Foo/Migrations/Schema/V1/M.php"))
+        self.write(".gitignore", "ignored/\n")
+        self.write("ignored/x.yml", "decorates: y\n")
+        self.assertEqual(self.task("small").stdout.strip(), "SMALL")
+
+    def test_phase_timing(self):
+        import json
+        tf = os.path.join(self.root, ".oro-ai/task/BUC-8/timing.jsonl")
+        for a in (("build", "start"), ("build", "end"), ("review", "start")):
+            self.assertEqual(self.task("phase", "BUC-8", *a, "--note", "n").returncode, 0)
+        self.assertEqual(self.task("phase", "BUC-8", "build", "start").returncode, 0)
+        rows = [json.loads(l) for l in open(tf)]
+        self.assertEqual([(r["phase"], r["event"]) for r in rows], [("build", "start"), ("build", "end"), ("review", "start"), ("build", "start")])
+        self.assertTrue(rows[0]["ts"] and "head" in rows[0] and rows[0]["note"] == "n")
+        out = self.task("timing", "BUC-8")
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("build", out.stdout)
+        self.assertIn("no end", out.stdout)
+        self.assertIn("total", out.stdout)
+        bad = self.task("phase", "BUC-8", "build", "sideways")
+        self.assertEqual(bad.returncode, 0)
+        self.assertIn("warning", bad.stderr)
+        self.assertEqual(self.task("timing", "NOPE-1").returncode, 0)
+
+    def test_gate_diff_and_record_only_regate_changed_sections(self):
+        plan = ".oro-ai/task/BUC-8/plan.md"
+        self.write(plan, "# plan\n\n## Extension points\nlistener A\n\n## Tests\nscenario 1\n")
+        self.assertIn("gate the whole plan", self.task("gate-diff").stdout)
+        self.write(".oro-ai/task/BUC-8/architect-gate.md", "Verdict: rejected\n")
+        self.assertEqual(self.task("gate-record").returncode, 1)
+        self.write(".oro-ai/task/BUC-8/architect-gate.md", "Verdict: approved\n")
+        self.assertEqual(self.task("gate-record").returncode, 0)
+        self.assertIn("Approved-Section: Tests = ", open(os.path.join(self.root, ".oro-ai/task/BUC-8/architect-gate.md")).read())
+        out = self.task("gate-diff").stdout
+        self.assertIn("changed: -", out)
+        self.assertIn("new: -", out)
+        self.write(plan, "# plan\n\n## Extension points\nlistener A\nlistener B via event\n\n## Tests\nscenario 1\n\n## Rollout\nx\n")
+        out = self.task("gate-diff").stdout
+        self.assertIn("changed: Extension points", out)
+        self.assertIn("new: Rollout", out)
+        self.assertIn("unchanged: plan; Tests", out.replace("unchanged: plan; Tests", "unchanged: plan; Tests"))
+        self.assertEqual(self.task("gate-record").returncode, 0)
+        self.assertIn("changed: -", self.task("gate-diff").stdout)
+
+
 class TicketBranchBase(ReviewBase):
     """Setup project on a ticket branch with one committed code change."""
 
@@ -271,7 +405,7 @@ class TicketBranchBase(ReviewBase):
         self.write(".oro-ai/task/BUC-9/architect-gate.md", "Verdict: skipped - test\n")
         self.write(".oro-ai/task/BUC-9/STATUS.md", "x\n")
         self.write("src/Foo/Tests/E2e/x.feature", "Feature: x\n")
-        self.write("src/Foo/A.php", "<?php\n")
+        self.write("src/Foo/A.php", "<?php\n" + "$a = 1;\n" * 25)  # above task.SMALL_DELTA_LINES: reviewing HEAD~1 is stale
         self.git("add", "src")
         self.git("commit", "-qm", "code")
 
@@ -310,9 +444,79 @@ class SupplementaryReviewTest(TicketBranchBase):
         self.git("add", "-f", ".oro-ai/task")
         self.git("commit", "-qm", "review evidence")
         self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
-        self.write("src/Foo/B.php", "<?php\n")
+        self.write("src/Foo/B.php", "<?php\n" + "$b = 1;\n" * 25)
         self.git("add", "src")
         self.git("commit", "-qm", "more")
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def approve_head(self):
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        return self.sha()
+
+    def commit_file(self, path, lines):
+        self.write(path, "<?php\n" + "$x = 1;\n" * (lines - 1))
+        self.git("add", path)
+        self.git("commit", "-qm", "edit " + path)
+
+    def test_small_production_delta_stays_fresh_and_threshold_is_exact(self):
+        from atlas import task
+        self.approve_head()
+        self.commit_file("src/Foo/B.php", task.SMALL_DELTA_LINES)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+        self.commit_file("src/Foo/C.php", 1)  # 21 production lines in total
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def test_large_non_production_delta_does_not_count(self):
+        from atlas import task
+        self.approve_head()
+        self.commit_file("src/Foo/Tests/Unit/BTest.php", 100)
+        self.commit_file("src/Foo/translations/messages.en.yml", 100)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+
+    def test_merge_only_changes_stay_fresh(self):
+        from atlas import task
+        self.approve_head()
+        self.git("checkout", "-qb", "develop-side", "HEAD~0")
+        self.commit_file("src/Foo/FromDevelop.php", 200)
+        self.git("checkout", "-q", "-")
+        self.git("merge", "-q", "--no-ff", "-m", "Merge develop", "develop-side")
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+        self.commit_file("src/Foo/Own.php", 25)  # the branch's own commit still counts
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def conflict_merge(self, resolved_lines):
+        """Merge develop-side into the branch with a real conflict on src/Foo/Conf.php, resolved by hand-writing lines."""
+        self.commit_file("src/Foo/Conf.php", 5)
+        self.git("checkout", "-qb", "develop-side")
+        self.write("src/Foo/Conf.php", "<?php\n" + "$d = 1;\n" * 300)
+        self.git("commit", "-qam", "develop edit")
+        self.git("checkout", "-q", "-")
+        self.write("src/Foo/Conf.php", "<?php\n" + "$o = 1;\n" * 300)
+        self.git("commit", "-qam", "own edit")
+        self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
+        subprocess.run(["git", "-C", self.root, "merge", "--no-ff", "-m", "Merge develop", "develop-side"], capture_output=True)
+        self.write("src/Foo/Conf.php", "<?php\n" + "$r = 1;\n" * resolved_lines)
+        self.git("add", "src")
+        self.git("commit", "-qm", "Merge develop")
+
+    def test_merge_conflict_resolution_over_threshold_is_stale(self):
+        from atlas import task
+        self.conflict_merge(300)
+        self.assertGreater(task.review_delta(self.root, self.sha("HEAD^1")), task.SMALL_DELTA_LINES)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
+
+    def test_small_merge_conflict_resolution_stays_fresh(self):
+        from atlas import task
+        self.conflict_merge(8)
+        self.assertLessEqual(task.review_delta(self.root, self.sha("HEAD^1")), task.SMALL_DELTA_LINES)
+        self.assertEqual(task.review_state(self.root, "BUC-9")[0], "approved")
+
+    def test_rebased_branch_is_stale_even_with_tiny_delta(self):
+        from atlas import task
+        old = self.approve_head()
+        self.git("checkout", "-q", "--orphan", "rebased")
+        self.git("commit", "-qm", "rebased root", "--allow-empty")
+        self.review("Verdict: approved\nRange: %s..%s\n" % (old, old))  # head no longer an ancestor of HEAD
         self.assertEqual(task.review_state(self.root, "BUC-9")[0], "stale")
 
     def test_task_check_requires_fresh_review(self):
@@ -373,18 +577,18 @@ class SupplementaryReviewTest(TicketBranchBase):
 
 
 class StopReviewGateTest(TicketBranchBase):
-    """stop.py blocks the main session's Stop until a fresh review covers finished (committed, clean) ticket code."""
+    """stop.py warns (severity warn, never blocks) on the main session's Stop until a fresh review covers finished (committed, clean) ticket code."""
 
     def stop(self, env=None, **extra):
         payload = dict({"session_id": "stop-s", "hook_event_name": "Stop", "cwd": self.root, "stop_hook_active": False}, **extra)
         return run("stop.py", payload, self.home, env)
 
-    def test_blocks_finished_code_without_review(self):
+    def test_warns_on_finished_code_without_review(self):
         rc, out = self.stop()
         self.assertEqual(rc, 0)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("/aaxis-oro:review", out["reason"])
-        self.assertIn("Verdict: skipped - <reason>", out["reason"])
+        self.assertNotIn("decision", out)  # review-ticket-stop is warn: a reminder, never a block
+        self.assertIn("/aaxis-oro:review", out["systemMessage"])
+        self.assertIn("Verdict: skipped - <reason>", out["systemMessage"])
 
     def test_fresh_approved_or_skipped_review_allows_stop(self):
         self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
@@ -394,10 +598,10 @@ class StopReviewGateTest(TicketBranchBase):
 
     def test_stale_review_blocks_again(self):
         self.review("Verdict: approved\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
-        self.write("src/Foo/B.php", "<?php\n")
+        self.write("src/Foo/B.php", "<?php\n" + "$b = 1;\n" * 25)
         self.git("add", "src")
         self.git("commit", "-qm", "more")
-        self.assertIn("stale", self.stop()[1]["reason"])
+        self.assertIn("stale", self.stop()[1]["systemMessage"])
 
     def test_dirty_code_tree_is_mid_work_but_task_files_are_not(self):
         self.write("src/Foo/A.php", "<?php // wip\n")
@@ -407,7 +611,7 @@ class StopReviewGateTest(TicketBranchBase):
         self.assertIsNone(self.stop()[1], "untracked code is mid-work too")
         os.remove(os.path.join(self.root, "src", "Foo", "New.php"))
         self.write(".oro-ai/task/BUC-9/STATUS.md", "changed\n")
-        self.assertEqual(self.stop()[1]["decision"], "block")
+        self.assertIn("review-ticket-stop", self.stop()[1]["systemMessage"])
 
     def test_no_committed_code_on_branch_is_noop(self):
         self.git("checkout", "-qb", "feature/BUC-10", "HEAD~1")
@@ -416,10 +620,10 @@ class StopReviewGateTest(TicketBranchBase):
     def test_changes_requested_on_head_asks_for_fixes(self):
         self.review("Verdict: changes-requested\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha()))
         out = self.stop()[1]
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("must-fix", out["reason"])
+        self.assertNotIn("decision", out)
+        self.assertIn("must-fix", out["systemMessage"])
         self.review("Verdict: changes-requested\nRange: %s..%s\n" % (self.sha("HEAD~1"), self.sha("HEAD~1")))
-        self.assertNotIn("must-fix", self.stop()[1]["reason"])
+        self.assertNotIn("must-fix", self.stop()[1]["systemMessage"])
 
     def marker(self, head=None, started=None):
         from datetime import datetime, timezone
@@ -433,13 +637,13 @@ class StopReviewGateTest(TicketBranchBase):
         self.assertNotIn("decision", out)
         self.assertIn("review in progress since %s" % started, out["systemMessage"])
 
-    def test_stale_in_progress_marker_blocks(self):
+    def test_stale_in_progress_marker_warns(self):
         self.marker(started="2020-01-01T00:00:00Z")
         out = self.stop()[1]
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("stale in-progress marker", out["reason"])
+        self.assertNotIn("decision", out)
+        self.assertIn("stale in-progress marker", out["systemMessage"])
         self.marker(head=self.sha("HEAD~1"))
-        self.assertIn("Range head is not HEAD", self.stop()[1]["reason"])
+        self.assertIn("Range head is not HEAD", self.stop()[1]["systemMessage"])
 
     def test_loop_guard_allows_with_warning(self):
         out = self.stop(stop_hook_active=True)[1]

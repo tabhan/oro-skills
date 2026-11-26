@@ -1,13 +1,11 @@
 # Layout — `widget_content` block + `widget-form-component`
 
-For a dialog form, the layout must render HTML wrapped in
-`<div class="widget-content">` carrying the page-component attributes that tell
-Oro's `orofrontend/js/app/components/widget-form-component` to close the
-dialog when `savedId` is present.
+The layout must render HTML wrapped in `<div class="widget-content">` carrying the page-component attributes that
+tell `orofrontend/js/app/components/widget-form-component` to close the dialog when `savedId` is present.
 
 ## Directory layout
 
-For a route named `acme_xyz_form`, Oro auto-binds the layout at:
+A route named `acme_xyz_form` auto-binds the layout at:
 
 ```
 Resources/views/layouts/default/acme_xyz_form/
@@ -17,7 +15,7 @@ Resources/views/layouts/default/acme_xyz_form/
 
 ## `layout.yml`
 
-Exposes controller data as layout variables so the Twig block can read them.
+Exposes controller data as layout variables for the Twig block.
 
 ```yaml
 layout:
@@ -50,9 +48,8 @@ layout:
 
 ## `layout.html.twig`
 
-Overrides the `_widget_content_widget` block to inject the page component
-attributes. `parent_block_widget(block)` keeps the default rendering (the
-`<div class="widget-content">` wrapper + body).
+Overrides `_widget_content_widget` to inject the page component attributes; `parent_block_widget(block)` keeps the
+default `<div class="widget-content">` wrapper + body.
 
 ```twig
 {% block _widget_content_widget %}
@@ -76,9 +73,9 @@ attributes. `parent_block_widget(block)` keeps the default rendering (the
 {% endblock %}
 ```
 
-## Why `widget-form-component` is the load-bearing piece
+## `widget-form-component` is load-bearing
 
-See `vendor/oro/customer-portal/src/Oro/Bundle/FrontendBundle/Resources/public/js/app/components/widget-form-component.js`:
+`vendor/oro/customer-portal/src/Oro/Bundle/FrontendBundle/Resources/public/js/app/components/widget-form-component.js`:
 
 <!-- oro: ">=7.0.0" topic: widget-form-component-source -->
 ```js
@@ -125,27 +122,15 @@ define(
 ```
 <!-- /oro -->
 
-When the controller's POST response includes a non-null `savedId`, this
-component:
-
-1. Flashes the success message.
-2. Fires `widget_success:*` mediator events (useful if other views need to
-   know the save happened).
-3. Triggers `formSave` on the widget.
-4. Calls `widget.remove()` — the dialog closes.
-
-If `savedId` is falsy (validation failure or GET), the component is a no-op
-and the dialog stays open with the re-rendered form.
+A non-null `savedId` in the POST response makes it flash the success message, fire `widget_success:*` mediator
+events, trigger `formSave` on the widget and call `widget.remove()` (dialog closes). A falsy `savedId` (validation
+failure or GET) is a no-op: the dialog stays open with the re-rendered form.
 
 ## Pitfalls
 
-- **Forgetting to map `savedId` in `layout.yml`** — the block gets the var
-  `savedId = null` even when the controller supplied it. Check your `@setOption`
-  block.
-- **Accessing controller data directly as `formType`/`inputAction` in Twig** —
-  the `content_widget` rendering wraps the `getWidgetData` result under the
-  `data` key internally. You must explicitly bind keys via the layout's `vars:`
-  mapping (see `form-template.md`).
-- **Nesting a second `.widget-content` inside** — `AbstractWidget.setContent()`
-  uses `$(content).filter('.widget-content').first()`. Nested wrappers are
-  fine, but the TOP-level DOM node of the response MUST be `.widget-content`.
+- **`savedId` not mapped in `layout.yml`**: the block gets `savedId = null` even when the controller supplied it.
+  Check the `@setOption` block.
+- **Reading controller data directly as `formType`/`inputAction` in Twig**: `content_widget` rendering wraps the
+  `getWidgetData` result under the `data` key, so bind keys via the layout's `vars:` ([form-template.md](form-template.md)).
+- **Top-level node**: `AbstractWidget.setContent()` uses `$(content).filter('.widget-content').first()`; nested
+  wrappers are fine but the TOP-level DOM node of the response MUST be `.widget-content`.

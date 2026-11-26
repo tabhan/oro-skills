@@ -2,7 +2,8 @@
 # oro: ">=6.1.0"
 # Bring derived state (vendor, caches, schema, translations, routes dump, assets) up to date after a branch switch
 # or pull, for both stacks, running only the steps the changed inputs need. State: .oro-ai/local-env/refresh.json.
-# Usage: refresh.sh [--all] [--project P] [--dry-run]    (--all or no record: every step)
+# Usage: refresh.sh [--all] [--target local|local-test|both] [--project P] [--dry-run]    (--all or no record: every step; default both)
+# --target limits the plan and the recorded state to one stack (shared steps still run); the other stack stays due.
 # Console steps go through `aaxis-oro test <target> console` so each one is bound to its own stack (local: prod/dev
 # kernel, local-test: test/behat_test); shared steps (composer, assets) touch vendor/ and public/ once. The routes dump runs per stack: Oro writes it through the
 # public gaufrette filesystem, which is gridfs (that stack's Mongo) on gridfs projects.
@@ -12,12 +13,22 @@
 # Exit: 0 ok or nothing to do, 1 a step failed (refresh.json untouched), 3 guard abort, 64 usage.
 source "$(dirname "$0")/lib/common.sh"
 le_init refresh "$@"
-ALL=0
-for a in "${ARGS[@]:-}"; do case $a in --all) ALL=1 ;; "") ;; *) echo "usage: aaxis-oro dev refresh [--project DIR] [--dry-run] [--all]" >&2; exit 64 ;; esac; done
+ALL=0; TGT=""; prev=""
+for a in "${ARGS[@]:-}"; do
+    case $a in
+        --all) ALL=1 ;;
+        --target=*) TGT=${a#--target=} ;;
+        --target) ;;
+        "") ;;
+        *) if [ "$prev" = --target ]; then TGT=$a; else echo "usage: aaxis-oro dev refresh [--project DIR] [--dry-run] [--all] [--target local|local-test|both]" >&2; exit 64; fi ;;
+    esac
+    prev=$a
+done
+case $TGT in both) TGT="" ;; ""|local|local-test) ;; *) echo "refresh: --target must be local, local-test or both" >&2; exit 64 ;; esac
 cd "$PROJECT" || exit 1
 dirty() { git status --porcelain --untracked-files=no 2>/dev/null | sort; }
 warn_new_dirty() { [ -n "${DIRTY0+x}" ] && comm -13 <(printf '%s\n' "$DIRTY0") <(dirty) | sed 's/^/refresh: WARN tracked file modified: /' | while IFS= read -r l; do say "$l"; done; return 0; }
-PLAN=$(python3 "$LE_LIB/refresh.py" plan --project "$PROJECT" $([ $ALL = 1 ] && echo --all)) || fail "plan"
+PLAN=$(python3 "$LE_LIB/refresh.py" plan --project "$PROJECT" $([ $ALL = 1 ] && echo --all) ${TGT:+--target "$TGT"}) || fail "plan"
 SINCE=$(sed -n 's/^#since //p' <<< "$PLAN"); STEPS=$(grep -v '^#' <<< "$PLAN" | cut -f1)
 [ -n "$STEPS" ] || { say "refresh: up to date (since $SINCE)"; exit 0; }
 
@@ -70,4 +81,4 @@ for s in $STEPS; do
     case $s in routing-*|translations) [ -n "$(media_shadow_files)" ] && say "refresh: WARN stale public/media/js files shadow the gridfs dump; run: aaxis-oro env repair --only media" ;; esac
 done
 warn_new_dirty
-[ "$DRY" = 1 ] || python3 "$LE_LIB/refresh.py" record --project "$PROJECT"
+[ "$DRY" = 1 ] || python3 "$LE_LIB/refresh.py" record --project "$PROJECT" ${TGT:+--target "$TGT"}

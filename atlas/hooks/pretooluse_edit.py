@@ -91,7 +91,7 @@ def enforcement_reason(root, path, state, session_id):
     found = None
     if c.is_extension_file(path):
         _, st = c.session_state(session_id)
-        if state == "missing" or (state == "stale" and c.staleness_kind(root) == "hard"):
+        if state in ("missing", "corrupt") or (state == "stale" and c.staleness_kind(root) == "hard"):
             found = ("atlas-index-fresh", c.build_hint(root, state) + ". Ask the user to run it, or run it yourself, then retry.")
         elif not st.get("queried"):
             found = ("atlas-query-first", "Query the atlas index before editing extension points: run `aaxis-oro atlas <sub> <term>` "
@@ -102,18 +102,21 @@ def enforcement_reason(root, path, state, session_id):
 def analyse(root, path, tool, ti, session_id=None):
     new, old = added_text(tool, ti)
     state = c.index_state(root)
-    notes, reason, decision = [], None, None
+    notes, reason, decision, user_msg = [], None, None, None
     if state != "ok":
         pth, st = c.session_state(session_id)
         if state == "stale" and c.staleness_kind(root) == "soft":
+            # stale-usable: never blocks and never rebuilds here; Stop/SessionStart schedule the reindex. Warn once per session.
             if not st.get("behind_warned"):  # one line per session; the next edit must not pay for it again
                 st["behind_warned"] = True
                 c.save_state(pth, st)
-                notes.append(c.build_hint(root, state))
+                hint = c.build_hint(root, state).split("; rebuild when convenient")[0] + "; it reindexes in the background when this turn ends"
+                notes.append(hint)
+                user_msg = "[atlas] " + hint
         else:
             notes.append(c.build_hint(root, state))
-    # A stale index still knows the unsafe services; only a missing one cannot judge.
-    if state != "missing":
+    # A stale index still knows the unsafe services; only a missing or unreadable one cannot judge.
+    if state not in ("missing", "corrupt"):
         found = d.new_targets(new, old, read_file(path) + "\n" + new)
         reason = next(filter(None, (d.deny_reason(root, t) for t in found)), None)
         notes += context_lines(root, path, new)
@@ -136,7 +139,10 @@ def analyse(root, path, tool, ti, session_id=None):
     if notes:
         hso["additionalContext"] = c.clip("[atlas] " + "\n".join(notes))
         verdict = verdict if reason else "context"
-    return ({"hookSpecificOutput": hso} if verdict != "silent" else None), verdict
+    out = {"hookSpecificOutput": hso} if verdict != "silent" else None
+    if out and user_msg:
+        out["systemMessage"] = user_msg
+    return out, verdict
 
 
 def main():

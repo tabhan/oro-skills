@@ -165,7 +165,7 @@ class Refresh(Base):
     def test_gate_refuses_without_record_and_after_edit(self):
         p = self.gate()
         self.assertEqual(p.returncode, 3, p.stdout)
-        self.assertRegex(p.stdout.strip(), r"^tree not refreshed since none; run: aaxis-oro dev refresh$")
+        self.assertRegex(p.stdout.strip(), r"^tree not refreshed since none; run: aaxis-oro dev refresh --target local-test$")
         self.assertEqual(self.calls(), "")
         self.refresh()
         self.assertEqual(self.gate().returncode, 0)
@@ -174,6 +174,34 @@ class Refresh(Base):
         p = self.gate()
         self.assertEqual(p.returncode, 3)
         self.assertIn("tree not refreshed since ", p.stdout)
+
+    def test_target_refresh_limits_plan_and_record_to_one_stack(self):
+        self.refresh()
+        write(os.path.join(self.project, "src/B/Foo.php"), "changed again\n")
+        out = self.refresh("--dry-run", "--target", "local-test").stdout
+        self.assertIn("cache-test", out)
+        self.assertNotIn("cache-local", out)
+        self.assertEqual(self.refresh("--target=local-test").returncode, 0)
+        self.assertEqual(self.gate("local-test").returncode, 0)
+        p = self.gate("local")
+        self.assertEqual(p.returncode, 3, p.stdout)
+        out = self.refresh("--dry-run").stdout
+        self.assertIn("cache-local", out)
+        self.assertNotIn("cache-test", out)
+        self.assertEqual(self.refresh("--target", "local").returncode, 0)
+        self.assertEqual(self.gate("local").returncode, 0)
+        self.assertIn("up to date", self.refresh().stdout)
+        self.assertEqual(self.refresh("--target", "bogus").returncode, 64)
+
+    def test_first_ever_target_refresh_leaves_the_other_stack_due(self):
+        for done, other in (("local-test", "local"), ("local", "local-test")):
+            rec = os.path.join(self.project, ".oro-ai", "local-env", "refresh.json")
+            if os.path.exists(rec):
+                os.remove(rec)
+            self.assertEqual(self.refresh("--target", done).returncode, 0)
+            self.assertEqual(self.gate(done).returncode, 0)
+            self.assertEqual(self.gate(other).returncode, 3, other)
+            self.assertNotIn("up to date", self.refresh("--dry-run").stdout)
 
     def test_gate_only_for_steps_of_the_target_and_escape_hatch(self):
         self.refresh()

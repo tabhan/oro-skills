@@ -205,11 +205,13 @@ def check_ticket(root, chs, verdicts):
     found = []
     if key and verdicts["review-ticket-gate"] != "skip" and any(c.is_extension_file("/" + ch.path) for ch in chs):
         state, _ = task.gate_state(root, key)
-        if state not in ("approved", "skipped"):
+        added = "\n".join("+" + line for ch in chs for _, line in added_lines(ch))
+        small = task.is_small_change(root, task.branch_files(root) + [ch.path for ch in chs], added)
+        if state not in ("approved", "skipped") and not small:
             sev = "warn" if verdicts["review-ticket-gate"] == "warn" else "deny"
             found.append(Finding(sev, "review-ticket-gate", ".oro-ai/task/%s/architect-gate.md" % key,
                                  "extension-point change with architect-gate %s: run aaxis-oro:architect-gate on the plan and save "
-                                 "its verdict ('Verdict: approved', or 'Verdict: skipped - <reason>' for a trivial change)" % state))
+                                 "its verdict ('Verdict: approved', or 'Verdict: skipped - <reason>' for a trivial change; a SMALL change of at most 3 files with no risk path needs none)" % state))
     if key and verdicts["review-ticket-evidence"] != "skip":
         paths = task.branch_files(root) + [ch.path for ch in chs]
         found += [Finding("warn", "review-ticket-evidence", key, line) for line in task.evidence(root, key, paths)]

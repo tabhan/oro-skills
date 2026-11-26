@@ -7,8 +7,6 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 ATLAS_DIR = os.path.dirname(HERE)
 REPO = os.path.dirname(ATLAS_DIR)
-PIPELINE = "/opt/projects/cc/commands/tab-pipeline.md"
-ATLAS_BIN = "/opt/projects/oro-skills/bin/aaxis-oro"
 
 
 def read(path):
@@ -35,7 +33,7 @@ class InstallScriptTest(unittest.TestCase):
             os.symlink(ATLAS_DIR + "/agents/architect-gate.md", home + "/agents/oro-architect-gate.md")
             self.run_install(home)
             self.assertEqual(os.listdir(home + "/skills") + os.listdir(home + "/agents"), [])
-            self.assertTrue(os.path.islink(home + "/bin/aaxis-oro"))
+            self.assertTrue(os.path.isfile(home + "/bin/aaxis-oro"))
             self.run_install(home, "--uninstall")
             self.assertEqual(os.listdir(home + "/bin"), [])
 
@@ -52,33 +50,10 @@ class SkillFrontmatterTest(unittest.TestCase):
         self.assertNotIn("paths:", frontmatter(read(ATLAS_DIR + "/SKILL.md")))
 
 
-@unittest.skipUnless(os.path.isfile(PIPELINE), "cc prompts not checked out")
 class PromptGateTest(unittest.TestCase):
-    def test_pipeline_gates_on_index_and_uses_absolute_cli(self):
-        text = read(PIPELINE)
-        self.assertIn("const USE_ATLAS = IS_ORO && HAS_ATLAS", text)
-        self.assertIn("const ATLAS = `${ATLAS_BIN} --project ${REPO}`", text)
-        self.assertNotIn(ATLAS_BIN + " --project", text)
-        for step in ("command -v aaxis-oro", "$ORO_SKILLS_DIR/bin/aaxis-oro", ATLAS_BIN):
-            self.assertIn(step, text)
-        self.assertIn("ATLAS UNAVAILABLE", text)
-        js = re.search(r"```js\n(.*?)```", text, re.S).group(1)
-        self.assertNotIn("${IS_ORO ? `ATLAS GATE", js)
-        self.assertIsNone(re.search(r"\\`atlas ", js), "bare atlas call in workflow JS")
-
-    def test_pipeline_workflow_js_parses(self):
-        js = re.search(r"```js\n(.*?)```", read(PIPELINE), re.S).group(1)
-        js = js.replace("<true|false>", "true").replace("<resolved atlas path>", "/x/atlas").replace("export const meta", "const meta")
-        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
-            fh.write("async function wf() {\n%s\n}\n" % js)
-        try:
-            subprocess.run(["node", "--check", fh.name], check=True, capture_output=True)
-        finally:
-            os.unlink(fh.name)
-
     def test_gate_agent_resolves_cli_and_degrades(self):
         text = read(ATLAS_DIR + "/agents/architect-gate.md")
-        for step in ("command -v aaxis-oro", "$ORO_SKILLS_DIR/bin/aaxis-oro", ATLAS_BIN):
+        for step in ("command -v aaxis-oro", "$ORO_SKILLS_DIR/bin/aaxis-oro", "${CLAUDE_PLUGIN_ROOT}/bin/aaxis-oro"):
             self.assertIn(step, text)
         self.assertIn("atlas unavailable", text)
 

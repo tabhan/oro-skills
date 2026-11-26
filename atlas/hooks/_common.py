@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib"))
 
 import projroot  # noqa: E402
-from atlas import cli, index, store  # noqa: E402
-from atlas.common import atlas_dir, new_atlas_dir  # noqa: E402
+from atlas import build, cli, index, store  # noqa: E402
+from atlas.common import atlas_dir, base_of, new_atlas_dir  # noqa: E402
 
 LOG_PATH = os.path.expanduser("~/.claude/atlas-hook.log")
 MAX_CONTEXT = 2000
@@ -65,9 +65,67 @@ def build_command(root, state):
     return "%s atlas build --project %s%s" % (CLI, root, " --incremental" if state == "stale" else "")
 
 
+REBUILD_ENV = "ORO_ATLAS_AUTO_REBUILD"  # "0" turns the scheduled rebuild off (tests, CI)
+REBUILD_BIN_ENV = "ORO_ATLAS_REBUILD_BIN"  # test seam: replaces bin/aaxis-oro for the detached rebuild
+REBUILD_MARK = ".rebuild-kick.json"
+REBUILD_MIN_GAP = 60  # seconds between two spawns even when the previous one has exited
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, ValueError, TypeError, OverflowError):
+        return bool(pid)
+    return True
+
+
+def _spawn(cmd):
+    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True, preexec_fn=lambda: os.nice(19))
+
+
+def schedule_rebuild(root, spawn=None):
+    """Non-disruptive reindex for a stale-usable index, called from Stop/SessionStart only (never from an edit or query).
+
+    Starts at most one detached, low-priority `atlas build --incremental --background` (it builds in a staging copy and swaps
+    in on success). Returns (outcome, warning): outcome 'started', 'running' (a build or a kick under REBUILD_MIN_GAP old
+    exists), 'skipped' (index not stale-usable) or 'disabled'; warning names a failed earlier rebuild (kept the old index, retried now).
+    """
+    if os.environ.get(REBUILD_ENV) == "0":
+        return "disabled", None
+    outcome, warning = "skipped", None
+    try:
+        if index_state(root) != "stale" or staleness_kind(root) != "soft":
+            return outcome, warning
+        out_dir = atlas_dir(root)
+        fail = build.rebuild_failure(out_dir)
+        if fail:
+            warning = "last background atlas rebuild failed %d time(s) (%s); old index kept, retrying" % (fail["count"], fail["reason"])
+        if build.build_running(out_dir):
+            return "running", warning
+        mark = os.path.join(base_of(out_dir), REBUILD_MARK)
+        try:
+            with open(mark, encoding="utf-8") as fh:
+                prev = json.load(fh)
+        except (OSError, ValueError):
+            prev = {}
+        if _pid_alive(prev.get("pid")) or time.time() - prev.get("ts", 0) < REBUILD_MIN_GAP:
+            return "running", warning
+        cmd = [sys.executable, os.environ.get(REBUILD_BIN_ENV) or CLI, "atlas", "build", "--project", root, "--incremental", "--background"]
+        proc = (spawn or _spawn)(cmd)
+        with open(mark, "w", encoding="utf-8") as fh:
+            json.dump({"pid": proc.pid, "ts": time.time()}, fh)
+        outcome = "started"
+    except Exception:  # noqa: BLE001 - a failed schedule only means the next trigger retries
+        outcome = "skipped"
+    return outcome, warning
+
+
 def stale_reason(root, state):
     """Short why for the hint line: the changed inputs of the stale shards, or 'no index'."""
-    reason = "no index"
+    reason = "unreadable index.json" if state == "corrupt" else "no index"
     if state == "stale":
         try:
             reasons = index.stale_reasons(root, atlas_dir(root))
@@ -78,18 +136,24 @@ def stale_reason(root, state):
 
 
 def build_hint(root, state):
-    """One line naming the index state and the exact rebuild command; atlas never rebuilds on its own."""
+    """One line naming the index state and the exact rebuild command."""
     if state == "stale" and staleness_kind(root) == "soft":
-        return "atlas index behind your src edits (%s); rebuild when convenient: %s" % (stale_reason(root, state), build_command(root, state))
+        return "atlas index may be stale: behind your src edits (%s); rebuild when convenient: %s" % (stale_reason(root, state), build_command(root, state))
     return "atlas index %s (%s); rebuild: %s" % (state, stale_reason(root, state), build_command(root, state))
 
 
 def index_state(root):
-    """'missing', 'stale' or 'ok' for the project's atlas index."""
+    """'missing', 'corrupt', 'stale' or 'ok' for the project's atlas index.
+
+    stale + staleness_kind 'soft' is the usable-but-behind state; missing, corrupt and stale + 'hard' are unusable.
+    """
     out_dir = atlas_dir(root)
     state = "missing"
-    if index.read_index(out_dir):
-        state = "stale" if index.stale_shards(root, out_dir) else "ok"
+    try:
+        if index.read_index(out_dir):
+            state = "stale" if index.stale_shards(root, out_dir) else "ok"
+    except (ValueError, OSError, AttributeError, TypeError):  # truncated or non-object index.json
+        state = "corrupt"
     return state
 
 
@@ -156,7 +220,8 @@ def is_extension_file(path):
     return bool(EXTENSION_FILE.search(p)) and not NOT_EXTENSION.search(p)
 
 
-# Index inputs whose change means the index is wrong, not merely behind Claude's own edits.
+# Index inputs whose change means the index is wrong, not merely behind Claude's own edits ("index format" covers a
+# schema_version mismatch too).
 HARD_REASONS = {"composer.lock", "vendor", "index format"}
 
 
