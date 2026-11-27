@@ -40,6 +40,25 @@ WORKFLOW = """jobs:
       - run: |
           echo hi
 """
+# The same definitions plus a pipelines section that runs &php and &yaml but has
+# commented its only &lint reference out — so CI never lints, and the hook must not either.
+BITBUCKET_WITH_PIPELINES = BITBUCKET + """pipelines:
+    branches:
+        develop:
+            - step: *php
+            #            - step: *lint
+    pull-requests:
+        '**':
+            - parallel:
+                  - step: *php
+                  - step: *yaml
+"""
+BITBUCKET_INLINE_STEP = """pipelines:
+    default:
+        - step:
+              script:
+                  - npm run stylelint src
+"""
 
 
 def run(*args, cwd):
@@ -90,6 +109,26 @@ class PrecommitTest(RepoCase):
         self.assertEqual([s[0] for s in st], ["phpcs", "phpunit", "eslint", "yamllint"])
         self.assertTrue(all(s[3] == "bitbucket-pipelines.yml" for s in st))
         self.assertIn('--ignore-pattern "src/OroLab/**"', st[2][2])
+
+    def test_bitbucket_mirrors_only_steps_an_active_pipeline_references(self):
+        self.drop_console()
+        self.put("bitbucket-pipelines.yml", BITBUCKET_WITH_PIPELINES)
+        st = precommit.steps(self.d)
+        # &lint's only reference is commented out: eslint must not reach the hook.
+        self.assertEqual([s[0] for s in st], ["phpcs", "phpunit", "yamllint"])
+
+    def test_dead_ci_step_also_vetoes_the_package_script_fallback(self):
+        self.drop_console()
+        self.put("bitbucket-pipelines.yml", BITBUCKET_WITH_PIPELINES)
+        self.put("package.json", json.dumps({"scripts": {"eslint": "eslint"}}))
+        self.put(".eslintrc.yml", "")
+        # CI defines eslint but runs it nowhere: deliberately off, so defaults() must not resurrect it.
+        self.assertEqual([s[0] for s in precommit.steps(self.d)], ["phpcs", "phpunit", "yamllint"])
+
+    def test_bitbucket_inline_pipeline_step_is_mirrored(self):
+        self.drop_console()
+        self.put("bitbucket-pipelines.yml", BITBUCKET_INLINE_STEP)
+        self.assertEqual([s[0] for s in precommit.steps(self.d)], ["stylelint"])
 
     def test_github_run_lines_and_vendor_defaults(self):
         self.drop_console()

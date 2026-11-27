@@ -130,11 +130,67 @@ def classify(cmd):
     return None
 
 
+def bitbucket_active(text):
+    """bitbucket-pipelines.yml with dead steps pruned: a step runs only inlined under `pipelines:` or when an
+    uncommented `step: *alias` there names its `&anchor`, so a definitions-only step whose every reference is
+    commented out never reaches the hook. A file where `pipelines:` yields no step at all (absent, or split
+    config this line scan cannot follow) passes through unchanged rather than mirroring nothing."""
+    lines = text.splitlines()
+
+    def code(raw):
+        line = raw.split(" #")[0].rstrip()
+        stripped = line.strip()
+        return "" if not stripped or stripped.startswith("#") else line
+
+    top, current = [], None
+    for raw in lines:
+        line = code(raw)
+        if line and not line[0].isspace() and re.match(r"[\w-]+:", line):
+            current = line.split(":", 1)[0]
+        top.append(current)
+
+    used, has_inline = set(), False
+    for i, raw in enumerate(lines):
+        if top[i] != "pipelines":
+            continue
+        line = code(raw)
+        ref = re.search(r"\bstep:\s*\*([\w.-]+)\s*$", line)
+        if ref:
+            used.add(ref.group(1))
+        elif re.match(r"\s*-\s+step:\s*(&[\w.-]+\s*)?$", line):
+            has_inline = True
+    if not used and not has_inline:
+        return text
+
+    out, i, total = [], 0, len(lines)
+    while i < total:
+        line = code(lines[i])
+        definition = re.match(r"(\s*)-\s+step:\s*(?:&([\w.-]+))?\s*$", line) if line else None
+        if not definition:
+            out.append(lines[i])
+            i += 1
+            continue
+        indent, anchor = len(definition.group(1)), definition.group(2)
+        end = i + 1
+        while end < total:
+            nxt = code(lines[end])
+            if nxt and len(nxt) - len(nxt.lstrip()) <= indent:
+                break
+            end += 1
+        if top[i] == "pipelines" or (anchor and anchor in used):
+            out.extend(lines[i:end])
+        i = end
+    return "\n".join(out)
+
+
 def from_ci(root):
     found = {}
     for pattern in CI_FILES:
         for path in sorted(glob.glob(os.path.join(root, pattern))):
-            for cmd in ci_commands(_read(path) or ""):
+            text = _read(path) or ""
+            if os.path.basename(path) == "bitbucket-pipelines.yml":
+                text = bitbucket_active(text)
+            for cmd in ci_commands(text):
                 if LINT_NAME in cmd:  # the shared lint script stands for both PHPCS and PHPMD
                     for key in ("phpcs", "phpmd"):
                         found.setdefault(key, (dict((k, lb) for k, lb, _ in TOOLS)[key], cmd, os.path.relpath(path, root)))
@@ -143,6 +199,20 @@ def from_ci(root):
                 if hit and hit[0] not in found:
                     found[hit[0]] = (hit[1], cmd, os.path.relpath(path, root))
     return found
+
+
+def dead_ci_keys(root):
+    """Tool keys whose only CI occurrence sits in steps no active pipeline runs: CI has them deliberately
+    off, so the package-script fallback must not resurrect what {@link bitbucket_active} pruned."""
+    dead = set()
+    for path in sorted(glob.glob(os.path.join(root, "bitbucket-pipelines.yml"))):
+        text = _read(path) or ""
+        active = {hit[0] for hit in map(classify, ci_commands(bitbucket_active(text))) if hit}
+        for cmd in ci_commands(text):
+            hit = classify(cmd)
+            if hit and hit[0] not in active:
+                dead.add(hit[0])
+    return dead
 
 
 def lint_script_rel(root, ci):
@@ -205,10 +275,11 @@ def steps(root):
     """[(key, label, command, source)] in TOOLS order, minus `precommit.skip`, plus the schema-drift step and the opt-in atlas gate."""
     cfg, ci, dflt = config(root), from_ci(root), defaults(root)
     skip = set(cfg.get("skip") or [])
+    dead = dead_ci_keys(root)
     rel = lint_script_rel(root, ci)
     out = []
     for key, _, _ in TOOLS:
-        hit = ci.get(key) or dflt.get(key)
+        hit = ci.get(key) or (dflt.get(key) if key not in dead else None)
         if hit and key in ("phpcs", "phpmd") and key in ci and (DIRECT_TOOL.match(hit[1]) or LINT_NAME in hit[1]):
             hit = (hit[0], "run_lint_php %s %s" % (shlex.quote(rel), key), hit[2])
         if hit and key not in skip:

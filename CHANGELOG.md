@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.1
+
+- The managed pre-commit hook mirrors only CI steps an active pipeline actually runs (SP-7084 merge triage). Root cause: `from_ci()` extracted every `script:` line in `bitbucket-pipelines.yml` without checking that the step's anchor is referenced by an uncommented `step: *alias` under `pipelines:` — on the reporting project the `&lint` step's only references have been commented out since 2025-12, so the hook enforced a whole-`src/` stylelint run (389 accumulated errors) that CI never runs, blocking any commit that stages SCSS. Now `bitbucket_active()` prunes steps no active pipeline reaches (inline steps under `pipelines:` stay; a file whose pipelines section yields no step at all passes through unchanged), and `dead_ci_keys()` keeps the package-script fallback from resurrecting a tool CI deliberately defines but runs nowhere. GitLab/GitHub CI files are untouched.
+
 ## 0.30.0
 
 - The managed pre-commit hook's ESLint step lints only the staged files its full scan would cover (SP-7425). Root cause: the step's gate fires on any staged `.js/.jsx/.mjs/.cjs/.ts/.tsx/.vue` file, but the command was always the full-tree scan (`npm run eslint src/`), so staging one `.ts` e2e step file surfaced every pre-existing error in `src/` (2,984 on the reporting project) — even though ESLint 8 without `--ext` or TS overrides never lints `.ts` at all. The hook's new `run_eslint` wrapper passes the staged (ACMR) files under the scan target that match the command's `--ext` list (else ESLint's directory default, `.js`); a staged lint config (`.eslint*`, `eslint.config.*`, `package.json`, `.stylelintignore`) still runs the full target, as do `AAXIS_ORO_PRECOMMIT_ALL=1` and an empty stage, and staged files ESLint does not cover lint nothing and pass. Only `npm/pnpm/yarn run eslint <target> [-- …]` and `eslint <target>` command shapes get staged-file mode; any other shape keeps today's full-scan rendering.
